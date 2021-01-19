@@ -333,7 +333,7 @@ Configuration options for the storage backend.  Some options are applicable only
 
 | Name | Description | Datatype | Default Value | Mutability |
 | ---- | ---- | ---- | ---- | ---- |
-| storage.backend | The primary persistence provider used by JanusGraph.  This is required.  It should be set one of JanusGraph's built-in shorthand names for its standard storage backends (shorthands: berkeleyje, cassandrathrift, cassandra, astyanax, embeddedcassandra, cql, hbase, inmemory) or to the full package and classname of a custom/third-party StoreManager implementation. | String | (no default value) | LOCAL |
+| storage.backend | The primary persistence provider used by JanusGraph.  This is required.  It should be set one of JanusGraph's built-in shorthand names for its standard storage backends (shorthands: berkeleyje, cassandrathrift, cassandra, astyanax, embeddedcassandra, cql, hbase, inmemory, rdbms) or to the full package and classname of a custom/third-party StoreManager implementation. | String | (no default value) | LOCAL |
 | storage.batch-loading | Whether to enable batch loading into the storage backend | Boolean | false | LOCAL |
 | storage.buffer-size | Size of the batch in which mutations are persisted | Integer | 1024 | MASKABLE |
 | storage.conf-file | Path to a configuration file for those storage backends which require/support a single separate config file. | String | (no default value) | LOCAL |
@@ -516,6 +516,22 @@ HBase storage options
 | storage.hbase.snapshot-name | The name of an existing HBase snapshot to be used by HBaseSnapshotInputFormat | String | janusgraph-snapshot | LOCAL |
 | storage.hbase.snapshot-restore-dir | The temporary directory to be used by HBaseSnapshotInputFormat to restore a snapshot. This directory should be on the same File System as the HBase root dir. | String | /tmp | LOCAL |
 | storage.hbase.table | The name of the table JanusGraph will use.  When storage.hbase.skip-schema-check is false, JanusGraph will automatically create this table if it does not already exist. If this configuration option is not provided but graph.graphname is, the table will be set to that value. | String | janusgraph | LOCAL |
+
+### storage.rdbms
+RDBMS storage options
+
+
+| Name | Description | Datatype | Default Value | Mutability |
+| ---- | ---- | ---- | ---- | ---- |
+| storage.rdbms.jpa.javax.persistence.jdbc.dialect | | String |  | LOCAL |
+| storage.rdbms.jpa.javax.persistence.jdbc.driver | | String |  | LOCAL |
+| storage.rdbms.jpa.javax.persistence.jdbc.url | | String |  | LOCAL |
+| storage.rdbms.jpa.javax.persistence.jdbc.user | | String |  | LOCAL |
+| storage.rdbms.jpa.javax.persistence.jdbc.password | | String |  | LOCAL |
+| storage.rdbms.jpa.javax.persistence.schema-generation.database.action | | String |  | LOCAL |
+| storage.rdbms.jpa.javax.persistence.schema-generation.create-database-schemas | | String |  | LOCAL |
+| storage.rdbms.jpa.javax.persistence.schema-generation.create-source | | String |  | LOCAL |
+
 
 ### storage.lock
 Options for locking on eventually-consistent stores
