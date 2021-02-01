@@ -12,10 +12,7 @@ JanusGraph has a specialty tests, disabled by default, intended to generate basi
 
 ## Continuous Integration
 
-JanusGraph runs continuous integration via Travis; see the [dashboard](https://travis-ci.org/JanusGraph/janusgraph) for current status.
-
-Travis sends emails on test failures and status transitions (to/from failure) to
-[janusgraph-ci@googlegroups.com](https://groups.google.com/forum/#!forum/janusgraph-ci) mailing list.
+JanusGraph runs continuous integration via Github Actions; see the [dashboard](https://github.com/JanusGraph/janusgraph/actions) for current status.
 
 ## JUnit
 
@@ -41,7 +38,7 @@ All of JanusGraph's tests are written for JUnit.  JanusGraph's JUnit tests are a
 If a test should be marked as flaky add following annotation to the test and open an issue.
 
 ```java
-@FlakyTest
+@RepeatedIfExceptionsTest(repeats = 4, minSuccess = 2)
 public void testFlakyFailsSometimes(){}
 ```
 
@@ -79,25 +76,28 @@ mvn test -Dtest=BerkeleyJEGraphPerformanceMemoryTest
 mvn test -Dtest=BerkeleyJEGraphPerformanceMemoryTest -Dtest.skip.mem=false
 ```
 
-## Running Tests with an External Solr
+## Running Solr Tests
 
-Solr tests can be run against an external Solr instance. For convenience the `docker` Maven profile is provided to manage a Solr Docker container through the Maven Failsafe Plugin. The default test version will be the same as the Solr client version.
+**Note** Running Solr tests require Docker.
+
+Solr tests run against an external Solr instance. The default test version will be the same as the Solr client version.
 
 ```bash
-mvn clean install -pl janusgraph-solr -Pdocker
+mvn clean install -pl janusgraph-solr
 ```
 
 Additional Maven profiles are defined for testing against default versions of other supported major Solr releases.
-(Currently, only Solr 7 is supported.)
+(Currently, only Solr 7 and Solr 8 are supported.)
 
 ```bash
-mvn clean install -pl janusgraph-solr -Pdocker,solr7
+mvn clean install -pl janusgraph-solr -Psolr7
+mvn clean install -pl janusgraph-solr -Psolr8
 ```
 
-Finally the `solr.test.version` property can be used to test against arbitrary Solr versions.
+Finally the `solr.docker.version` property can be used to test against arbitrary Solr versions.
 
 ```bash
-mvn clean install -pl janusgraph-solr -Pdocker -Dsolr.test.version=7.0.0
+mvn clean install -pl janusgraph-solr -Dsolr.docker.version=7.0.0
 ```
 
 ## Running Elasticsearch Tests
@@ -143,7 +143,7 @@ System properties to configure CQL test executions:
 | Property | Description | Default value |
 | -------- | ----------- | ------------- |
 | `cassandra.docker.image` | Docker image to pull and run. | `cassandra` |
-| `cassandra.docker.version` | Docker image tag to pull and run  | `3.11.4` |
+| `cassandra.docker.version` | Docker image tag to pull and run  | `3.11.9` |
 | `cassandra.docker.partitioner` | Set the cassandra partitioner. Supported partitioner are `murmur`, or `byteordered`| `murmur` |
 | `cassandra.docker.useSSL` | Activate SSL **Note: This property currently only works with the partitioner set to `murmur`.** | `false` |
 | `cassandra.docker.useDefaultConfigFromImage` | If set to `false` default configs of the image are used. **Note: `cassandra.docker.partitioner` and `cassandra.docker.useSSL` are ignored.** | `false` |

@@ -13,7 +13,7 @@
         <top.level.basedir>${basedir}/..</top.level.basedir>
         <elasticsearch60.docker.version>6.0.1</elasticsearch60.docker.version>
         <elasticsearch6.docker.version>6.6.0</elasticsearch6.docker.version>
-        <elasticsearch7.docker.version>7.6.2</elasticsearch7.docker.version>
+        <elasticsearch7.docker.version>7.10.2</elasticsearch7.docker.version>
         <elasticsearch.docker.version>${elasticsearch7.docker.version}</elasticsearch.docker.version>
         <skip.es.test>${skipTests}</skip.es.test>
         <elasticsearch.docker.image>docker.elastic.co/elasticsearch/elasticsearch</elasticsearch.docker.image>
@@ -116,7 +116,12 @@
                 </exclusion>
             </exclusions>
     	</dependency>
-
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna</artifactId>
+            <version>${jna.version}</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
     <build>
         <resources>
@@ -145,10 +150,8 @@
                     </execution>
                 </executions>
             </plugin>
-
             <plugin>
                 <artifactId>maven-surefire-plugin</artifactId>
-
                 <executions>
                     <execution>
                         <id>default-test</id>

@@ -15,25 +15,27 @@
 package org.janusgraph.graphdb.query.graph;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Iterables;
+import org.apache.tinkerpop.gremlin.structure.util.CloseableIterator;
 import org.janusgraph.core.*;
 import org.janusgraph.core.attribute.Cmp;
 import org.janusgraph.core.attribute.Contain;
 import org.janusgraph.graphdb.database.IndexSerializer;
 import org.janusgraph.graphdb.query.index.IndexSelectionStrategy;
 import org.janusgraph.graphdb.internal.ElementCategory;
-import org.janusgraph.graphdb.internal.InternalRelationType;
 import org.janusgraph.graphdb.internal.Order;
 import org.janusgraph.graphdb.internal.OrderList;
 import org.janusgraph.graphdb.query.*;
 import org.janusgraph.graphdb.query.condition.*;
+import org.janusgraph.graphdb.query.index.IndexSelectionUtil;
 import org.janusgraph.graphdb.query.profile.QueryProfiler;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
 import org.janusgraph.graphdb.types.*;
+import org.janusgraph.graphdb.util.CloseableIteratorUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.function.Predicate;
 
 /**
  * Builds a {@link JanusGraphQuery}, optimizes the query and compiles the result into a {@link GraphCentricQuery} which
@@ -203,7 +205,14 @@ public class GraphCentricQueryBuilder implements JanusGraphQuery<GraphCentricQue
     }
 
     public <E extends JanusGraphElement> Iterable<E> iterables(final GraphCentricQuery query, final Class<E> aClass) {
-        return Iterables.filter(new QueryProcessor<>(query, tx.elementProcessor), aClass);
+        return new Iterable<E>() {
+            @Override
+            public CloseableIterator<E> iterator() {
+                return CloseableIteratorUtils.filter(new QueryProcessor(query, tx.elementProcessor).iterator(),
+                    (Predicate<? super E>) e -> aClass.isInstance(e));
+            }
+
+        };
     }
 
 
@@ -219,9 +228,6 @@ public class GraphCentricQueryBuilder implements JanusGraphQuery<GraphCentricQue
     public GraphCentricQuery constructQuery(final ElementCategory resultType) {
         final QueryProfiler optProfiler = profiler.addNested(QueryProfiler.OPTIMIZATION);
         optProfiler.startTimer();
-        if (this.globalConstraints.isEmpty()) {
-            this.globalConstraints.add(this.constraints);
-        }
         final GraphCentricQuery query = constructQueryWithoutProfile(resultType);
         optProfiler.stopTimer();
         query.observeWith(profiler);
@@ -232,6 +238,9 @@ public class GraphCentricQueryBuilder implements JanusGraphQuery<GraphCentricQue
         Preconditions.checkNotNull(resultType);
         if (limit == 0) return GraphCentricQuery.emptyQuery(resultType);
 
+        if (globalConstraints.isEmpty()) {
+            globalConstraints.add(constraints);
+        }
         //Prepare constraints
         final MultiCondition<JanusGraphElement> conditions;
         if (this.globalConstraints.size() == 1) {
@@ -251,16 +260,10 @@ public class GraphCentricQueryBuilder implements JanusGraphQuery<GraphCentricQue
         if (orders.isEmpty()) orders = OrderList.NO_ORDER;
 
         //Compile all indexes that cover at least one of the query conditions
-        final Set<IndexType> indexCandidates = new HashSet<>();
-        ConditionUtil.traversal(conditions, condition -> {
-            if (condition instanceof PredicateCondition) {
-                final RelationType type = ((PredicateCondition<RelationType,JanusGraphElement>) condition).getKey();
-                Preconditions.checkArgument(type != null && type.isPropertyKey());
-                Iterables.addAll(indexCandidates, Iterables.filter(((InternalRelationType) type).getKeyIndexes(),
-                    indexType -> indexType.getElement() == resultType && !(conditions instanceof Or && (indexType.isCompositeIndex() || !serializer.features((MixedIndexType) indexType).supportNotQueryNormalForm()))));
-            }
-            return true;
-        });
+        final Set<IndexType> indexCandidates = IndexSelectionUtil.getMatchingIndexes(conditions,
+            indexType -> indexType.getElement() == resultType
+                    && !(conditions instanceof Or && (indexType.isCompositeIndex() || !serializer.features((MixedIndexType) indexType).supportNotQueryNormalForm()))
+        );
 
         final Set<Condition> coveredClauses = new HashSet<>();
         final IndexSelectionStrategy.SelectedIndexQuery selectedIndex = indexSelector.selectIndices(indexCandidates, conditions, coveredClauses, orders, serializer);

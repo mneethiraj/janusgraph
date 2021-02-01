@@ -39,15 +39,21 @@ public class BerkeleyLuceneTest extends JanusGraphIndexTest {
     @Override
     public WriteConfiguration getConfiguration() {
         ModifiableConfiguration config = getBerkeleyJEConfiguration();
-        //Add index
-        config.set(INDEX_BACKEND,"lucene",INDEX);
-        config.set(INDEX_DIRECTORY, StorageSetup.getHomeDir("lucene"),INDEX);
+        for (String indexBackend : getIndexBackends()) {
+            config.set(INDEX_BACKEND, "lucene", indexBackend);
+            config.set(INDEX_DIRECTORY, StorageSetup.getHomeDir("lucene"), indexBackend);
+        }
         return config.getConfiguration();
     }
 
     @Override
     public boolean supportsLuceneStyleQueries() {
         return true;
+    }
+
+    @Override
+    public boolean supportsGeoPointExistsQuery() {
+        return false;
     }
 
     @Override

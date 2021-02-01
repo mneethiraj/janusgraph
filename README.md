@@ -8,12 +8,12 @@ can support thousands of concurrent users, complex traversals, and analytic grap
 [![Downloads][downloads-shield]][downloads-link]
 [![Maven][maven-shield]][maven-link]
 [![Javadoc][javadoc-shield]][javadoc-link]
-[![Build Status][travis-shield]][travis-link]
+[![GitHub Workflow Status][actions-shield]][actions-link]
 [![Codecov][codecov-shield]][codecov-link]
 [![Coverity Scan][coverity-shield]][coverity-link]
 
-[travis-shield]: https://travis-ci.org/JanusGraph/janusgraph.svg?branch=master
-[travis-link]: https://travis-ci.org/JanusGraph/janusgraph
+[actions-shield]: https://img.shields.io/github/workflow/status/JanusGraph/janusgraph/CI%20Core
+[actions-link]: https://github.com/JanusGraph/janusgraph/actions
 [maven-shield]: https://img.shields.io/maven-central/v/org.janusgraph/janusgraph-core.svg
 [maven-link]: https://search.maven.org/#search%7Cga%7C1%7Corg.janusgraph
 [javadoc-shield]: https://javadoc.io/badge/org.janusgraph/janusgraph-core.svg?color=blue
@@ -41,12 +41,16 @@ tools:
   plugin for Apache TinkerPop
 * [Graphexp](https://github.com/bricaud/graphexp)
 * [Graph Explorer](https://github.com/invanalabs/graph-explorer)
+* [Gremlin-Visualizer](https://github.com/prabushitha/gremlin-visualizer)
 * [KeyLines by Cambridge Intelligence](https://cambridge-intelligence.com/visualizing-janusgraph-new-titandb-fork/)
 * [Linkurious](https://doc.linkurio.us/ogma/latest/tutorials/janusgraph/)
 * [Tom Sawyer Perspectives](https://www.tomsawyer.com/perspectives/)
 
 ## Community
 
+* GitHub Discussions: see [`GitHub Discussions`](https://github.com/JanusGraph/janusgraph/discussions) 
+  for all general discussions and questions about JanusGraph
+  
 * Chat rooms on Gitter:
 
   * [Our main chat room](https://gitter.im/JanusGraph/janusgraph) for all general discussions and questions about JanusGraph
@@ -58,30 +62,44 @@ tools:
 * Twitter: follow [@JanusGraph](https://twitter.com/JanusGraph) for news and
   updates
 
+* LinkedIn: follow [JanusGraph](https://www.linkedin.com/company/janusgraph) for news and
+  updates
+
 * Mailing lists:
 
-  * **janusgraph-users (at) googlegroups.com**
-    ([archives](https://groups.google.com/group/janusgraph-users))
+  * **janusgraph-users (at) lists.lfaidata.foundation**
+    ([archives](https://lists.lfaidata.foundation/g/janusgraph-users/topics))
     for questions about using JanusGraph, installation, configuration, integrations
 
-    To join with a Google account, use the [web
-    UI](https://groups.google.com/forum/#!forum/janusgraph-users/join); to
+    To join with a LF AI & Data account, use the [web
+    UI](https://lists.lfaidata.foundation/g/janusgraph-users/join); to
     subscribe/unsubscribe with an arbitrary email address, send an email to:
 
-    * janusgraph-users+subscribe (at) googlegroups.com
-    * janusgraph-users+unsubscribe (at) googlegroups.com
+    * janusgraph-users+subscribe (at) lists.lfaidata.foundation
+    * janusgraph-users+unsubscribe (at) lists.lfaidata.foundation
 
-  * **janusgraph-dev (at) googlegroups.com**
-    ([archives](https://groups.google.com/group/janusgraph-dev))
+  * **janusgraph-dev (at) lists.lfaidata.foundation**
+    ([archives](https://lists.lfaidata.foundation/g/janusgraph-dev/topics))
     for internal implementation of JanusGraph itself
 
-    To join with a Google account, use the [web
-    UI](https://groups.google.com/forum/#!forum/janusgraph-dev/join); to
+    To join with a LF AI & Data account, use the [web
+    UI](https://lists.lfaidata.foundation/g/janusgraph-dev/join); to
     subscribe/unsubscribe with an arbitrary email address, send an email to:
 
-    * janusgraph-dev+subscribe (at) googlegroups.com
-    * janusgraph-dev+unsubscribe (at) googlegroups.com
+    * janusgraph-dev+subscribe (at) lists.lfaidata.foundation
+    * janusgraph-dev+unsubscribe (at) lists.lfaidata.foundation
 
+  * **janusgraph-announce (at) lists.lfaidata.foundation**
+    ([archives](https://lists.lfaidata.foundation/g/janusgraph-announce/topics))
+    for new releases and news announcements
+
+    To join with a LF AI & Data account, use the [web
+    UI](https://lists.lfaidata.foundation/g/janusgraph-announce/join); to
+    subscribe/unsubscribe with an arbitrary email address, send an email to:
+
+    * janusgraph-announce+subscribe (at) lists.lfaidata.foundation
+    * janusgraph-announce+unsubscribe (at) lists.lfaidata.foundation
+    
 ## Contributing
 
 Please see [`CONTRIBUTING.md`](CONTRIBUTING.md) for more information, including
@@ -103,6 +121,7 @@ CLAs and best practices for working with GitHub.
 The following users have deployed JanusGraph in production.
 
 * [CELUM](https://www.celum.com/) - [use case and system architecture](https://www.celum.com/en/graph-driven-and-reactive-architecture)
+* [eBay](https://www.ebay.com/) - [video](https://youtu.be/EtB1BPG00PE)
 * [FiNC](https://finc.com)
 * [G DATA](https://gdatasoftware.com) - [blog post series about malware analysis use case](https://www.gdatasoftware.com/blog/2018/11/31203-malware-analysis-with-a-graph-database)
 * [Netflix](https://www.netflix.com) -
@@ -112,7 +131,3 @@ The following users have deployed JanusGraph in production.
 * [Red Hat](https://www.redhat.com/) - [application migration and assessment tool](https://developers.redhat.com/products/rhamt/overview/) built on [Windup](https://github.com/windup/windup)
 * [Times Internet](http://timesinternet.in) - [blog post about CMS use case](http://denmarkblog.timesinternet.in/blogs/graph/times-internet-is-using-janusgraph-as-main-database-in-cms-for-all-newsrooms/articleshow/63709837.cms) (the CMS which is serving this blog post runs on JanusGraph)
 * [Uber](https://uber.com)
-
-The following companies offer JanusGraph hosted as-a-service:
-
-* [IBM](https://www.compose.com/databases/janusgraph)

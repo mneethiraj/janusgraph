@@ -35,7 +35,7 @@ import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.*;
 public class JanusGraphCassandraContainer extends CassandraContainer<JanusGraphCassandraContainer> {
     private static final Logger LOGGER = LoggerFactory.getLogger(JanusGraphCassandraContainer.class);
 
-    private static final String DEFAULT_VERSION = "3.11.6";
+    private static final String DEFAULT_VERSION = "3.11.9";
     private static final String DEFAULT_IMAGE = "cassandra";
     private static final String DEFAULT_PARTITIONER = "murmur";
     private static final boolean DEFAULT_USE_SSL = false;
@@ -152,7 +152,7 @@ public class JanusGraphCassandraContainer extends CassandraContainer<JanusGraphC
         config.set(STORAGE_PORT, getMappedPort(CQL_PORT));
         config.set(STORAGE_HOSTS, new String[]{getContainerIpAddress()});
         config.set(DROP_ON_CLEAR, false);
-        config.set(REMOTE_MAX_REQUESTS_PER_CONNECTION, 1024);
+        config.set(MAX_REQUESTS_PER_CONNECTION, 1024);
         if (useDynamicConfig()) {
             if(useSSL()) {
                 config.set(SSL_ENABLED, true);

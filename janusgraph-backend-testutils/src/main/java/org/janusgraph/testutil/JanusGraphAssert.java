@@ -14,6 +14,7 @@
 
 package org.janusgraph.testutil;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -30,12 +31,15 @@ import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversal;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.GraphStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.StartStep;
 import org.apache.tinkerpop.gremlin.process.traversal.util.DefaultTraversalStrategies;
+import org.apache.tinkerpop.gremlin.process.traversal.util.Metrics;
 import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalMetrics;
 import org.apache.tinkerpop.gremlin.structure.Element;
+import org.janusgraph.graphdb.query.profile.QueryProfiler;
 
 import java.lang.reflect.Array;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.stream.IntStream;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -78,6 +82,36 @@ public class JanusGraphAssert {
             assertEquals(expectedElement, req.next());
         }
         assertFalse(req.hasNext());
+    }
+
+    public static void assertIntRange(GraphTraversal<?, Integer> traversal, int start, int end) {
+        int[] intArray;
+        if (start <= end) {
+            intArray = IntStream.range(start, end).toArray();
+        } else {
+            intArray = IntStream.range(end, start).map(i -> start + end - i).toArray();
+        }
+        assertArrayEquals(intArray, traversal.toList().stream().mapToInt(i -> i).toArray());
+    }
+
+    private static boolean hasBackendHit(Metrics metrics) {
+        if (QueryProfiler.BACKEND_QUERY.equals(metrics.getName())) return true;
+        for (Metrics subMetrics : metrics.getNested()) {
+            if (hasBackendHit(subMetrics)) return true;
+        }
+        return false;
+    }
+
+    public static void assertBackendHit(TraversalMetrics profile) {
+        assertTrue(profile.getMetrics().stream().anyMatch(metrics -> {
+            return hasBackendHit(metrics);
+        }));
+    }
+
+    public static void assertNoBackendHit(TraversalMetrics profile) {
+        assertFalse(profile.getMetrics().stream().anyMatch(metrics -> {
+            return hasBackendHit(metrics);
+        }));
     }
 
     private static boolean isEmpty(Object obj) {

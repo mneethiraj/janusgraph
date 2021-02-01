@@ -48,9 +48,11 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -70,7 +72,6 @@ import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
 import org.apache.tinkerpop.gremlin.process.traversal.util.Metrics;
-import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalMetrics;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Property;
@@ -104,6 +105,9 @@ import org.janusgraph.core.log.Change;
 import org.janusgraph.core.log.LogProcessorFramework;
 import org.janusgraph.core.log.TransactionRecovery;
 import org.janusgraph.core.schema.ConsistencyModifier;
+import org.janusgraph.core.schema.DisableDefaultSchemaMaker;
+import org.janusgraph.core.schema.IgnorePropertySchemaMaker;
+import org.janusgraph.core.schema.JanusGraphDefaultSchemaMaker;
 import org.janusgraph.core.schema.JanusGraphIndex;
 import org.janusgraph.core.schema.JanusGraphManagement;
 import org.janusgraph.core.schema.JanusGraphSchemaType;
@@ -119,6 +123,7 @@ import org.janusgraph.diskstorage.configuration.ConfigElement;
 import org.janusgraph.diskstorage.configuration.ConfigOption;
 import org.janusgraph.diskstorage.configuration.WriteConfiguration;
 import org.janusgraph.diskstorage.keycolumnvalue.scan.ScanMetrics;
+import org.janusgraph.diskstorage.locking.PermanentLockingException;
 import org.janusgraph.diskstorage.log.Log;
 import org.janusgraph.diskstorage.log.Message;
 import org.janusgraph.diskstorage.log.MessageReader;
@@ -143,7 +148,12 @@ import org.janusgraph.graphdb.internal.RelationCategory;
 import org.janusgraph.graphdb.log.StandardTransactionLogProcessor;
 import org.janusgraph.graphdb.olap.job.IndexRemoveJob;
 import org.janusgraph.graphdb.olap.job.IndexRepairJob;
+import org.janusgraph.graphdb.query.JanusGraphPredicateUtils;
+import org.janusgraph.graphdb.query.QueryUtil;
+import org.janusgraph.graphdb.query.condition.MultiCondition;
+import org.janusgraph.graphdb.query.condition.PredicateCondition;
 import org.janusgraph.graphdb.query.graph.GraphCentricQueryBuilder;
+import org.janusgraph.graphdb.query.index.IndexSelectionUtil;
 import org.janusgraph.graphdb.query.profile.QueryProfiler;
 import org.janusgraph.graphdb.query.profile.SimpleQueryProfiler;
 import org.janusgraph.graphdb.query.vertex.BasicVertexCentricQueryBuilder;
@@ -1323,7 +1333,7 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
 
     /**
      * Tests the automatic creation of types for default schema maker
-     * {@link org.janusgraph.graphdb.tinkerpop.JanusGraphDefaultSchemaMaker}
+     * {@link JanusGraphDefaultSchemaMaker}
      */
     @Test
     public void testDefaultSchemaMaker() {
@@ -1343,7 +1353,7 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
     }
 
     /**
-     * Tests {@link org.janusgraph.graphdb.types.typemaker.DisableDefaultSchemaMaker} which throws Exceptions for
+     * Tests {@link DisableDefaultSchemaMaker} which throws Exceptions for
      * unknown labels and properties
      */
     @Test
@@ -1383,7 +1393,7 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
     }
 
     /**
-     * Tests {@link org.janusgraph.graphdb.types.typemaker.IgnorePropertySchemaMaker} which ignores unknown properties
+     * Tests {@link IgnorePropertySchemaMaker} which ignores unknown properties
      * without throwing exceptions
      */
     @Test
@@ -2936,7 +2946,7 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
 
     /**
      * Executes a transaction job in two parallel transactions under the assumptions that the two transactions
-     * should conflict and the one committed later should throw a locking exception.
+     * should conflict and the one committed later should throw a locking exception due to mismatch of expected value.
      *
      * @param graph
      * @param job
@@ -2950,23 +2960,27 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
          * Under pessimistic locking, tx1 should abort and tx2 should commit.
          * Under optimistic locking, tx1 may commit and tx2 may abort.
          */
+        JanusGraphException janusGraphException;
         if (isLockingOptimistic()) {
             tx1.commit();
-            try {
-                tx2.commit();
-                fail("Storage backend does not abort conflicting transactions");
-            } catch (JanusGraphException ignored) {
-            }
+            janusGraphException = assertThrows(JanusGraphException.class, () -> tx2.commit());
         } else {
-            try {
-                tx1.commit();
-                fail("Storage backend does not abort conflicting transactions");
-            } catch (JanusGraphException ignored) {
-            }
+            janusGraphException = assertThrows(JanusGraphException.class, () -> tx1.commit());
             tx2.commit();
         }
+        Throwable rootCause = janusGraphException.getCause().getCause();
+        assertTrue(rootCause instanceof PermanentLockingException);
+        assertTrue(rootCause.getMessage().contains("Expected value mismatch for"));
     }
 
+    /**
+     * Execute multiple identical transactions concurrently. Note that since these transactions are running in the same process,
+     * {@link org.janusgraph.diskstorage.locking.LocalLockMediator} is used to resolve lock contentions. If there is only
+     * one lock needed in the whole transaction, exactly one transaction shall succeed and others shall fail due to local
+     * lock contention. If there is more than one lock needed in the transaction, at most one transaction shall succeed
+     * and others shall fail due to local lock contention.
+     * @throws Exception
+     */
     @Test
     public void testConcurrentConsistencyEnforcement() throws Exception {
         PropertyKey name = mgmt.makePropertyKey("name").dataType(String.class).cardinality(Cardinality.SINGLE).make();
@@ -2984,25 +2998,33 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
         final String nameA = "a", nameB = "b";
         final int parallelThreads = 4;
 
-        int numSuccess = executeParallelTransactions(tx -> {
+        // Only one lock is needed
+        int[] results = executeParallelTransactions(tx -> {
             final JanusGraphVertex a = tx.addVertex();
             final JanusGraphVertex base = getV(tx, baseVid);
             base.addEdge("married", a);
         }, parallelThreads);
+        int numOfSuccess = results[0];
+        int numOfLockContentions = results[1];
+        assertEquals(1, numOfSuccess);
+        assertEquals(parallelThreads - 1, numOfLockContentions);
 
-        assertTrue(numSuccess <= 1, "At most 1 tx should succeed: " + numSuccess);
-
-        numSuccess = executeParallelTransactions(tx -> {
+        // Two locks are needed. Note that the order of adding/modifying/deleting elements might not be consistent with
+        // the order of real mutations during commit. Thus, it can be the case that one thread gets one lock and another
+        // thread gets another, and both fail because they are unable to get the other lock.
+        results = executeParallelTransactions(tx -> {
             tx.addVertex("name", nameA);
             final JanusGraphVertex b = tx.addVertex("name", nameB);
             b.addEdge("friend", b);
         }, parallelThreads);
+        numOfSuccess = results[0];
+        numOfLockContentions = results[1];
+        assertTrue(numOfSuccess <= 1);
+        assertEquals(parallelThreads - numOfSuccess, numOfLockContentions);
 
         newTx();
         final long numA = Iterables.size(tx.query().has("name", nameA).vertices());
         final long numB = Iterables.size(tx.query().has("name", nameB).vertices());
-//        System.out.println(numA + " - " + numB);
-        assertTrue(numSuccess <= 1, "At most 1 tx should succeed: " + numSuccess);
         assertTrue(numA <= 1);
         assertTrue(numB <= 1);
     }
@@ -3016,23 +3038,36 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
         if (tx.isOpen()) tx.rollback();
     }
 
-    private int executeParallelTransactions(final TransactionJob job, int number) {
-        final CountDownLatch startLatch = new CountDownLatch(number);
-        final CountDownLatch finishLatch = new CountDownLatch(number);
+    /**
+     * Execute multiple transactions in different threads concurrently to test locking
+     * @param job A transaction job which triggers locking
+     * @param concurrency Number of threads, each of which runs a transaction
+     * @return [number of successful transactions, number of transactions failed due to local lock contention]
+     */
+    private int[] executeParallelTransactions(final TransactionJob job, int concurrency) {
+        final CountDownLatch startLatch = new CountDownLatch(concurrency);
+        final CountDownLatch finishLatch = new CountDownLatch(concurrency);
         final AtomicInteger txSuccess = new AtomicInteger(0);
-        for (int i = 0; i < number; i++) {
+        final AtomicInteger lockingExCount = new AtomicInteger(0);
+        for (int i = 0; i < concurrency; i++) {
             new Thread() {
                 @Override
                 public void run() {
-                    awaitAllThreadsReady();
                     JanusGraphTransaction tx = graph.newTransaction();
                     try {
                         job.run(tx);
+                        // we force all threads to wait until they are all ready to commit, so that we can test lock
+                        // contention
+                        awaitAllThreadsReady();
                         tx.commit();
                         txSuccess.incrementAndGet();
                     } catch (Exception ex) {
                         ex.printStackTrace();
                         if (tx.isOpen()) tx.rollback();
+                        if (ex.getCause() instanceof PermanentLockingException &&
+                            ex.getCause().getMessage().contains("Local lock contention")) {
+                            lockingExCount.incrementAndGet();
+                        }
                     } finally {
                         finishLatch.countDown();
                     }
@@ -3054,7 +3089,7 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-        return txSuccess.get();
+        return new int[] {txSuccess.get(), lockingExCount.get()};
     }
 
    /* ==================================================================================
@@ -4419,29 +4454,6 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
         assertTrue(queryProfilerAnnotationIsPresent(t, QueryProfiler.MULTIQUERY_ANNOTATION));
     }
 
-    private static void verifyMetrics(Metrics metric, boolean fromCache, boolean multiQuery) {
-        assertTrue(metric.getDuration(TimeUnit.MICROSECONDS) > 0);
-        assertTrue(metric.getCount(TraversalMetrics.ELEMENT_COUNT_ID) > 0);
-        String hasMultiQuery = (String) metric.getAnnotation(QueryProfiler.MULTIQUERY_ANNOTATION);
-        assertTrue(multiQuery ? hasMultiQuery.equalsIgnoreCase("true") : hasMultiQuery == null);
-        for (Metrics subMetric : metric.getNested()) {
-            assertTrue(subMetric.getDuration(TimeUnit.MICROSECONDS) > 0);
-            switch (subMetric.getName()) {
-                case "optimization":
-                    assertNull(subMetric.getCount(TraversalMetrics.ELEMENT_COUNT_ID));
-                    break;
-                case "backend-query":
-                    if (fromCache) fail("Should not execute backend-queries when cached");
-                    assertTrue(subMetric.getCount(TraversalMetrics.ELEMENT_COUNT_ID) > 0);
-                    break;
-                default:
-                    fail("Unrecognized nested query: " + subMetric.getName());
-            }
-
-        }
-
-    }
-
     @Test
     public void testSimpleTinkerPopTraversal() {
         Vertex v1 = graph.addVertex("name", "josh");
@@ -5562,16 +5574,259 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
 
     //................................................
 
+    @Test
+    public void testNeqQuery() {
+        makeKey("p2", String.class);
+        PropertyKey p3 = makeKey("p3", String.class);
+        mgmt.buildIndex("composite", Vertex.class).addKey(p3).buildCompositeIndex();
+        finishSchema();
 
+        tx.addVertex();
+        tx.commit();
+        newTx();
+
+        // property not registered in schema
+        assertFalse(tx.traversal().V().has("p1", P.neq("v")).hasNext());
+        assertFalse(tx.traversal().V().has("p1", P.neq(null)).hasNext());
+        // property registered in schema
+        assertFalse(tx.traversal().V().has("p2", P.neq("v")).hasNext());
+        assertFalse(tx.traversal().V().has("p2", P.neq(null)).hasNext());
+        // property registered in schema and has composite index
+        assertFalse(tx.traversal().V().has("p3", P.neq("v")).hasNext());
+        assertFalse(tx.traversal().V().has("p3", P.neq(null)).hasNext());
+    }
+
+    /**
+     * The behaviour of has(p, null) deviates from TinkerGraph. Since JanusGraph does not support null values,
+     * has(p, null) indicates hasNot(p). In other words, an absent property implicitly implies null value for that property.
+     */
+    @Test
+    public void testHasNullQuery() {
+        makeKey("p2", String.class);
+        PropertyKey p3 = makeKey("p3", String.class);
+        mgmt.buildIndex("composite", Vertex.class).addKey(p3).buildCompositeIndex();
+        finishSchema();
+
+        tx.addVertex();
+        tx.commit();
+        newTx();
+
+        // property not registered in schema
+        assertTrue(tx.traversal().V().has("p1", (Object) null).hasNext());
+        // property registered in schema
+        assertTrue(tx.traversal().V().has("p2", (Object) null).hasNext());
+        // property registered in schema and has composite index
+        assertTrue(tx.traversal().V().has("p3", (Object) null).hasNext());
+    }
+
+    /**
+     * The behaviour of hasNot(p) is straight-forward: hasNot(p) means it does not have such property p.
+     * Note that hasNot(p, value) (which is a JanusGraph API rather than gremlin API) is a bit tricky and it is equivalent
+     * to has(p, neq(value)). Therefore, hasNot(p, null) means has(p, neq(null)) which is equivalent to has(p).
+     */
     @Test
     public void testHasNot() {
-        JanusGraphVertex v1, v2;
-        v1 = graph.addVertex();
+        makeKey("p2", String.class);
+        PropertyKey p3 = makeKey("p3", String.class);
+        mgmt.buildIndex("composite", Vertex.class).addKey(p3).buildCompositeIndex();
 
-        v2 = graph.query().hasNot("abcd").vertices().iterator().next();
-        assertEquals(v1, v2);
-        v2 = graph.query().hasNot("abcd", true).vertices().iterator().next();
-        assertEquals(v1, v2);
+        tx.addVertex();
+        tx.commit();
+        newTx();
+
+        // property not registered in schema
+        assertTrue(tx.traversal().V().hasNot("p1").hasNext());
+        assertTrue(tx.query().hasNot("p1").vertices().iterator().hasNext());
+        assertFalse(tx.query().hasNot("p1", null).vertices().iterator().hasNext());
+        assertFalse(tx.query().hasNot("p1", "value").vertices().iterator().hasNext());
+        // property registered in schema
+        assertTrue(tx.traversal().V().hasNot("p2").hasNext());
+        assertTrue(tx.query().hasNot("p2").vertices().iterator().hasNext());
+        assertFalse(tx.query().hasNot("p2", null).vertices().iterator().hasNext());
+        assertFalse(tx.query().hasNot("p2", "value").vertices().iterator().hasNext());
+        // property registered in schema and has composite index
+        assertTrue(tx.traversal().V().hasNot("p3").hasNext());
+        assertTrue(tx.query().hasNot("p3").vertices().iterator().hasNext());
+        assertFalse(tx.query().hasNot("p3", null).vertices().iterator().hasNext());
+        assertFalse(tx.query().hasNot("p3", "value").vertices().iterator().hasNext());
+    }
+
+    @Test
+    public void testNotHas() {
+        makeKey("p2", String.class);
+        PropertyKey p3 = makeKey("p3", String.class);
+        mgmt.buildIndex("composite", Vertex.class).addKey(p3).buildCompositeIndex();
+        finishSchema();
+
+        tx.addVertex();
+        tx.commit();
+        newTx();
+
+        // property not registered in schema
+        assertTrue(tx.traversal().V().not(__.has("p1")).hasNext());
+        // property registered in schema
+        assertTrue(tx.traversal().V().not(__.has("p2")).hasNext());
+        // property registered in schema and has composite index
+        assertTrue(tx.traversal().V().not(__.has("p3")).hasNext());
+    }
+
+    @Test
+    public void testGraphCentricQueryProfiling() {
+        final PropertyKey name = makeKey("name", String.class);
+        final PropertyKey weight = makeKey("weight", Integer.class);
+        final JanusGraphIndex compositeNameIndex = mgmt.buildIndex("nameIdx", Vertex.class).addKey(name).buildCompositeIndex();
+        final JanusGraphIndex compositeWeightIndex = mgmt.buildIndex("weightIdx", Vertex.class).addKey(weight).buildCompositeIndex();
+        final PropertyKey prop = makeKey("prop", Integer.class);
+        finishSchema();
+
+        JanusGraphVertex v = tx.addVertex("name", "bob", "prop", 100, "weight", 100);
+        tx.commit();
+
+        // satisfied by a single composite index query
+        newTx();
+        Metrics mCompSingle = tx.traversal().V().has("name", "bob").profile().next().getMetrics(0);
+        assertEquals("JanusGraphStep([],[name.eq(bob)])", mCompSingle.getName());
+        assertTrue(mCompSingle.getDuration(TimeUnit.MICROSECONDS) > 0);
+        assertEquals(3, mCompSingle.getNested().size());
+        Metrics nested = (Metrics) mCompSingle.getNested().toArray()[0];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mCompSingle.getNested().toArray()[1];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mCompSingle.getNested().toArray()[2];
+        assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        Map<String, String> nameIdxAnnotations = new HashMap() {{
+            put("condition", "(name = bob)");
+            put("orders", "[]");
+            put("isFitted", "true");
+            put("isOrdered", "true");
+            put("query", "multiKSQ[1]@1000");
+            put("index", "nameIdx");
+        }};
+        assertEquals(nameIdxAnnotations, nested.getAnnotations());
+
+        // satisfied by unions of two separate graph-centric queries, each satisfied by a single composite index query
+        newTx();
+        Metrics mCompMultiOr = tx.traversal().V().or(__.has("name", "bob"), __.has("weight", 100))
+            .profile().next().getMetrics(0);
+        assertEquals("Or(JanusGraphStep([],[name.eq(bob)]),JanusGraphStep([],[weight.eq(100)]))", mCompMultiOr.getName());
+        assertTrue(mCompMultiOr.getDuration(TimeUnit.MICROSECONDS) > 0);
+        assertEquals(5, mCompMultiOr.getNested().size());
+        nested = (Metrics) mCompMultiOr.getNested().toArray()[0];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mCompMultiOr.getNested().toArray()[1];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mCompMultiOr.getNested().toArray()[2];
+        assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        assertEquals(nameIdxAnnotations, nested.getAnnotations());
+        nested = (Metrics) mCompMultiOr.getNested().toArray()[3];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mCompMultiOr.getNested().toArray()[4];
+        assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        Map<String, String> weightIdxAnnotations = new HashMap() {{
+            put("condition", "(weight = 100)");
+            put("orders", "[]");
+            put("isFitted", "true");
+            put("isOrdered", "true");
+            put("query", "multiKSQ[1]@1000");
+            put("index", "weightIdx");
+        }};
+        assertEquals(weightIdxAnnotations, nested.getAnnotations());
+
+        // satisfied by one graph-centric query, which satisfied by in-memory filtering after one composite index query
+        newTx();
+        Metrics mUnfittedMultiAnd = tx.traversal().V().and(__.has("name", "bob"), __.has("prop", 100))
+            .profile().next().getMetrics(0);
+        assertEquals("JanusGraphStep([],[name.eq(bob), prop.eq(100)])", mUnfittedMultiAnd.getName());
+        assertTrue(mUnfittedMultiAnd.getDuration(TimeUnit.MICROSECONDS) > 0);
+        assertEquals(3, mUnfittedMultiAnd.getNested().size());
+        nested = (Metrics) mUnfittedMultiAnd.getNested().toArray()[0];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mUnfittedMultiAnd.getNested().toArray()[1];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mUnfittedMultiAnd.getNested().toArray()[2];
+        assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        Map<String, String> annotations = new HashMap() {{
+            put("condition", "(name = bob AND prop = 100)");
+            put("orders", "[]");
+            put("isFitted", "false"); // not fitted because prop = 100 requires in-memory filtering
+            put("isOrdered", "true");
+            put("query", "multiKSQ[1]@2000");
+            put("index", "nameIdx");
+        }};
+        assertEquals(annotations, nested.getAnnotations());
+
+        // satisfied by union of two separate graph-centric queries, one satisfied by a composite index query and the other requires full scan
+        newTx();
+        Metrics mUnfittedMultiOr = tx.traversal().V().or(__.has("name", "bob"), __.has("prop", 100))
+            .profile().next().getMetrics(0);
+        assertEquals("Or(JanusGraphStep([],[name.eq(bob)]),JanusGraphStep([],[prop.eq(100)]))", mUnfittedMultiOr.getName());
+        assertTrue(mUnfittedMultiOr.getDuration(TimeUnit.MICROSECONDS) > 0);
+        assertEquals(5, mUnfittedMultiOr.getNested().size());
+        nested = (Metrics) mUnfittedMultiOr.getNested().toArray()[0];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mUnfittedMultiOr.getNested().toArray()[1];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mUnfittedMultiOr.getNested().toArray()[2];
+        assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        assertEquals(nameIdxAnnotations, nested.getAnnotations());
+        nested = (Metrics) mUnfittedMultiOr.getNested().toArray()[3];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mUnfittedMultiOr.getNested().toArray()[4];
+        assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        Map<String, String> fullScanAnnotations = new HashMap() {{
+            put("condition", "(prop = 100)");
+            put("orders", "[]");
+            put("isFitted", "false");
+            put("isOrdered", "true");
+            put("query", "[]");
+        }};
+        assertEquals(fullScanAnnotations, nested.getAnnotations());
+    }
+
+    @Test
+    public void testVertexCentricQueryProfiling() {
+        final PropertyKey time = mgmt.makePropertyKey("time").dataType(Integer.class).cardinality(Cardinality.SINGLE).make();
+        final EdgeLabel friend = mgmt.makeEdgeLabel("friend").multiplicity(Multiplicity.SIMPLE).make();
+        mgmt.buildEdgeIndex(friend, "byTime", OUT, desc, time);
+        finishSchema();
+
+        JanusGraphVertex v = tx.addVertex();
+        JanusGraphVertex o = tx.addVertex();
+        v.addEdge("friend", o, "time", 100);
+        v.addEdge("friend-no-index", o, "time", 100);
+        tx.commit();
+
+        // satisfied by a single vertex-centric query which is satisfied by one edge query
+        newTx();
+        Metrics mSingleLabel = tx.traversal().V(v).outE("friend").has("time", P.lt(10)).profile().next().getMetrics(1);
+        assertEquals("JanusGraphVertexStep([time.lt(10)])", mSingleLabel.getName());
+        assertTrue(mSingleLabel.getDuration(TimeUnit.MICROSECONDS) > 0);
+        Map<String, String> annotations = new HashMap() {{
+            put("condition", "(time < 10 AND type[friend])");
+            put("orders", "[]");
+            put("vertices", 1);
+            put("isFitted", "true");
+            put("isOrdered", "true");
+            put("query", "2069:byTime:SliceQuery[0xB0E0FF7FFFFFF6,0xB0E1)@2147483647");
+        }};
+        mSingleLabel.getAnnotations().remove("percentDur");
+        assertEquals(annotations, mSingleLabel.getAnnotations());
     }
 
     @Test
@@ -6223,5 +6478,64 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
         g.io(f.getAbsolutePath()).read().iterate();
 
         assertEquals(1, g.V().has("name", f.getName()).count().next());
+    }
+
+    @Test
+    public void testGetMatchingIndexes() {
+        final PropertyKey name = makeKey("name", String.class);
+        final PropertyKey age = makeKey("age", Integer.class);
+        mgmt.buildIndex("byName", Vertex.class).addKey(name).buildCompositeIndex();
+        mgmt.buildIndex("byAge", Vertex.class).addKey(age).buildCompositeIndex();
+        finishSchema();
+
+        String searchName = "someName";
+        Integer searchAge = 42;
+
+        // test with no valid constraints
+        assertEquals(Collections.emptySet(), IndexSelectionUtil.getMatchingIndexes(null));
+        assertEquals(Collections.emptySet(), IndexSelectionUtil.getMatchingIndexes(null, null));
+        assertEquals(Collections.emptySet(), IndexSelectionUtil.getMatchingIndexes(null, i -> true));
+
+        // test with two valid constraints
+        List<PredicateCondition<String, JanusGraphElement>> constraints = Arrays.asList(
+            new PredicateCondition<>("name", JanusGraphPredicateUtils.convert(P.eq(searchName).getBiPredicate()), searchName),
+            new PredicateCondition<>("age", JanusGraphPredicateUtils.convert(P.eq(searchAge).getBiPredicate()), searchAge)
+        );
+        MultiCondition<JanusGraphElement> conditions = QueryUtil.constraints2QNF((StandardJanusGraphTx) tx, constraints);
+        assertEquals(2, IndexSelectionUtil.getMatchingIndexes(conditions).size());
+        assertEquals(1, IndexSelectionUtil.getMatchingIndexes(conditions, i -> i.getName().equals("byAge")).size());
+
+        // test with invalid filter
+        assertEquals(0, IndexSelectionUtil.getMatchingIndexes(conditions, null).size());
+    }
+
+    @Test
+    public void testExistsMatchingIndex() {
+        final PropertyKey name = makeKey("name", String.class);
+        final PropertyKey age = makeKey("age", Integer.class);
+        mgmt.buildIndex("byName", Vertex.class).addKey(name).buildCompositeIndex();
+        mgmt.buildIndex("byAge", Vertex.class).addKey(age).buildCompositeIndex();
+        finishSchema();
+
+        String searchName = "someName";
+        Integer searchAge = 42;
+
+        // test with no valid constraints
+        assertEquals(false, IndexSelectionUtil.existsMatchingIndex(null));
+        assertEquals(false, IndexSelectionUtil.existsMatchingIndex(null, null));
+        assertEquals(false, IndexSelectionUtil.existsMatchingIndex(null, i -> true));
+
+        // test with two valid constraints
+        List<PredicateCondition<String, JanusGraphElement>> constraints = Arrays.asList(
+            new PredicateCondition<>("name", JanusGraphPredicateUtils.convert(P.eq(searchName).getBiPredicate()), searchName),
+            new PredicateCondition<>("age", JanusGraphPredicateUtils.convert(P.eq(searchAge).getBiPredicate()), searchAge)
+        );
+        MultiCondition<JanusGraphElement> conditions = QueryUtil.constraints2QNF((StandardJanusGraphTx) tx, constraints);
+        assertEquals(true, IndexSelectionUtil.existsMatchingIndex(conditions));
+        assertEquals(true, IndexSelectionUtil.existsMatchingIndex(conditions, i -> i.getName().equals("byAge")));
+        assertEquals(false, IndexSelectionUtil.existsMatchingIndex(conditions, i -> i.getName().equals("byNonExistentKey")));
+
+        // test with invalid filter
+        assertEquals(false, IndexSelectionUtil.existsMatchingIndex(conditions, null));
     }
 }

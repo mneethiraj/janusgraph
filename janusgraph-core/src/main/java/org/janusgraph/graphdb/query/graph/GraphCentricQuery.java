@@ -39,7 +39,7 @@ import java.util.Objects;
  *
  * @author Matthias Broecheler (me@matthiasb.com)
  */
-public class GraphCentricQuery extends BaseQuery implements ElementQuery<JanusGraphElement, JointIndexQuery>, ProfileObservable {
+public class GraphCentricQuery extends BaseQuery implements ElementQuery<JanusGraphElement, JointIndexQuery> {
 
     /**
      * The condition of this query, the result set is the set of all elements in the graph for which this
@@ -58,6 +58,8 @@ public class GraphCentricQuery extends BaseQuery implements ElementQuery<JanusGr
      * The type of element this query is asking for: vertex, edge, or property.
      */
     private final ElementCategory resultType;
+
+    private QueryProfiler profiler;
 
     public GraphCentricQuery(ElementCategory resultType, Condition<JanusGraphElement> condition, OrderList orders,
                              BackendQueryHolder<JointIndexQuery> indexQuery, int limit) {
@@ -156,9 +158,14 @@ public class GraphCentricQuery extends BaseQuery implements ElementQuery<JanusGr
 
     @Override
     public void observeWith(QueryProfiler profiler) {
+        this.profiler = profiler;
         profiler.setAnnotation(QueryProfiler.CONDITION_ANNOTATION,condition);
         profiler.setAnnotation(QueryProfiler.ORDERS_ANNOTATION,orders);
         if (hasLimit()) profiler.setAnnotation(QueryProfiler.LIMIT_ANNOTATION,getLimit());
         indexQuery.observeWith(profiler);
+    }
+
+    public QueryProfiler getProfiler() {
+        return profiler;
     }
 }

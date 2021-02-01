@@ -33,7 +33,7 @@ import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.IN
 public class JanusGraphElasticsearchContainer extends ElasticsearchContainer {
 
     private static final Integer ELASTIC_PORT = 9200;
-    private static final String DEFAULT_VERSION = "7.6.0";
+    private static final String DEFAULT_VERSION = "7.10.1";
     private static final String DEFAULT_IMAGE = "docker.elastic.co/elasticsearch/elasticsearch";
 
     public static ElasticMajorVersion getEsMajorVersion() {
@@ -95,11 +95,13 @@ public class JanusGraphElasticsearchContainer extends ElasticsearchContainer {
         return getMappedPort(ELASTIC_PORT);
     }
 
-    public ModifiableConfiguration setConfiguration(ModifiableConfiguration config, String index) {
-        config.set(INTERFACE, ElasticSearchSetup.REST_CLIENT.toString(), index);
-        config.set(INDEX_HOSTS, new String[]{getHostname()}, index);
-        config.set(INDEX_PORT, getPort(), index);
-        config.set(BULK_REFRESH, "wait_for", index);
+    public ModifiableConfiguration setConfiguration(ModifiableConfiguration config, String... indexBackends) {
+        for (String indexBackend : indexBackends) {
+            config.set(INTERFACE, ElasticSearchSetup.REST_CLIENT.toString(), indexBackend);
+            config.set(INDEX_HOSTS, new String[]{getHostname()}, indexBackend);
+            config.set(INDEX_PORT, getPort(), indexBackend);
+            config.set(BULK_REFRESH, "wait_for", indexBackend);
+        }
         return config;
     }
 }

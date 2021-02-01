@@ -66,10 +66,7 @@ import org.janusgraph.graphdb.internal.InternalRelationType;
 import org.janusgraph.graphdb.internal.InternalVertex;
 import org.janusgraph.graphdb.internal.InternalVertexLabel;
 import org.janusgraph.graphdb.query.QueryUtil;
-import org.janusgraph.graphdb.query.index.ApproximateIndexSelectionStrategy;
-import org.janusgraph.graphdb.query.index.BruteForceIndexSelectionStrategy;
 import org.janusgraph.graphdb.query.index.IndexSelectionStrategy;
-import org.janusgraph.graphdb.query.index.ThresholdBasedIndexSelectionStrategy;
 import org.janusgraph.graphdb.relations.EdgeDirection;
 import org.janusgraph.graphdb.tinkerpop.JanusGraphBlueprintsGraph;
 import org.janusgraph.graphdb.tinkerpop.JanusGraphFeatures;
@@ -79,6 +76,7 @@ import org.janusgraph.graphdb.tinkerpop.optimize.strategy.AdjacentVertexHasIdOpt
 import org.janusgraph.graphdb.tinkerpop.optimize.strategy.JanusGraphIoRegistrationStrategy;
 import org.janusgraph.graphdb.tinkerpop.optimize.strategy.JanusGraphLocalQueryOptimizerStrategy;
 import org.janusgraph.graphdb.tinkerpop.optimize.strategy.JanusGraphStepStrategy;
+import org.janusgraph.graphdb.tinkerpop.optimize.strategy.AdjacentVertexHasUniquePropertyOptimizerStrategy;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
 import org.janusgraph.graphdb.transaction.StandardTransactionBuilder;
 import org.janusgraph.graphdb.transaction.TransactionConfiguration;
@@ -106,6 +104,7 @@ public class StandardJanusGraph extends JanusGraphBlueprintsGraph {
                 .addStrategies(AdjacentVertexFilterOptimizerStrategy.instance(),
                                AdjacentVertexHasIdOptimizerStrategy.instance(),
                                AdjacentVertexIsOptimizerStrategy.instance(),
+                               AdjacentVertexHasUniquePropertyOptimizerStrategy.instance(),
                                JanusGraphLocalQueryOptimizerStrategy.instance(),
                                JanusGraphStepStrategy.instance(),
                                JanusGraphIoRegistrationStrategy.instance());
@@ -672,7 +671,7 @@ public class StandardJanusGraph extends JanusGraphBlueprintsGraph {
     private static final Predicate<InternalRelation> NO_FILTER = Predicates.alwaysTrue();
 
     public void commit(final Collection<InternalRelation> addedRelations,
-                     final Collection<InternalRelation> deletedRelations, final StandardJanusGraphTx tx) {
+                     final Collection<InternalRelation> deletedRelations, final StandardJanusGraphTx tx) throws BackendException {
         if (addedRelations.isEmpty() && deletedRelations.isEmpty()) return;
         //1. Finalize transaction
         log.debug("Saving transaction. Added {}, removed {}", addedRelations.size(), deletedRelations.size());
@@ -824,8 +823,7 @@ public class StandardJanusGraph extends JanusGraphBlueprintsGraph {
             } catch (Throwable e2) {
                 log.error("Could not roll-back transaction ["+transactionId+"] after failure due to exception",e2);
             }
-            if (e instanceof RuntimeException) throw (RuntimeException)e;
-            else throw new JanusGraphException("Unexpected exception",e);
+            throw e;
         }
     }
 
@@ -842,8 +840,7 @@ public class StandardJanusGraph extends JanusGraphBlueprintsGraph {
             log.debug("Shutting down graph {} using shutdown hook {}", graph, this);
 
             graph.closeInternal();
+            graph.shutdownHook = null;
         }
     }
-
-
 }

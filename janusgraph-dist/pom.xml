@@ -24,10 +24,14 @@
         <assembly.es.dir>${project.build.directory}/elasticsearch-${elasticsearch.version}</assembly.es.dir>
         <assembly.cassandra.dir>${project.build.directory}/apache-cassandra-${cassandra.version}</assembly.cassandra.dir>
 
+        <packname.standard>janusgraph-${project.version}</packname.standard>
+        <packname.full>janusgraph-full-${project.version}</packname.full>
+
         <!-- Variables for integration testing on release-candidate archive files -->
         <test.expect.dir>${project.build.directory}/test-classes</test.expect.dir>
-        <test.zipfile.path>${project.build.directory}/janusgraph-${project.version}.zip</test.zipfile.path>
-        <test.zipfile-full.path>${project.build.directory}/janusgraph-full-${project.version}.zip</test.zipfile-full.path>
+        <test.zipfile.path>${project.build.directory}/${packname.standard}.zip</test.zipfile.path>
+        <test.zipfile-full.path>${project.build.directory}/${packname.full}.zip</test.zipfile-full.path>
+        <build.full>package</build.full>
 
         <!-- RPM/DEB packaging -->
         <pkg.release>1</pkg.release>
@@ -74,6 +78,10 @@
                 <exclusion>
                     <groupId>org.apache.commons</groupId>
                     <artifactId>commons-compress</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.github.spotbugs</groupId>
+                    <artifactId>spotbugs-annotations</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
@@ -177,7 +185,7 @@
             <plugin>
                 <groupId>com.googlecode.maven-download-plugin</groupId>
                 <artifactId>download-maven-plugin</artifactId>
-                <version>1.5.0</version>
+                <version>1.6.1</version>
                 <executions>
                     <execution>
                         <id>get-elasticsearch</id>
@@ -280,7 +288,7 @@
                             <mainClass>org.janusgraph.util.system.ConfigurationPrinter</mainClass>
                             <arguments>
                                 <argument>org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.ROOT_NS</argument>
-                                <argument>${doc.dir}/basics/janusgraph-cfg.md</argument>
+                                <argument>${doc.dir}/configs/janusgraph-cfg.md</argument>
                             </arguments>
                         </configuration>
                     </execution>
@@ -307,16 +315,6 @@
                     </execution>
                     <execution>
                         <id>generate-janusgraph-gremlin-imports</id>
-                        <phase>none</phase>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <plugin>
-                <artifactId>maven-install-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>default-install</id>
                         <phase>none</phase>
                     </execution>
                 </executions>
@@ -378,7 +376,7 @@
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
                         <artifactId>build-helper-maven-plugin</artifactId>
-                        <version>1.8</version>
+                        <version>3.2.0</version>
                         <inherited>false</inherited>
                         <executions>
                             <execution>
@@ -680,21 +678,14 @@
                         <executions>
                             <execution>
                                 <id>assemble-full-distribution-archive</id>
-                                <phase>package</phase>
+                                <phase>${build.full}</phase>
                                 <goals>
                                     <goal>single</goal>
                                 </goals>
                                 <configuration>
                                     <!--
                                         We set attached=true so that the gpg plugin will
-                                        sign all of our assembly artifacts. We handle
-                                        deployment of the artifacts manually because
-                                        maven-deploy-plugin can't upload files to a flat
-                                        S3 directory; it insists on creating a
-                                        long/packagename/and/artifactid/and/version/
-                                        path at the destination before uploading, and we
-                                        don't want that for our files S3. codehaus's
-                                        wagon:upload plugin comes to our rescue.
+                                        sign all of our assembly artifacts.
                                     -->
                                     <attach>true</attach>
                                     <!--
@@ -702,7 +693,7 @@
                                         ${finalName}-${<id /> from assembly descriptor}.${archive
                                         format extension}
                                     -->
-                                    <finalName>janusgraph-full-${project.version}</finalName>
+                                    <finalName>${packname.full}</finalName>
                                     <appendAssemblyId>false</appendAssemblyId>
                                     <tarLongFileMode>gnu</tarLongFileMode>
                                     <descriptors>
@@ -722,14 +713,7 @@
                                 <configuration>
                                     <!--
                                         We set attached=true so that the gpg plugin will
-                                        sign all of our assembly artifacts. We handle
-                                        deployment of the artifacts manually because
-                                        maven-deploy-plugin can't upload files to a flat
-                                        S3 directory; it insists on creating a
-                                        long/packagename/and/artifactid/and/version/
-                                        path at the destination before uploading, and we
-                                        don't want that for our files S3. codehaus's
-                                        wagon:upload plugin comes to our rescue.
+                                        sign all of our assembly artifacts.
                                     -->
                                     <attach>true</attach>
                                     <!--
@@ -737,7 +721,7 @@
                                         ${finalName}-${<id /> from assembly descriptor}.${archive
                                         format extension}
                                     -->
-                                    <finalName>janusgraph-${project.version}</finalName>
+                                    <finalName>${packname.standard}</finalName>
                                     <appendAssemblyId>false</appendAssemblyId>
                                     <tarLongFileMode>gnu</tarLongFileMode>
                                     <descriptors>

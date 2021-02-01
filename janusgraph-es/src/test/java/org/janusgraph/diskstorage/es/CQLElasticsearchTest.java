@@ -16,49 +16,22 @@ package org.janusgraph.diskstorage.es;
 
 import org.janusgraph.JanusGraphCassandraContainer;
 import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
-import org.janusgraph.diskstorage.configuration.WriteConfiguration;
-import org.janusgraph.graphdb.JanusGraphIndexTest;
-import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
 import org.junit.jupiter.api.Disabled;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @Testcontainers
-public class CQLElasticsearchTest extends JanusGraphIndexTest {
-
-    @Container
-    private static JanusGraphElasticsearchContainer esr = new JanusGraphElasticsearchContainer();
+public class CQLElasticsearchTest extends ElasticsearchJanusGraphIndexTest {
 
     @Container
     private static JanusGraphCassandraContainer cql = new JanusGraphCassandraContainer();
 
-    public CQLElasticsearchTest() {
-        super(true, true, true);
-    }
-
     @Override
-    public WriteConfiguration getConfiguration() {
-        ModifiableConfiguration config = cql.getConfiguration(CQLElasticsearchTest.class.getName());
-        return esr.setConfiguration(config, INDEX)
-            .set(GraphDatabaseConfiguration.INDEX_MAX_RESULT_SET_SIZE, 3, INDEX)
-            .getConfiguration();
-    }
-
-    @Override
-    public boolean supportsLuceneStyleQueries() {
-        return true;
-    }
-    @Override
-    public boolean supportsWildcardQuery() {
-        return true;
-    }
-    @Override
-    protected boolean supportsCollections() {
-        return true;
+    public ModifiableConfiguration getStorageConfiguration() {
+        return cql.getConfiguration(CQLElasticsearchTest.class.getName());
     }
 
     @Override
     @Disabled("CQL seems to not clear storage correctly")
     public void testClearStorage() {}
-
 }

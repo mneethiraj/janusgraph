@@ -16,7 +16,6 @@ package org.janusgraph.graphdb.configuration;
 
 import org.janusgraph.core.*;
 import org.janusgraph.core.schema.DefaultSchemaMaker;
-import org.janusgraph.core.schema.LoggingSchemaMaker;
 import org.janusgraph.diskstorage.configuration.Configuration;
 import org.janusgraph.diskstorage.StandardIndexProvider;
 import org.janusgraph.diskstorage.StandardStoreManager;
@@ -26,10 +25,10 @@ import org.janusgraph.graphdb.query.index.ApproximateIndexSelectionStrategy;
 import org.janusgraph.graphdb.query.index.BruteForceIndexSelectionStrategy;
 import org.janusgraph.graphdb.query.index.IndexSelectionStrategy;
 import org.janusgraph.graphdb.query.index.ThresholdBasedIndexSelectionStrategy;
-import org.janusgraph.graphdb.tinkerpop.JanusGraphDefaultSchemaMaker;
-import org.janusgraph.graphdb.tinkerpop.Tp3DefaultSchemaMaker;
-import org.janusgraph.graphdb.types.typemaker.DisableDefaultSchemaMaker;
-import org.janusgraph.graphdb.types.typemaker.IgnorePropertySchemaMaker;
+import org.janusgraph.core.schema.JanusGraphDefaultSchemaMaker;
+import org.janusgraph.core.schema.Tp3DefaultSchemaMaker;
+import org.janusgraph.core.schema.DisableDefaultSchemaMaker;
+import org.janusgraph.core.schema.IgnorePropertySchemaMaker;
 import org.janusgraph.util.StringUtils;
 import org.janusgraph.util.stats.NumberUtil;
 import org.janusgraph.diskstorage.util.time.*;
@@ -47,7 +46,6 @@ import org.janusgraph.util.system.NetworkUtil;
 
 import org.apache.tinkerpop.gremlin.structure.Graph;
 
-import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -277,6 +275,11 @@ public class GraphDatabaseConfiguration {
                     ApproximateIndexSelectionStrategy.NAME, ThresholdBasedIndexSelectionStrategy.NAME),
             ConfigOption.Type.MASKABLE, ThresholdBasedIndexSelectionStrategy.NAME);
 
+    public static final ConfigOption<Boolean> OPTIMIZER_BACKEND_ACCESS = new ConfigOption<>(QUERY_NS, "optimizer-backend-access",
+            "Whether the optimizer should be allowed to fire backend queries during the optimization phase. Allowing these " +
+                "will give the optimizer a chance to find more efficient execution plan but also increase the optimization overhead.",
+            ConfigOption.Type.MASKABLE, true);
+
     public static final ConfigOption<Boolean> BATCH_PROPERTY_PREFETCHING = new ConfigOption<>(QUERY_NS,"batch-property-prefetch",
             "Whether to do a batched pre-fetch of all properties on adjacent vertices against the storage backend prior to evaluating a has condition against those vertices. " +
                     "Because these vertex properties will be loaded into the transaction-level cache of recently-used vertices when the condition is evaluated this can " +
@@ -293,9 +296,9 @@ public class GraphDatabaseConfiguration {
             "Configures the DefaultSchemaMaker to be used by this graph."
             + " Either one of the following shorthands can be used: <br>"
             + " - `default` (a blueprints compatible schema maker with MULTI edge labels and SINGLE property keys),<br>"
+            + " - `tp3` (same as default, but has LIST property keys),<br>"
             + " - `none` (automatic schema creation is disabled)<br>"
             + " - `ignore-prop` (same as none, but simply ignore unknown properties rather than throw exceptions)<br>"
-            + " - `logging` (same as default, but with a log done when an automatic schema creation is done)<br>"
             + " - or to the full package and classname of a custom/third-party implementing the"
             + " interface `org.janusgraph.core.schema.DefaultSchemaMaker`",
             ConfigOption.Type.MASKABLE, "default", new Predicate<String>() {
@@ -318,9 +321,14 @@ public class GraphDatabaseConfiguration {
             put("ignore-prop", IgnorePropertySchemaMaker.INSTANCE);
             put("default", JanusGraphDefaultSchemaMaker.INSTANCE);
             put("tp3", Tp3DefaultSchemaMaker.INSTANCE);
-            put("logging", LoggingSchemaMaker.DEFAULT_INSTANCE);
         }}
     );
+
+    public static final ConfigOption<Boolean> SCHEMA_MAKER_LOGGING = new ConfigOption<>(SCHEMA_NS, "logging",
+            "Controls whether logging is enabled for schema makers. This only takes effect if you set `schema.default` " +
+            "to `default` or `ignore-prop`. For `default` schema maker, warning messages will be logged before schema types " +
+            "are created automatically. For `ignore-prop` schema maker, warning messages will be logged before unknown properties " +
+            "are ignored.", ConfigOption.Type.MASKABLE, false);
 
     public static final ConfigOption<Boolean> SCHEMA_CONSTRAINTS = new ConfigOption<>(SCHEMA_NS, "constraints",
             "Configures the schema constraints to be used by this graph. If config 'schema.constraints' " +
@@ -1164,6 +1172,7 @@ public class GraphDatabaseConfiguration {
     private Boolean propertyPrefetching;
     private boolean adjustQueryLimit;
     private Boolean useMultiQuery;
+    private boolean optimizerBackendAccess;
     private IndexSelectionStrategy indexSelectionStrategy;
     private Boolean batchPropertyPrefetching;
     private boolean allowVertexIdSetting;
@@ -1250,6 +1259,10 @@ public class GraphDatabaseConfiguration {
 
     public boolean useMultiQuery() {
         return useMultiQuery;
+    }
+
+    public boolean optimizerBackendAccess() {
+        return optimizerBackendAccess;
     }
 
     public IndexSelectionStrategy getIndexSelectionStrategy() {
@@ -1356,6 +1369,8 @@ public class GraphDatabaseConfiguration {
         //Disable auto-type making when batch-loading is enabled since that may overwrite types without warning
         if (batchLoading) defaultSchemaMaker = DisableDefaultSchemaMaker.INSTANCE;
 
+        defaultSchemaMaker.enableLogging(configuration.get(SCHEMA_MAKER_LOGGING));
+
         hasDisabledSchemaConstraints = !configuration.get(SCHEMA_CONSTRAINTS);
 
         txVertexCacheSize = configuration.get(TX_CACHE_SIZE);
@@ -1372,6 +1387,7 @@ public class GraphDatabaseConfiguration {
         useMultiQuery = configuration.get(USE_MULTIQUERY);
         indexSelectionStrategy = Backend.getImplementationClass(configuration, configuration.get(INDEX_SELECT_STRATEGY),
             REGISTERED_INDEX_SELECTION_STRATEGIES);
+        optimizerBackendAccess = configuration.get(OPTIMIZER_BACKEND_ACCESS);
         batchPropertyPrefetching = configuration.get(BATCH_PROPERTY_PREFETCHING);
         adjustQueryLimit = configuration.get(ADJUST_LIMIT);
         allowVertexIdSetting = configuration.get(ALLOW_SETTING_VERTEX_ID);
