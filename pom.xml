@@ -91,9 +91,6 @@
         <jackson2.version>2.10.3</jackson2.version>
         <lucene-solr.version>7.7.2</lucene-solr.version>
         <elasticsearch.version>7.6.2</elasticsearch.version>
-        <eclipse.jpa.version>2.5.2</eclipse.jpa.version>
-        <javax.persistence.version>2.1.0</javax.persistence.version>
-        <postgresql.version>42.2.18</postgresql.version>
         <commons.beanutils.version>1.7.0</commons.beanutils.version>
         <commons.collections.version>3.2.2</commons.collections.version>
         <joda.version>2.8.2</joda.version>
@@ -146,7 +143,6 @@
         <module>janusgraph-bigtable</module>
         <module>janusgraph-es</module>
         <module>janusgraph-lucene</module>
-        <module>janusgraph-rdbms</module>
         <module>janusgraph-all</module>
         <module>janusgraph-dist</module>
         <module>janusgraph-doc</module>
