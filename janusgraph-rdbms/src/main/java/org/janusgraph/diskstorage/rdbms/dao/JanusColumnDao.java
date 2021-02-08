@@ -19,16 +19,22 @@
 package org.janusgraph.diskstorage.rdbms.dao;
 
 
+import org.eclipse.persistence.queries.ScrollableCursor;
+import org.janusgraph.diskstorage.Entry;
 import org.janusgraph.diskstorage.StaticBuffer;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyIterator;
 import org.janusgraph.diskstorage.rdbms.JanusColumnValue;
+import org.janusgraph.diskstorage.rdbms.RdbmsStore;
 import org.janusgraph.diskstorage.rdbms.RdbmsTransaction;
 import org.janusgraph.diskstorage.rdbms.entity.JanusColumn;
+import org.janusgraph.diskstorage.util.RecordIterator;
 import org.janusgraph.diskstorage.util.StaticArrayBuffer;
+import org.janusgraph.diskstorage.util.StaticArrayEntry;
 
+import javax.persistence.NoResultException;
+import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 
 /**
@@ -37,26 +43,36 @@ import java.util.Map;
  * @author Madhan Neethiraj &lt;madhan@apache.org&gt;
  */
 public class JanusColumnDao extends BaseDao<JanusColumn> {
-    public JanusColumnDao(RdbmsTransaction trx) {
+    private final RdbmsStore store;
+
+    public JanusColumnDao(RdbmsTransaction trx, RdbmsStore store) {
         super(trx);
+
+        this.store = store;
     }
 
     public void addOrUpdate(long keyId, byte[] name, byte[] val) {
-        int updateCount = this.update(keyId, name, val);
+        int updateCount = 0;
+
+        try {
+            Object existingColId = em.createNamedQuery("JanusColumn.getColumnIdByKeyIdAndName")
+                                     .setParameter("keyId", keyId)
+                                     .setParameter("name", name)
+                                     .getSingleResult();
+
+            if (existingColId instanceof Number) {
+                updateCount = em.createNamedQuery("JanusColumn.updateById")
+                                .setParameter("id", existingColId)
+                                .setParameter("val", val)
+                                .executeUpdate();
+            }
+        } catch (NoResultException excp) {
+            // ignore
+        }
 
         if (updateCount < 1) {
             super.create(new JanusColumn(keyId, name, val));
         }
-    }
-
-    public int update(long keyId, byte[] name, byte[] val) {
-        int ret = em.createNamedQuery("JanusColumn.updateByKeyIdAndName")
-                    .setParameter("keyId", keyId)
-                    .setParameter("name", name)
-                    .setParameter("val", val)
-                    .executeUpdate();
-
-        return ret;
     }
 
     public int remove(long keyId, byte[] name) {
@@ -79,36 +95,28 @@ public class JanusColumnDao extends BaseDao<JanusColumn> {
         return toColumnList(result);
     }
 
-    public Map<StaticBuffer, List<JanusColumnValue>> getKeysByColumnRange(long storeId, byte[] startColumn, byte[] endColumn, int limit) {
-        List<Object[]> result = em.createNamedQuery("JanusColumn.getColumnsByStoreIdColumnRange")
-                                  .setParameter("storeId", storeId)
-                                  .setParameter("startName", startColumn)
-                                  .setParameter("endName", endColumn)
-                                 /* TODO: limit is the number of columns to include for each key
-                                          setMaxResults() here will limit the number of rows
-                                          returned from DB - which will cause incorrect result
-                                  .setMaxResults(limit)
-                                  */
-                                  .getResultList();
+    public KeyIterator getKeysByColumnRange(long storeId, byte[] startColumn, byte[] endColumn, int limit) {
+        ScrollableCursor result = (ScrollableCursor) em.createNamedQuery("JanusColumn.getKeysByStoreIdColumnRange")
+                                                       .setParameter("storeId", storeId)
+                                                       .setParameter("startName", startColumn)
+                                                       .setParameter("endName", endColumn)
+                                                       .setHint("eclipselink.cursor.scrollable", true)
+                                                       .getResultList();
 
-        return toKeyColumns(result);
+        return toKeyColumns(result, limit);
     }
 
-    public Map<StaticBuffer, List<JanusColumnValue>> getKeysByKeyAndColumnRange(long storeId, byte[] startKey, byte[] endKey, byte[] startColumn, byte[] endColumn, int limit) {
-        List<Object[]> result = em.createNamedQuery("JanusColumn.getColumnsByStoreIdKeyRangeColumnRange")
-                                  .setParameter("storeId", storeId)
-                                  .setParameter("startKey", startKey)
-                                  .setParameter("endKey", endKey)
-                                  .setParameter("startName", startColumn)
-                                  .setParameter("endName", endColumn)
-                                 /* TODO: limit is the number of columns to include for each key
-                                          setMaxResults() here will limit the number of rows
-                                          returned from DB - which will cause incorrect result
-                                  .setMaxResults(limit)
-                                  */
-                                  .getResultList();
+    public KeyIterator getKeysByKeyAndColumnRange(long storeId, byte[] startKey, byte[] endKey, byte[] startColumn, byte[] endColumn, int limit) {
+        ScrollableCursor result = (ScrollableCursor) em.createNamedQuery("JanusColumn.getKeysByStoreIdKeyRangeColumnRange")
+                                                       .setParameter("storeId", storeId)
+                                                       .setParameter("startKey", startKey)
+                                                       .setParameter("endKey", endKey)
+                                                       .setParameter("startName", startColumn)
+                                                       .setParameter("endName", endColumn)
+                                                       .setHint("eclipselink.cursor.scrollable", true)
+                                                       .getSingleResult();
 
-        return toKeyColumns(result);
+        return toKeyColumns(result, limit);
     }
 
     private List<JanusColumnValue> toColumnList(List<Object[]> result) {
@@ -128,37 +136,185 @@ public class JanusColumnDao extends BaseDao<JanusColumn> {
         return ret;
     }
 
-    private Map<StaticBuffer, List<JanusColumnValue>> toKeyColumns(List<Object[]> result) {
-        Map<StaticBuffer, List<JanusColumnValue>> ret = null;
+    private KeyIterator toKeyColumns(ScrollableCursor keysResult, int limit) {
+        final KeyIterator ret;
 
-        if (result != null && !result.isEmpty()) {
-            Long                   currKeyId   = null;
-            StaticBuffer           currKey     = null;
-            List<JanusColumnValue> currColumns = null;
-
-            ret = new HashMap<>();
-
-            for (Object[] row : result) {
-                Long keyId = toLong(row[0]);
-
-                if (currKeyId == null || !currKeyId.equals(keyId)) {
-                    if (currKey != null && !currColumns.isEmpty()) {
-                        ret.put(currKey, currColumns);
-                    }
-
-                    currKeyId   = keyId;
-                    currKey     = StaticArrayBuffer.of(toByteArray(row[1]));
-                    currColumns = new ArrayList<>();
-                }
-
-                currColumns.add(new JanusColumnValue(toByteArray(row[2]), toByteArray(row[3])));
-            }
-
-            if (currKey != null && !currColumns.isEmpty()) {
-                ret.put(currKey, currColumns);
-            }
+        if (keysResult != null && keysResult.hasNext()) {
+            ret = new RdbmsKeyIterator(keysResult, limit);
+        } else {
+            ret = EMPTY_KEY_ITERATOR;
         }
 
         return ret;
     }
+
+
+    private class RdbmsKeyIterator implements KeyIterator {
+        private final ScrollableCursor rows;
+        private final int              limit;
+        private final Row              currKey   = new Row();
+        private final Row              nextKey   = new Row();
+        private       Long             prevKeyId = null;
+        private       boolean          isClosed  = false;
+
+        public RdbmsKeyIterator(ScrollableCursor rows, int limit) {
+            this.rows  = rows;
+            this.limit = limit;
+        }
+
+        @Override
+        public boolean hasNext() {
+            ensureOpen();
+
+            if (nextKey.keyId == null) {
+                while (rows.hasNext()) {
+                    Object[] nextRow = (Object[]) rows.next();
+                    Long     keyId   = toLong(nextRow[0]);
+
+                    if (prevKeyId != null && prevKeyId.equals(keyId)) { // ignore additional columns for this key
+                        continue;
+                    }
+
+                    nextKey.set(keyId, StaticArrayBuffer.of(toByteArray(nextRow[1])), new JanusColumnValue(toByteArray(nextRow[2]), toByteArray(nextRow[3])));
+
+                    break;
+                }
+            }
+
+            return nextKey.keyId != null;
+        }
+
+        @Override
+        public StaticBuffer next() {
+            ensureOpen();
+
+            prevKeyId = currKey.keyId;;
+
+            if (nextKey.keyId == null) {
+                hasNext();
+            }
+
+            currKey.copyFrom(nextKey);
+
+            nextKey.reset();
+
+            return currKey.key;
+        }
+
+        @Override
+        public RecordIterator<Entry> getEntries() {
+            ensureOpen();
+
+            return new RecordIterator<Entry>() {
+                private boolean isClosed = false;
+                private int     colCount = 0;
+
+                @Override
+                public boolean hasNext() {
+                    ensureOpen();
+
+                    if (currKey.column == null) {
+                        while (rows.hasNext()) {
+                            Object[] nextRow = (Object[]) rows.next();
+                            Long     keyId   = toLong(nextRow[0]);
+
+                            if (!keyId.equals(currKey.keyId)) {
+                                nextKey.set(keyId, StaticArrayBuffer.of(toByteArray(nextRow[1])), new JanusColumnValue(toByteArray(nextRow[2]), toByteArray(nextRow[3])));
+                                currKey.reset();
+
+                                break;
+                            } else if (colCount < limit) { // ignore additional columns for this key
+                                currKey.column = new JanusColumnValue(toByteArray(nextRow[2]), toByteArray(nextRow[3]));
+
+                                break;
+                            }
+                        }
+                    }
+
+                    return currKey.column != null;
+                }
+
+                @Override
+                public Entry next() {
+                    JanusColumnValue ret = currKey.column;
+
+                    currKey.column = null;
+                    colCount++;
+
+                    return StaticArrayEntry.ofStaticBuffer(ret, store.toEntry);
+                }
+
+                @Override
+                public void close() throws IOException {
+                    this.isClosed = true;
+                }
+
+                private void ensureOpen() {
+                    if (isClosed) {
+                        throw new IllegalStateException("Iterator has been closed.");
+                    }
+                }
+            };
+        }
+
+        @Override
+        public void close() throws IOException {
+            isClosed = true;
+
+            rows.close();
+        }
+
+        private void ensureOpen() {
+            if (isClosed) {
+                throw new IllegalStateException("Iterator has been closed.");
+            }
+        }
+
+        private class Row {
+            private Long             keyId;
+            private StaticBuffer     key;
+            private JanusColumnValue column;
+
+            Row() { }
+
+            Row(Long keyId, StaticBuffer key, JanusColumnValue column) {
+                this.keyId  = keyId;
+                this.key    = key;
+                this.column = column;
+            }
+
+            void copyFrom(Row other) {
+                this.keyId  = other.keyId;
+                this.key    = other.key;
+                this.column = other.column;
+            }
+
+            void set(Long keyId, StaticBuffer key, JanusColumnValue column) {
+                this.keyId  = keyId;
+                this.key    = key;
+                this.column = column;
+            }
+
+            void reset() {
+                this.keyId  = null;
+                this.key    = null;
+                this.column = null;
+            }
+        }
+    }
+
+    public static final KeyIterator EMPTY_KEY_ITERATOR = new KeyIterator() {
+        @Override
+        public RecordIterator<Entry> getEntries() { return null; }
+
+        @Override
+        public void close() throws IOException { }
+
+        @Override
+        public boolean hasNext() { return false; }
+
+        @Override
+        public StaticBuffer next() { return null; }
+    };
+
 }

@@ -112,7 +112,7 @@ public class RdbmsStoreManager extends AbstractStoreManager implements KeyColumn
     @Override
     public void mutateMany(Map<String, Map<StaticBuffer, KCVMutation>> map, StoreTransaction trx) throws BackendException {
         if (LOG.isDebugEnabled()) {
-            LOG.debug("==> RdbmsStoreManager.mutateMany(storeCount={})", map.size());
+            LOG.debug("==> RdbmsStoreManager.mutateMany(storeCount={}, trx={})", map.size(), trx);
         }
 
         for (Map.Entry<String, Map<StaticBuffer, KCVMutation>> storeEntry : map.entrySet()) {
@@ -125,7 +125,6 @@ public class RdbmsStoreManager extends AbstractStoreManager implements KeyColumn
 
                 store.mutate(key, mutation.getAdditions(), mutation.getDeletions(), trx);
             }
-
         }
 
         if (LOG.isDebugEnabled()) {

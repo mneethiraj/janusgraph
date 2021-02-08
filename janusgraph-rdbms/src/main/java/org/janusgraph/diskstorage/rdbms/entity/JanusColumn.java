@@ -28,7 +28,7 @@ import java.util.Objects;
  * @author Madhan Neethiraj &lt;madhan@apache.org&gt;
  */
 @Entity
-@Cacheable
+@Cacheable(false)
 @XmlRootElement
 @Table(name = "janus_column",
        indexes = {@Index(name="janus_column_idx_key_id", columnList = "key_id")},

@@ -22,7 +22,6 @@ package org.janusgraph.diskstorage.rdbms.dao;
 import org.janusgraph.diskstorage.rdbms.RdbmsTransaction;
 
 import javax.persistence.EntityManager;
-import java.util.List;
 
 
 /**
@@ -39,43 +38,8 @@ public abstract class BaseDao<T> {
 
     public T create(T obj) {
         em.persist(obj);
-        em.flush();
 
         return obj;
-    }
-
-    public List<T> create(List<T> objs) {
-        for (T obj : objs) {
-            em.persist(obj);
-        }
-
-        em.flush();
-
-        return objs;
-    }
-
-    public T update(T obj) {
-        em.merge(obj);
-        em.flush();
-
-        return obj;
-    }
-
-    public boolean remove(T obj) {
-        if (obj != null) {
-            if (!em.contains(obj)) {
-                obj = em.merge(obj);
-            }
-
-            em.remove(obj);
-            em.flush();
-        }
-
-        return true;
-    }
-
-    public void flush() {
-        em.flush();
     }
 
     protected Long toLong(Object obj) {

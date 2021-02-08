@@ -34,15 +34,12 @@ import org.janusgraph.diskstorage.rdbms.dao.JanusKeyDao;
 import org.janusgraph.diskstorage.rdbms.dao.JanusStoreDao;
 import org.janusgraph.diskstorage.rdbms.entity.JanusKey;
 import org.janusgraph.diskstorage.rdbms.entity.JanusStore;
-import org.janusgraph.diskstorage.util.RecordIterator;
 import org.janusgraph.diskstorage.util.StaticArrayEntry;
 import org.janusgraph.diskstorage.util.StaticArrayEntryList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -78,7 +75,7 @@ public class RdbmsStore implements KeyColumnValueStore {
         final EntryList ret;
 
         if (isStorePresent(trx)) {
-            JanusColumnDao         dao        = new JanusColumnDao((RdbmsTransaction) trx);
+            JanusColumnDao         dao        = new JanusColumnDao((RdbmsTransaction) trx, this);
             Long                   keyId      = getKeyIdOrCreate(toBytes(query.getKey()), trx);
             byte[]                 sliceStart = toBytes(query.getSliceStart());
             byte[]                 sliceEnd   = toBytes(query.getSliceEnd());
@@ -133,21 +130,16 @@ public class RdbmsStore implements KeyColumnValueStore {
 
         byte[]         keyName   = toBytes(key);
         Long           keyId     = getKeyIdOrCreate(keyName, trx);
-        JanusColumnDao columnDao = new JanusColumnDao((RdbmsTransaction) trx);
+        JanusColumnDao columnDao = new JanusColumnDao((RdbmsTransaction) trx, this);
 
-        if (deletions != null) {
-            for (StaticBuffer column : deletions) {
-                byte[] columnName = toBytes(column);
+        for (StaticBuffer column : deletions) {
+            byte[] columnName = toBytes(column);
 
-                columnDao.remove(keyId, columnName);
-            }
+            columnDao.remove(keyId, columnName);
         }
 
-        if (additions != null) {
-            for (Entry entry : additions) {
-                columnDao.addOrUpdate(keyId, toBytes(entry.getColumn()), toBytes(entry.getValue()));
-            }
-
+        for (Entry entry : additions) {
+            columnDao.addOrUpdate(keyId, toBytes(entry.getColumn()), toBytes(entry.getValue()));
         }
 
         if (LOG.isDebugEnabled()) {
@@ -169,12 +161,11 @@ public class RdbmsStore implements KeyColumnValueStore {
         final KeyIterator ret;
 
         if (isStorePresent(trx)) {
-            JanusColumnDao                            dao = new JanusColumnDao((RdbmsTransaction) trx);
-            Map<StaticBuffer, List<JanusColumnValue>> rows = dao.getKeysByKeyAndColumnRange(this.storeId, toBytes(query.getKeyStart()), toBytes(query.getKeyEnd()), toBytes(query.getSliceStart()), toBytes(query.getSliceEnd()), query.getLimit());
+            JanusColumnDao dao = new JanusColumnDao((RdbmsTransaction) trx, this);
 
-            ret = new RdbmsKeyIterator(rows, trx);
+            ret = dao.getKeysByKeyAndColumnRange(this.storeId, toBytes(query.getKeyStart()), toBytes(query.getKeyEnd()), toBytes(query.getSliceStart()), toBytes(query.getSliceEnd()), query.getLimit());
         } else {
-            ret = new RdbmsKeyIterator(Collections.emptyMap(), trx);
+            ret = JanusColumnDao.EMPTY_KEY_ITERATOR;
         }
 
         if (LOG.isDebugEnabled()) {
@@ -193,12 +184,11 @@ public class RdbmsStore implements KeyColumnValueStore {
         final KeyIterator ret;
 
         if (isStorePresent(trx)) {
-            JanusColumnDao                            dao  = new JanusColumnDao((RdbmsTransaction) trx);
-            Map<StaticBuffer, List<JanusColumnValue>> rows = dao.getKeysByColumnRange(this.storeId, toBytes(query.getSliceStart()), toBytes(query.getSliceEnd()), query.getLimit());
+            JanusColumnDao dao  = new JanusColumnDao((RdbmsTransaction) trx, this);
 
-            ret  = new RdbmsKeyIterator(rows, trx);
+            ret = dao.getKeysByColumnRange(this.storeId, toBytes(query.getSliceStart()), toBytes(query.getSliceEnd()), query.getLimit());
         } else {
-            ret = new RdbmsKeyIterator(Collections.emptyMap(), trx);
+            ret = JanusColumnDao.EMPTY_KEY_ITERATOR;
         }
 
         if (LOG.isDebugEnabled()) {
@@ -234,83 +224,6 @@ public class RdbmsStore implements KeyColumnValueStore {
         }
 
         return true;
-    }
-
-    private class RdbmsKeyIterator implements KeyIterator {
-        private final Iterator<Map.Entry<StaticBuffer, List<JanusColumnValue>>> rows;
-        private final StoreTransaction                                          trx;
-        private       Map.Entry<StaticBuffer, List<JanusColumnValue>>           currRow;
-        private       Map.Entry<StaticBuffer, List<JanusColumnValue>>           nextRow;
-        private       boolean                                                   isClosed = false;
-
-        public RdbmsKeyIterator(Map<StaticBuffer, List<JanusColumnValue>> rows, StoreTransaction trx) {
-            this.rows = rows.entrySet().iterator();
-            this.trx  = trx;
-        }
-
-        @Override
-        public boolean hasNext() {
-            ensureOpen();
-
-            if (nextRow == null) {
-                while (rows.hasNext()) {
-                    Map.Entry<StaticBuffer, List<JanusColumnValue>> nextRow = rows.next();
-
-                    if (nextRow.getValue() != null && !nextRow.getValue().isEmpty()) {
-                        this.nextRow = nextRow;
-
-                        break;
-                    }
-                }
-            }
-
-            return nextRow != null;
-        }
-
-        @Override
-        public StaticBuffer next() {
-            ensureOpen();
-
-            currRow = nextRow;
-            nextRow = null;
-
-            return currRow.getKey();
-        }
-
-        @Override
-        public RecordIterator<Entry> getEntries() {
-            ensureOpen();
-
-            return new RecordIterator<Entry>() {
-                private final Iterator<JanusColumnValue> colIter = currRow.getValue().iterator();
-
-                @Override
-                public boolean hasNext() {
-                    ensureOpen();
-
-                    return colIter.hasNext();
-                }
-
-                @Override
-                public Entry next() {
-                    return StaticArrayEntry.ofStaticBuffer(colIter.next(), toEntry);
-                }
-
-                @Override
-                public void close() throws IOException { }
-            };
-        }
-
-        @Override
-        public void close() throws IOException {
-            isClosed = true;
-        }
-
-        private void ensureOpen() {
-            if (isClosed) {
-                throw new IllegalStateException("Iterator has been closed.");
-            }
-        }
     }
 
 
@@ -394,7 +307,7 @@ public class RdbmsStore implements KeyColumnValueStore {
         return ret;
     }
 
-    StaticArrayEntry.GetColVal<JanusColumnValue, StaticBuffer> toEntry =
+    public final StaticArrayEntry.GetColVal<JanusColumnValue, StaticBuffer> toEntry =
             new StaticArrayEntry.GetColVal<JanusColumnValue, StaticBuffer>() {
                 @Override
                 public StaticBuffer getColumn(JanusColumnValue columnValue) {

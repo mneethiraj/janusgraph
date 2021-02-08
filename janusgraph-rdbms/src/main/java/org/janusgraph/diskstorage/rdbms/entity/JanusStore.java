@@ -28,7 +28,7 @@ import java.util.Objects;
  * @author Madhan Neethiraj &lt;madhan@apache.org&gt;
  */
 @Entity
-@Cacheable
+@Cacheable(false)
 @XmlRootElement
 @Table(name = "janus_store",
        uniqueConstraints = {@UniqueConstraint(name = "janus_store_uk_name", columnNames = {"name"})})
