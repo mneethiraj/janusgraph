@@ -84,7 +84,11 @@ public class JanusColumnDao extends BaseDao<JanusColumn> {
                                   .setParameter("storeId", storeId)
                                   .setParameter("startName", startColumn)
                                   .setParameter("endName", endColumn)
+                                 /* TODO: limit is the number of columns to include for each key
+                                          setMaxResults() here will limit the number of rows
+                                          returned from DB - which will cause incorrect result
                                   .setMaxResults(limit)
+                                  */
                                   .getResultList();
 
         return toKeyColumns(result);
@@ -97,7 +101,11 @@ public class JanusColumnDao extends BaseDao<JanusColumn> {
                                   .setParameter("endKey", endKey)
                                   .setParameter("startName", startColumn)
                                   .setParameter("endName", endColumn)
+                                 /* TODO: limit is the number of columns to include for each key
+                                          setMaxResults() here will limit the number of rows
+                                          returned from DB - which will cause incorrect result
                                   .setMaxResults(limit)
+                                  */
                                   .getResultList();
 
         return toKeyColumns(result);
