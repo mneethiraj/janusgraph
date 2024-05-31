@@ -26,6 +26,8 @@ import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStore;
 import org.janusgraph.diskstorage.keycolumnvalue.KeyIterator;
 import org.janusgraph.diskstorage.keycolumnvalue.KeyRangeQuery;
 import org.janusgraph.diskstorage.keycolumnvalue.KeySliceQuery;
+import org.janusgraph.diskstorage.keycolumnvalue.KeySlicesIterator;
+import org.janusgraph.diskstorage.keycolumnvalue.MultiSlicesQuery;
 import org.janusgraph.diskstorage.keycolumnvalue.SliceQuery;
 import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
 import org.janusgraph.diskstorage.rdbms.dao.DaoManager;
@@ -196,6 +198,11 @@ public class RdbmsStore implements KeyColumnValueStore {
         }
 
         return ret;
+    }
+
+    @Override
+    public KeySlicesIterator getKeys(MultiSlicesQuery query, StoreTransaction trx) throws BackendException {
+        throw new UnsupportedOperationException();
     }
 
     @Override

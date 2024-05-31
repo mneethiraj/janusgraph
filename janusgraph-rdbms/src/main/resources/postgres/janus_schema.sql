@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS janus_key(
     CONSTRAINT janus_key_fk_store FOREIGN KEY(store_id) REFERENCES janus_store(id) NOT VALID
 );
 CREATE INDEX IF NOT EXISTS idx_janus_key_store_id ON janus_key (store_id);
+CREATE INDEX IF NOT EXISTS idx_janus_key_name     ON janus_key (name);
 
 CREATE SEQUENCE IF NOT EXISTS janus_column_seq CACHE 1000;
 CREATE TABLE IF NOT EXISTS janus_column(
@@ -46,5 +47,6 @@ CREATE TABLE IF NOT EXISTS janus_column(
     CONSTRAINT janus_column_uk_key_name UNIQUE(key_id, name),
     CONSTRAINT janus_column_fk_key FOREIGN KEY(key_id) REFERENCES janus_key(id)
 );
-CREATE INDEX idx_janus_column_key_id ON janus_column (key_id);
+CREATE INDEX IF NOT EXISTS idx_janus_column_key_id ON janus_column (key_id);
+CREATE INDEX IF NOT EXISTS idx_janus_column_name   ON janus_column (name);
 
