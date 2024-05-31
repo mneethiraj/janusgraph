@@ -23,9 +23,7 @@ import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.*;
 import static org.janusgraph.graphdb.internal.RelationCategory.EDGE;
 import static org.janusgraph.graphdb.internal.RelationCategory.PROPERTY;
 import static org.janusgraph.graphdb.internal.RelationCategory.RELATION;
-import static org.janusgraph.testutil.JanusGraphAssert.assertCount;
-import static org.janusgraph.testutil.JanusGraphAssert.assertEmpty;
-import static org.janusgraph.testutil.JanusGraphAssert.assertNotEmpty;
+import static org.janusgraph.testutil.JanusGraphAssert.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -50,9 +48,11 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -67,26 +67,11 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import org.apache.tinkerpop.gremlin.process.traversal.P;
-import org.apache.tinkerpop.gremlin.process.traversal.Step;
 import org.apache.tinkerpop.gremlin.process.traversal.TextP;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
-import org.apache.tinkerpop.gremlin.process.traversal.TraversalStrategies;
-import org.apache.tinkerpop.gremlin.process.traversal.TraversalStrategy;
-import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
-import org.apache.tinkerpop.gremlin.process.traversal.step.branch.ChooseStep;
-import org.apache.tinkerpop.gremlin.process.traversal.step.branch.LocalStep;
-import org.apache.tinkerpop.gremlin.process.traversal.step.branch.OptionalStep;
-import org.apache.tinkerpop.gremlin.process.traversal.step.branch.RepeatStep;
-import org.apache.tinkerpop.gremlin.process.traversal.step.branch.UnionStep;
-import org.apache.tinkerpop.gremlin.process.traversal.step.filter.TraversalFilterStep;
-import org.apache.tinkerpop.gremlin.process.traversal.step.map.GraphStep;
-import org.apache.tinkerpop.gremlin.process.traversal.step.map.OrderGlobalStep;
-import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.StartStep;
-import org.apache.tinkerpop.gremlin.process.traversal.util.DefaultTraversalStrategies;
 import org.apache.tinkerpop.gremlin.process.traversal.util.Metrics;
-import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalMetrics;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Property;
@@ -120,6 +105,9 @@ import org.janusgraph.core.log.Change;
 import org.janusgraph.core.log.LogProcessorFramework;
 import org.janusgraph.core.log.TransactionRecovery;
 import org.janusgraph.core.schema.ConsistencyModifier;
+import org.janusgraph.core.schema.DisableDefaultSchemaMaker;
+import org.janusgraph.core.schema.IgnorePropertySchemaMaker;
+import org.janusgraph.core.schema.JanusGraphDefaultSchemaMaker;
 import org.janusgraph.core.schema.JanusGraphIndex;
 import org.janusgraph.core.schema.JanusGraphManagement;
 import org.janusgraph.core.schema.JanusGraphSchemaType;
@@ -135,6 +123,7 @@ import org.janusgraph.diskstorage.configuration.ConfigElement;
 import org.janusgraph.diskstorage.configuration.ConfigOption;
 import org.janusgraph.diskstorage.configuration.WriteConfiguration;
 import org.janusgraph.diskstorage.keycolumnvalue.scan.ScanMetrics;
+import org.janusgraph.diskstorage.locking.PermanentLockingException;
 import org.janusgraph.diskstorage.log.Log;
 import org.janusgraph.diskstorage.log.Message;
 import org.janusgraph.diskstorage.log.MessageReader;
@@ -159,7 +148,12 @@ import org.janusgraph.graphdb.internal.RelationCategory;
 import org.janusgraph.graphdb.log.StandardTransactionLogProcessor;
 import org.janusgraph.graphdb.olap.job.IndexRemoveJob;
 import org.janusgraph.graphdb.olap.job.IndexRepairJob;
+import org.janusgraph.graphdb.query.JanusGraphPredicateUtils;
+import org.janusgraph.graphdb.query.QueryUtil;
+import org.janusgraph.graphdb.query.condition.MultiCondition;
+import org.janusgraph.graphdb.query.condition.PredicateCondition;
 import org.janusgraph.graphdb.query.graph.GraphCentricQueryBuilder;
+import org.janusgraph.graphdb.query.index.IndexSelectionUtil;
 import org.janusgraph.graphdb.query.profile.QueryProfiler;
 import org.janusgraph.graphdb.query.profile.SimpleQueryProfiler;
 import org.janusgraph.graphdb.query.vertex.BasicVertexCentricQueryBuilder;
@@ -171,11 +165,6 @@ import org.janusgraph.graphdb.schema.SchemaContainer;
 import org.janusgraph.graphdb.schema.VertexLabelDefinition;
 import org.janusgraph.graphdb.serializer.SpecialInt;
 import org.janusgraph.graphdb.serializer.SpecialIntSerializer;
-import org.janusgraph.graphdb.tinkerpop.optimize.AdjacentVertexHasIdOptimizerStrategy;
-import org.janusgraph.graphdb.tinkerpop.optimize.AdjacentVertexIsOptimizerStrategy;
-import org.janusgraph.graphdb.tinkerpop.optimize.JanusGraphPropertiesStep;
-import org.janusgraph.graphdb.tinkerpop.optimize.JanusGraphStep;
-import org.janusgraph.graphdb.tinkerpop.optimize.JanusGraphVertexStep;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
 import org.janusgraph.graphdb.types.StandardEdgeLabelMaker;
 import org.janusgraph.graphdb.types.StandardPropertyKeyMaker;
@@ -1343,11 +1332,11 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
     }
 
     /**
-     * Tests the automatic creation of types
+     * Tests the automatic creation of types for default schema maker
+     * {@link JanusGraphDefaultSchemaMaker}
      */
     @Test
-    public void testAutomaticTypeCreation() {
-        assertFalse(tx.containsVertexLabel("person"));
+    public void testDefaultSchemaMaker() {
         assertFalse(tx.containsVertexLabel("person"));
         assertFalse(tx.containsRelationType("value"));
         assertNull(tx.getPropertyKey("value"));
@@ -1361,19 +1350,101 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
         Edge e = v.addEdge("knows", v);
         assertTrue(tx.containsRelationType("knows"));
         assertNotNull(tx.getEdgeLabel(e.label()));
+    }
 
+    /**
+     * Tests {@link DisableDefaultSchemaMaker} which throws Exceptions for
+     * unknown labels and properties
+     */
+    @Test
+    public void testDisableDefaultSchemaMaker() {
         clopen(option(AUTO_TYPE), "none");
+        EdgeLabel has = mgmt.makeEdgeLabel("has").make();
+        mgmt.makePropertyKey("prop").dataType(Integer.class).make();
+        mgmt.commit();
 
-        assertTrue(tx.containsRelationType("value"));
-        assertTrue(tx.containsVertexLabel("person"));
-        assertTrue(tx.containsRelationType("knows"));
+        JanusGraphVertex v = tx.addVertex();
+        JanusGraphEdge e = v.addEdge("has", v);
+        Exception exception;
 
-        final Vertex v1 = getV(tx, v);
+        // Cannot create new labels
+        exception = assertThrows(IllegalArgumentException.class, () -> tx.addVertex("org"));
+        assertEquals("Vertex Label with given name does not exist: org", exception.getMessage());
 
-        //Cannot create new labels
-        assertThrows(IllegalArgumentException.class, () -> tx.addVertex("org"));
-        assertThrows(IllegalArgumentException.class, () -> v1.property("bla", 5));
-        assertThrows(IllegalArgumentException.class, () -> v1.addEdge("blub", v1));
+        exception = assertThrows(IllegalArgumentException.class, () -> v.addEdge("blub", v));
+        assertEquals("Edge Label with given name does not exist: blub", exception.getMessage());
+
+        v.property("prop", 6);
+        e.property("prop", 6);
+        // Cannot create new property
+        String errorMsg = "Property Key with given name does not exist: bla";
+        exception = assertThrows(IllegalArgumentException.class, () -> v.property("bla", 5));
+        assertEquals(errorMsg, exception.getMessage());
+        exception = assertThrows(IllegalArgumentException.class, () -> v.property("bla", 5).element().property("prop", 6));
+        assertEquals(errorMsg, exception.getMessage());
+        exception = assertThrows(IllegalArgumentException.class, () -> v.property("prop", 6).element().property("bla", 5));
+        assertEquals(errorMsg, exception.getMessage());
+        exception = assertThrows(IllegalArgumentException.class, () -> e.property("bla", 5));
+        assertEquals(errorMsg, exception.getMessage());
+        exception = assertThrows(IllegalArgumentException.class, () -> e.property("bla", 5).element().property("prop", 6));
+        assertEquals(errorMsg, exception.getMessage());
+        exception = assertThrows(IllegalArgumentException.class, () -> e.property("prop", 6).element().property("bla", 5));
+        assertEquals(errorMsg, exception.getMessage());
+    }
+
+    /**
+     * Tests {@link IgnorePropertySchemaMaker} which ignores unknown properties
+     * without throwing exceptions
+     */
+    @Test
+    public void testIgnorePropertySchemaMaker() {
+        clopen(option(AUTO_TYPE), "ignore-prop");
+        EdgeLabel has = mgmt.makeEdgeLabel("has").make();
+        mgmt.makePropertyKey("prop").dataType(Integer.class).make();
+        mgmt.makePropertyKey("beta").dataType(Boolean.class).make();
+        mgmt.commit();
+
+        GraphTraversalSource g = graph.traversal();
+        JanusGraphVertex v = graph.addVertex();
+        JanusGraphEdge e = v.addEdge("has", v);
+
+        // Cannot create new labels
+        assertThrows(IllegalArgumentException.class, () -> graph.addVertex("org"));
+        assertThrows(IllegalArgumentException.class, () -> v.addEdge("blub", v));
+
+        graph.tx().commit();
+
+        // unknown vertex properties are ignored
+        Vertex v1 = g.V().next();
+        g.V(v1).property("prop", 6).property("bla", 1).property("unknown", "value").next();
+        Vertex v2 = graph.addVertex("bla", 1, "prop", 2, "unknown", "value");
+        Vertex v3 = g.addV().property("bla", 1).property("prop", 1).property("unknown", "value").next();
+        assertEquals(1, g.V(v1).valueMap().next().size());
+        assertEquals(1, g.V(v2).valueMap().next().size());
+        assertEquals(1, g.V(v3).valueMap().next().size());
+
+        // unknown edge properties are ignored
+        g.E(e).property("bla", 5).property("prop", 1).property("unknown", "value").next();
+        assertEquals(1, g.E(e).valueMap().next().size());
+
+        // unknown meta-properties (properties of properties) are ignored
+        v2.property("prop").property("meta-prop", "val");
+        v3.property("prop").property("beta", true);
+        assertEquals(0, g.V(v2).properties("prop").valueMap().next().size());
+        assertEquals(1, g.V(v3).properties("prop").valueMap().next().size());
+
+        graph.tx().commit();
+
+        tx = graph.newTransaction();
+        assertNotNull(tx.getOrCreatePropertyKey("prop"));
+        assertTrue(tx.containsRelationType("prop"));
+        assertNotNull(tx.getOrCreatePropertyKey("beta"));
+        assertTrue(tx.containsRelationType("beta"));
+
+        assertNull(tx.getOrCreatePropertyKey("bla"));
+        assertFalse(tx.containsRelationType("bla"));
+        assertNull(tx.getOrCreatePropertyKey("meta-prop"));
+        assertFalse(tx.containsRelationType("meta-prop"));
     }
 
     @Test
@@ -2875,7 +2946,7 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
 
     /**
      * Executes a transaction job in two parallel transactions under the assumptions that the two transactions
-     * should conflict and the one committed later should throw a locking exception.
+     * should conflict and the one committed later should throw a locking exception due to mismatch of expected value.
      *
      * @param graph
      * @param job
@@ -2889,23 +2960,27 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
          * Under pessimistic locking, tx1 should abort and tx2 should commit.
          * Under optimistic locking, tx1 may commit and tx2 may abort.
          */
+        JanusGraphException janusGraphException;
         if (isLockingOptimistic()) {
             tx1.commit();
-            try {
-                tx2.commit();
-                fail("Storage backend does not abort conflicting transactions");
-            } catch (JanusGraphException ignored) {
-            }
+            janusGraphException = assertThrows(JanusGraphException.class, () -> tx2.commit());
         } else {
-            try {
-                tx1.commit();
-                fail("Storage backend does not abort conflicting transactions");
-            } catch (JanusGraphException ignored) {
-            }
+            janusGraphException = assertThrows(JanusGraphException.class, () -> tx1.commit());
             tx2.commit();
         }
+        Throwable rootCause = janusGraphException.getCause().getCause();
+        assertTrue(rootCause instanceof PermanentLockingException);
+        assertTrue(rootCause.getMessage().contains("Expected value mismatch for"));
     }
 
+    /**
+     * Execute multiple identical transactions concurrently. Note that since these transactions are running in the same process,
+     * {@link org.janusgraph.diskstorage.locking.LocalLockMediator} is used to resolve lock contentions. If there is only
+     * one lock needed in the whole transaction, exactly one transaction shall succeed and others shall fail due to local
+     * lock contention. If there is more than one lock needed in the transaction, at most one transaction shall succeed
+     * and others shall fail due to local lock contention.
+     * @throws Exception
+     */
     @Test
     public void testConcurrentConsistencyEnforcement() throws Exception {
         PropertyKey name = mgmt.makePropertyKey("name").dataType(String.class).cardinality(Cardinality.SINGLE).make();
@@ -2923,25 +2998,33 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
         final String nameA = "a", nameB = "b";
         final int parallelThreads = 4;
 
-        int numSuccess = executeParallelTransactions(tx -> {
+        // Only one lock is needed
+        int[] results = executeParallelTransactions(tx -> {
             final JanusGraphVertex a = tx.addVertex();
             final JanusGraphVertex base = getV(tx, baseVid);
             base.addEdge("married", a);
         }, parallelThreads);
+        int numOfSuccess = results[0];
+        int numOfLockContentions = results[1];
+        assertEquals(1, numOfSuccess);
+        assertEquals(parallelThreads - 1, numOfLockContentions);
 
-        assertTrue(numSuccess <= 1, "At most 1 tx should succeed: " + numSuccess);
-
-        numSuccess = executeParallelTransactions(tx -> {
+        // Two locks are needed. Note that the order of adding/modifying/deleting elements might not be consistent with
+        // the order of real mutations during commit. Thus, it can be the case that one thread gets one lock and another
+        // thread gets another, and both fail because they are unable to get the other lock.
+        results = executeParallelTransactions(tx -> {
             tx.addVertex("name", nameA);
             final JanusGraphVertex b = tx.addVertex("name", nameB);
             b.addEdge("friend", b);
         }, parallelThreads);
+        numOfSuccess = results[0];
+        numOfLockContentions = results[1];
+        assertTrue(numOfSuccess <= 1);
+        assertEquals(parallelThreads - numOfSuccess, numOfLockContentions);
 
         newTx();
         final long numA = Iterables.size(tx.query().has("name", nameA).vertices());
         final long numB = Iterables.size(tx.query().has("name", nameB).vertices());
-//        System.out.println(numA + " - " + numB);
-        assertTrue(numSuccess <= 1, "At most 1 tx should succeed: " + numSuccess);
         assertTrue(numA <= 1);
         assertTrue(numB <= 1);
     }
@@ -2955,23 +3038,36 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
         if (tx.isOpen()) tx.rollback();
     }
 
-    private int executeParallelTransactions(final TransactionJob job, int number) {
-        final CountDownLatch startLatch = new CountDownLatch(number);
-        final CountDownLatch finishLatch = new CountDownLatch(number);
+    /**
+     * Execute multiple transactions in different threads concurrently to test locking
+     * @param job A transaction job which triggers locking
+     * @param concurrency Number of threads, each of which runs a transaction
+     * @return [number of successful transactions, number of transactions failed due to local lock contention]
+     */
+    private int[] executeParallelTransactions(final TransactionJob job, int concurrency) {
+        final CountDownLatch startLatch = new CountDownLatch(concurrency);
+        final CountDownLatch finishLatch = new CountDownLatch(concurrency);
         final AtomicInteger txSuccess = new AtomicInteger(0);
-        for (int i = 0; i < number; i++) {
+        final AtomicInteger lockingExCount = new AtomicInteger(0);
+        for (int i = 0; i < concurrency; i++) {
             new Thread() {
                 @Override
                 public void run() {
-                    awaitAllThreadsReady();
                     JanusGraphTransaction tx = graph.newTransaction();
                     try {
                         job.run(tx);
+                        // we force all threads to wait until they are all ready to commit, so that we can test lock
+                        // contention
+                        awaitAllThreadsReady();
                         tx.commit();
                         txSuccess.incrementAndGet();
                     } catch (Exception ex) {
                         ex.printStackTrace();
                         if (tx.isOpen()) tx.rollback();
+                        if (ex.getCause() instanceof PermanentLockingException &&
+                            ex.getCause().getMessage().contains("Local lock contention")) {
+                            lockingExCount.incrementAndGet();
+                        }
                     } finally {
                         finishLatch.countDown();
                     }
@@ -2993,7 +3089,7 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-        return txSuccess.get();
+        return new int[] {txSuccess.get(), lockingExCount.get()};
     }
 
    /* ==================================================================================
@@ -4327,24 +4423,7 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
     }
 
     @Test
-    public void testTinkerPopOptimizationStrategies() {
-        PropertyKey id = mgmt.makePropertyKey("id").cardinality(Cardinality.SINGLE).dataType(Integer.class).make();
-        PropertyKey weight = mgmt.makePropertyKey("weight").cardinality(Cardinality.SINGLE).dataType(Integer.class).make();
-
-        mgmt.buildIndex("byId", Vertex.class).addKey(id).buildCompositeIndex();
-        mgmt.buildIndex("byWeight", Vertex.class).addKey(weight).buildCompositeIndex();
-        mgmt.buildIndex("byIdWeight", Vertex.class).addKey(id).addKey(weight).buildCompositeIndex();
-
-        EdgeLabel knows = mgmt.makeEdgeLabel("knows").make();
-        mgmt.buildEdgeIndex(knows, "byWeightDesc", Direction.OUT, desc, weight);
-        mgmt.buildEdgeIndex(knows, "byWeightAsc", Direction.OUT, asc, weight);
-
-        PropertyKey names = mgmt.makePropertyKey("names").cardinality(Cardinality.LIST).dataType(String.class).make();
-        mgmt.buildPropertyIndex(names, "namesByWeight", desc, weight);
-
-        finishSchema();
-
-
+    public void testMultiQueryMetricsWhenReadingFromBackend() {
         int numV = 100;
         JanusGraphVertex[] vs = new JanusGraphVertex[numV];
         for (int i = 0; i < numV; i++) {
@@ -4361,228 +4440,11 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
             }
         }
 
-        Traversal t;
+        clopen(option(USE_MULTIQUERY), true);
         GraphTraversalSource gts = graph.traversal();
 
-        //Edge
-        assertNumStep(numV / 5, 1, gts.V(sv[0]).outE("knows").has("weight", 1), JanusGraphVertexStep.class);
-        assertNumStep(numV, 1, gts.V(sv[0]).outE("knows"), JanusGraphVertexStep.class);
-        assertNumStep(numV, 1, gts.V(sv[0]).out("knows"), JanusGraphVertexStep.class);
-        assertNumStep(10, 1, gts.V(sv[0]).local(__.outE("knows").limit(10)), JanusGraphVertexStep.class);
-        assertNumStep(10, 1, gts.V(sv[0]).local(__.outE("knows").range(10, 20)), LocalStep.class);
-        assertNumStep(numV, 2, gts.V(sv[0]).outE("knows").order().by("weight", desc), JanusGraphVertexStep.class, OrderGlobalStep.class);
-        // Ensure the LocalStep is dropped because the Order can be folded in the JanusGraphVertexStep which in turn
-        // will allow JanusGraphLocalQueryOptimizationStrategy to drop the LocalStep as the local ordering will be
-        // provided by the single JanusGraphVertex step
-        assertNumStep(10, 0, gts.V(sv[0]).local(__.outE("knows").order().by("weight", desc).limit(10)), LocalStep.class);
-        assertNumStep(numV / 5, 2, gts.V(sv[0]).outE("knows").has("weight", 1).order().by("weight", asc), JanusGraphVertexStep.class, OrderGlobalStep.class);
-        assertNumStep(10, 0, gts.V(sv[0]).local(__.outE("knows").has("weight", 1).order().by("weight", asc).limit(10)), LocalStep.class);
-        // Note that for this test, the upper offset of the range will be folded into the JanusGraphVertexStep
-        // by JanusGraphLocalQueryOptimizationStrategy, but not the lower offset. The RangeGlobalStep will in turn be kept
-        // to enforce this lower bound and the LocalStep will be left as is as the local behavior will have not been
-        // entirely subsumed by the JanusGraphVertexStep
-        assertNumStep(5, 1, gts.V(sv[0]).local(__.outE("knows").has("weight", 1).has("weight", 1).order().by("weight", asc).range(10, 15)), LocalStep.class);
-        
-        // is() optimization within filter
-        assertNumStep(1, 1, gts.V(sv[0]).outE("knows").filter(__.inV().is(vs[50])), JanusGraphVertexStep.class, TraversalFilterStep.class);
-        assertNumStep(1, 1, gts.V(sv[0]).outE("knows").filter(__.otherV().is(vs[50])), JanusGraphVertexStep.class, TraversalFilterStep.class);
-        assertNumStep(1, 1, gts.V(sv[0]).bothE("knows").filter(__.otherV().is(vs[50])), JanusGraphVertexStep.class, TraversalFilterStep.class);
-        assertNumStep(1, 2, gts.V(sv[0]).bothE("knows").filter(__.inV().is(vs[50])), JanusGraphVertexStep.class, TraversalFilterStep.class);
-
-        // hasId() optimization within filter
-        assertNumStep(1, 1, gts.V(sv[0]).outE("knows").filter(__.inV().hasId(vs[50].id())), JanusGraphVertexStep.class, TraversalFilterStep.class);
-        assertNumStep(1, 1, gts.V(sv[0]).outE("knows").filter(__.otherV().hasId(vs[50].id())), JanusGraphVertexStep.class, TraversalFilterStep.class);
-        assertNumStep(1, 1, gts.V(sv[0]).bothE("knows").filter(__.otherV().hasId(vs[50].id())), JanusGraphVertexStep.class, TraversalFilterStep.class);
-        assertNumStep(1, 2, gts.V(sv[0]).bothE("knows").filter(__.inV().hasId(vs[50].id())), JanusGraphVertexStep.class, TraversalFilterStep.class);
-
-        // AdjacentVertexIsOptimizer outE/inE/bothE
-        assertOptimization(gts.V(sv[0]).outE("knows").has(ImplicitKey.ADJACENT_ID.name(), vs[50]).inV(),
-                           gts.V(sv[0]).outE("knows").inV().is(vs[50]),
-                           AdjacentVertexIsOptimizerStrategy.instance());
-        assertOptimization(gts.V(sv[0]).inE("knows").has(ImplicitKey.ADJACENT_ID.name(), vs[50]).outV(),
-                           gts.V(sv[0]).inE("knows").outV().is(vs[50]),
-                           AdjacentVertexIsOptimizerStrategy.instance());
-        assertOptimization(gts.V(sv[0]).bothE("knows").has(ImplicitKey.ADJACENT_ID.name(), vs[50]).otherV(),
-                           gts.V(sv[0]).bothE("knows").otherV().is(vs[50]),
-                           AdjacentVertexIsOptimizerStrategy.instance());
-
-        // AdjacentVertexIsOptimizer out/in/both
-        assertOptimization(gts.V(sv[0]).outE("knows").has(ImplicitKey.ADJACENT_ID.name(), vs[50]).inV(),
-                           gts.V(sv[0]).out("knows").is(vs[50]),
-                           AdjacentVertexIsOptimizerStrategy.instance());
-        assertOptimization(gts.V(sv[0]).inE("knows").has(ImplicitKey.ADJACENT_ID.name(), vs[50]).outV(),
-                           gts.V(sv[0]).in("knows").is(vs[50]),
-                           AdjacentVertexIsOptimizerStrategy.instance());
-        assertOptimization(gts.V(sv[0]).bothE("knows").has(ImplicitKey.ADJACENT_ID.name(), vs[50]).otherV(),
-                           gts.V(sv[0]).both("knows").is(vs[50]),
-                           AdjacentVertexIsOptimizerStrategy.instance());
-
-        // Result should stay the same
-        assertSameResultWithOptimizations(gts.V(sv[0]).as("v1").out("knows").is(vs[50]).as("v2").select("v1", "v2").by("id"),
-            AdjacentVertexIsOptimizerStrategy.instance());
-
-        // AdjacentVertexHasIdOptimizer outE/inE/bothE
-        assertOptimization(gts.V(sv[0]).outE("knows").has(ImplicitKey.ADJACENT_ID.name(), vs[50]).inV(),
-                           gts.V(sv[0]).outE("knows").inV().hasId(vs[50]),
-                           AdjacentVertexHasIdOptimizerStrategy.instance());
-        assertOptimization(gts.V(sv[0]).inE("knows").has(ImplicitKey.ADJACENT_ID.name(), vs[50]).outV(),
-                           gts.V(sv[0]).inE("knows").outV().hasId(vs[50]),
-                           AdjacentVertexHasIdOptimizerStrategy.instance());
-        assertOptimization(gts.V(sv[0]).bothE("knows").has(ImplicitKey.ADJACENT_ID.name(), vs[50]).otherV(),
-                           gts.V(sv[0]).bothE("knows").otherV().hasId(vs[50]),
-                           AdjacentVertexHasIdOptimizerStrategy.instance());
-
-        // AdjacentVertexHasIdOptimizer out/in/both
-        assertOptimization(gts.V(sv[0]).outE("knows").has(ImplicitKey.ADJACENT_ID.name(), vs[50]).inV(),
-                           gts.V(sv[0]).out("knows").hasId(vs[50]),
-                           AdjacentVertexHasIdOptimizerStrategy.instance());
-        assertOptimization(gts.V(sv[0]).inE("knows").has(ImplicitKey.ADJACENT_ID.name(), vs[50]).outV(),
-                           gts.V(sv[0]).in("knows").hasId(vs[50]),
-                           AdjacentVertexHasIdOptimizerStrategy.instance());
-        assertOptimization(gts.V(sv[0]).bothE("knows").has(ImplicitKey.ADJACENT_ID.name(), vs[50]).otherV(),
-                           gts.V(sv[0]).both("knows").hasId(vs[50]),
-                           AdjacentVertexHasIdOptimizerStrategy.instance());
-
-        // neq should not be optimized
-        assertOptimization(gts.V(sv[0]).in().hasId(P.neq(vs[50])),
-                           gts.V(sv[0]).in().hasId(P.neq(vs[50])),
-                           AdjacentVertexHasIdOptimizerStrategy.instance());
-
-        // Result should stay the same
-        assertSameResultWithOptimizations(gts.V(sv[0]).as("v1").out("knows").hasId(vs[50].id()).as("v2").select("v1", "v2").by("id"),
-            AdjacentVertexHasIdOptimizerStrategy.instance());
-
-        int[] loop1 = {0}; // repeat starts from vertex with id 0 and goes in to the sv[0] vertex then loops back out to the vertex with the next id
-        int[] loop2 = {0};
-        GraphTraversal t1 = gts.V(vs[0], vs[1], vs[2])
-                           .repeat(__.inE("knows")
-                                       .has(ImplicitKey.ADJACENT_ID.name(), sv[0].id())
-                                       .outV()
-                                        //.outE("knows")
-                                        //.inV()
-                                       .out("knows") // TINKERPOP-2342
-                                       .sideEffect(e -> loop1[0] = e.loops())
-                                       .has("id", loop1[0]))
-                           .times(numV);
-        GraphTraversal t2 = gts.V(vs[0], vs[1], vs[2])
-                           .repeat(__.inE("knows")
-                                       .outV()
-                                       .hasId(sv[0].id())
-                                        //.outE("knows")
-                                        //.inV()
-                                       .out("knows") // TINKERPOP-2342
-                                       .sideEffect(e -> loop2[0] = e.loops())
-                                       .has("id", loop2[0]))
-                           .times(numV);
-
-        assertOptimization(t1, t2, AdjacentVertexHasIdOptimizerStrategy.instance());
-
-        //Property
-        assertNumStep(numV / 5, 1, gts.V(sv[0]).properties("names").has("weight", 1), JanusGraphPropertiesStep.class);
-        assertNumStep(numV, 1, gts.V(sv[0]).properties("names"), JanusGraphPropertiesStep.class);
-        assertNumStep(10, 0, gts.V(sv[0]).local(__.properties("names").order().by("weight", desc).limit(10)), LocalStep.class);
-        assertNumStep(numV, 2, gts.V(sv[0]).outE("knows").values("weight"), JanusGraphVertexStep.class, JanusGraphPropertiesStep.class);
-
-
-        //Global graph queries
-        assertNumStep(1, 1, gts.V().has("id", numV / 5), JanusGraphStep.class);
-        assertNumStep(1, 1, gts.V().has("id", numV / 5).has("weight", (numV / 5) % 5), JanusGraphStep.class);
-        assertNumStep(numV / 5, 1, gts.V().has("weight", 1), JanusGraphStep.class);
-        assertNumStep(10, 1, gts.V().has("weight", 1).range(0, 10), JanusGraphStep.class);
-
-        assertNumStep(superV, 1, gts.V().has("id", sid), JanusGraphStep.class);
-        //Ensure that as steps don't interfere
-        assertNumStep(1, 1, gts.V().has("id", numV / 5).as("x"), JanusGraphStep.class);
-        assertNumStep(1, 1, gts.V().has("id", numV / 5).has("weight", (numV / 5) % 5).as("x"), JanusGraphStep.class);
-
-
-        assertNumStep(superV * (numV / 5), 2, gts.V().has("id", sid).outE("knows").has("weight", 1), JanusGraphStep.class, JanusGraphVertexStep.class);
-        assertNumStep(superV * (numV / 5 * 2), 2, gts.V().has("id", sid).outE("knows").has("weight", P.gte(1)).has("weight", P.lt(3)), JanusGraphStep.class, JanusGraphVertexStep.class);
-        assertNumStep(superV * (numV / 5 * 2), 2, gts.V().has("id", sid).outE("knows").has("weight", P.between(1, 3)), JanusGraphStep.class, JanusGraphVertexStep.class);
-        assertNumStep(superV * 10, 2, gts.V().has("id", sid).local(__.outE("knows").has("weight", P.gte(1)).has("weight", P.lt(3)).limit(10)), JanusGraphStep.class, JanusGraphVertexStep.class);
-        assertNumStep(superV * 10, 1, gts.V().has("id", sid).local(__.outE("knows").has("weight", P.between(1, 3)).order().by("weight", desc).limit(10)), JanusGraphStep.class);
-        assertNumStep(superV * 10, 0, gts.V().has("id", sid).local(__.outE("knows").has("weight", P.between(1, 3)).order().by("weight", desc).limit(10)), LocalStep.class);
-
-        // Verify that the batch property pre-fetching is not applied when the configuration option is not set
-        t = gts.V().has("id", sid).outE("knows").has("weight", P.between(1, 3)).inV().has("weight", P.between(1, 3)).profile("~metrics");
-        assertNumStep(superV * (numV / 5 * 2), 2, (GraphTraversal)t, JanusGraphStep.class, JanusGraphVertexStep.class);
-        assertFalse(queryProfilerAnnotationIsPresent(t, QueryProfiler.MULTIPREFETCH_ANNOTATION));
-
-        clopen(option(BATCH_PROPERTY_PREFETCHING), true);
-        gts = graph.traversal();
-
-        // This tests an edge property before inV and will trigger the multiQuery property pre-fetch optimisation in JanusGraphEdgeVertexStep
-        t = gts.V().has("id", sid).outE("knows").has("weight", P.between(1, 3)).inV().has("weight", P.between(1, 3)).profile("~metrics");
-        assertNumStep(superV * (numV / 5 * 2), 2, (GraphTraversal)t, JanusGraphStep.class, JanusGraphVertexStep.class);
-        assertTrue(queryProfilerAnnotationIsPresent(t, QueryProfiler.MULTIPREFETCH_ANNOTATION));
-
-        // This tests a vertex property after inV and will trigger the multiQuery property pre-fetch optimisation in JanusGraphVertexStep
-        t = gts.V().has("id", sid).outE("knows").inV().has("weight", P.between(1, 3)).profile("~metrics");
-        assertNumStep(superV * (numV / 5 * 2), 2, (GraphTraversal)t, JanusGraphStep.class, JanusGraphVertexStep.class);
-        assertTrue(queryProfilerAnnotationIsPresent(t, QueryProfiler.MULTIPREFETCH_ANNOTATION));
-
-        // As above but with a limit after the has step meaning property pre-fetch won't know how much to fetch and so should not be used
-        t = gts.V().has("id", sid).outE("knows").inV().has("weight", P.between(1, 3)).limit(1000).profile("~metrics");
-        assertNumStep(superV * (numV / 5 * 2), 2, (GraphTraversal)t, JanusGraphStep.class, JanusGraphVertexStep.class);
-        assertFalse(queryProfilerAnnotationIsPresent(t, QueryProfiler.MULTIPREFETCH_ANNOTATION));
-
-        clopen(option(USE_MULTIQUERY), true);
-        gts = graph.traversal();
-
-        t = gts.V(sv[0]).outE().inV().choose(__.inE("knows").has("weight", 0),__.inE("knows").has("weight", 1), __.inE("knows").has("weight", 2)).profile("~metrics");
-        assertNumStep(numV * 2, 2, (GraphTraversal)t, ChooseStep.class, JanusGraphVertexStep.class);
-        assertTrue(queryProfilerAnnotationIsPresent(t, QueryProfiler.MULTIQUERY_ANNOTATION));
-
-        t = gts.V(sv[0]).outE().inV().union(__.inE("knows").has("weight", 0),__.inE("knows").has("weight", 1),__.inE("knows").has("weight", 2)).profile("~metrics");
-        assertNumStep(numV * 6, 2, (GraphTraversal)t, UnionStep.class, JanusGraphVertexStep.class);
-        assertTrue(queryProfilerAnnotationIsPresent(t, QueryProfiler.MULTIQUERY_ANNOTATION));
-
-        int[] loop = {0}; // repeat starts from vertex with id 0 and goes in to the sv[0] vertex then loops back out to the vertex with the next id
-        t = gts.V(vs[0], vs[1], vs[2])
-                .repeat(__.inE("knows")
-                            .outV()
-                            .hasId(sv[0].id())
-                            //.outE("knows")
-                            //.inV()
-                            .out("knows") // TINKERPOP-2342
-                            .sideEffect(e -> loop[0] = e.loops())
-                            .has("id", loop[0]))
-                .times(numV)
-                .profile("~metrics");
-        assertNumStep(3, 1, (GraphTraversal)t, RepeatStep.class);
-        assertEquals(numV - 1, loop[0]);
-        assertTrue(queryProfilerAnnotationIsPresent(t, QueryProfiler.MULTIQUERY_ANNOTATION));
- 
-        t = gts.V(vs[0],vs[1],vs[2]).optional(__.inE("knows").has("weight", 0)).profile("~metrics");
-        assertNumStep(12, 1, (GraphTraversal)t, OptionalStep.class);
-        assertTrue(queryProfilerAnnotationIsPresent(t, QueryProfiler.MULTIQUERY_ANNOTATION));
-
-        t = gts.V(vs[0],vs[1],vs[2]).filter(__.inE("knows").has("weight", 0)).profile("~metrics");
-        assertNumStep(1, 1, (GraphTraversal)t, TraversalFilterStep.class);
-        assertTrue(queryProfilerAnnotationIsPresent(t, QueryProfiler.MULTIQUERY_ANNOTATION));
- 
-        assertNumStep(superV * (numV / 5), 2, gts.V().has("id", sid).outE("knows").has("weight", 1), JanusGraphStep.class, JanusGraphVertexStep.class);
-        assertNumStep(superV * (numV / 5 * 2), 2, gts.V().has("id", sid).outE("knows").has("weight", P.between(1, 3)), JanusGraphStep.class, JanusGraphVertexStep.class);
-        assertNumStep(superV * 10, 2, gts.V().has("id", sid).local(__.outE("knows").has("weight", P.gte(1)).has("weight", P.lt(3)).limit(10)), JanusGraphStep.class, JanusGraphVertexStep.class);
-        assertNumStep(superV * 10, 1, gts.V().has("id", sid).local(__.outE("knows").has("weight", P.between(1, 3)).order().by("weight", desc).limit(10)), JanusGraphStep.class);
-        assertNumStep(superV * 10, 0, gts.V().has("id", sid).local(__.outE("knows").has("weight", P.between(1, 3)).order().by("weight", desc).limit(10)), LocalStep.class);
-        assertNumStep(superV * numV, 2, gts.V().has("id", sid).values("names"), JanusGraphStep.class, JanusGraphPropertiesStep.class);
-
-        //Verify traversal metrics when all reads are from cache (i.e. no backend queries)
-        t = gts.V().has("id", sid).local(__.outE("knows").has("weight", P.between(1, 3)).order().by("weight", desc).limit(10)).profile("~metrics");
-        assertCount(superV * 10, t);
-        assertTrue(queryProfilerAnnotationIsPresent(t, QueryProfiler.MULTIQUERY_ANNOTATION));
-
-        //Verify that properties also use multi query
-        t = gts.V().has("id", sid).values("names").profile("~metrics");
-        assertCount(superV * numV, t);
-        assertTrue(queryProfilerAnnotationIsPresent(t, QueryProfiler.MULTIQUERY_ANNOTATION));
-
-        clopen(option(USE_MULTIQUERY), true);
-        gts = graph.traversal();
-
         //Verify traversal metrics when having to read from backend [same query as above]
-        t = gts.V().has("id", sid).local(__.outE("knows").has("weight", P.gte(1)).has("weight", P.lt(3)).order().by("weight", desc).limit(10)).profile("~metrics");
+        Traversal t = gts.V().has("id", sid).local(__.outE("knows").has("weight", P.gte(1)).has("weight", P.lt(3)).order().by("weight", desc).limit(10)).profile("~metrics");
         assertCount(superV * 10, t);
         assertTrue(queryProfilerAnnotationIsPresent(t, QueryProfiler.MULTIQUERY_ANNOTATION));
 
@@ -4590,86 +4452,6 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
         t = gts.V().has("id", sid).values("names").profile("~metrics");
         assertCount(superV * numV, t);
         assertTrue(queryProfilerAnnotationIsPresent(t, QueryProfiler.MULTIQUERY_ANNOTATION));
-    }
-
-    private static void assertSameResultWithOptimizations(Traversal<?,?> originalTraversal, TraversalStrategy<?>... strategies) {
-        Traversal.Admin<?,?> optimizedTraversal = originalTraversal.asAdmin().clone();
-        optimizedTraversal.getStrategies().addStrategies(strategies);
-        List<?> optimizedResult = optimizedTraversal.toList();
-
-        Traversal.Admin<?,?> unOptimizedTraversal = originalTraversal.asAdmin().clone();
-        Stream.of(strategies).forEach(s -> unOptimizedTraversal.getStrategies().removeStrategies(s.getClass()));
-        List<?> unOptimizedResult = unOptimizedTraversal.toList();
-
-        assertEquals(unOptimizedResult, optimizedResult);
-    }
-
-    private static boolean queryProfilerAnnotationIsPresent(Traversal t, String queryProfilerAnnotation) {
-        TraversalMetrics metrics = t.asAdmin().getSideEffects().get("~metrics");
-        return metrics.toString().contains(queryProfilerAnnotation + "=true");
-    }
-
-    private static void assertNumStep(int expectedResults, int expectedSteps, GraphTraversal traversal, Class<? extends Step>... expectedStepTypes) {
-        int num = 0;
-        while (traversal.hasNext()) {
-            traversal.next();
-            num++;
-        }
-
-        assertEquals(expectedResults, num);
-
-        //Verify that steps line up with what is expected after JanusGraph's optimizations are applied
-        List<Step> steps = traversal.asAdmin().getSteps();
-        Set<Class<? extends Step>> expSteps = Sets.newHashSet(expectedStepTypes);
-        int numSteps = 0;
-        for (Step s : steps) {
-            if (s.getClass().equals(GraphStep.class) || s.getClass().equals(StartStep.class)) continue;
-
-            if (expSteps.contains(s.getClass())) {
-                numSteps++;
-            }
-        }
-        assertEquals(expectedSteps, numSteps);
-    }
-
-    private static void
-    assertOptimization(Traversal<?,?> expectedTraversal, Traversal<?,?> originalTraversal,
-                       TraversalStrategy... optimizationStrategies) {
-        final TraversalStrategies optimizations = new DefaultTraversalStrategies();
-        for (final TraversalStrategy<?> strategy : optimizationStrategies) {
-            optimizations.addStrategies(strategy);
-
-        }
-        
-        originalTraversal.asAdmin().setStrategies(optimizations);
-
-        originalTraversal.asAdmin().applyStrategies();
-
-        assertEquals(expectedTraversal.asAdmin().getSteps().toString(),
-                     originalTraversal.asAdmin().getSteps().toString());
-    }
-
-    private static void verifyMetrics(Metrics metric, boolean fromCache, boolean multiQuery) {
-        assertTrue(metric.getDuration(TimeUnit.MICROSECONDS) > 0);
-        assertTrue(metric.getCount(TraversalMetrics.ELEMENT_COUNT_ID) > 0);
-        String hasMultiQuery = (String) metric.getAnnotation(QueryProfiler.MULTIQUERY_ANNOTATION);
-        assertTrue(multiQuery ? hasMultiQuery.equalsIgnoreCase("true") : hasMultiQuery == null);
-        for (Metrics subMetric : metric.getNested()) {
-            assertTrue(subMetric.getDuration(TimeUnit.MICROSECONDS) > 0);
-            switch (subMetric.getName()) {
-                case "optimization":
-                    assertNull(subMetric.getCount(TraversalMetrics.ELEMENT_COUNT_ID));
-                    break;
-                case "backend-query":
-                    if (fromCache) fail("Should not execute backend-queries when cached");
-                    assertTrue(subMetric.getCount(TraversalMetrics.ELEMENT_COUNT_ID) > 0);
-                    break;
-                default:
-                    fail("Unrecognized nested query: " + subMetric.getName());
-            }
-
-        }
-
     }
 
     @Test
@@ -5889,6 +5671,165 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
     }
 
     @Test
+    public void testGraphCentricQueryProfiling() {
+        final PropertyKey name = makeKey("name", String.class);
+        final PropertyKey weight = makeKey("weight", Integer.class);
+        final JanusGraphIndex compositeNameIndex = mgmt.buildIndex("nameIdx", Vertex.class).addKey(name).buildCompositeIndex();
+        final JanusGraphIndex compositeWeightIndex = mgmt.buildIndex("weightIdx", Vertex.class).addKey(weight).buildCompositeIndex();
+        final PropertyKey prop = makeKey("prop", Integer.class);
+        finishSchema();
+
+        JanusGraphVertex v = tx.addVertex("name", "bob", "prop", 100, "weight", 100);
+        tx.commit();
+
+        // satisfied by a single composite index query
+        newTx();
+        Metrics mCompSingle = tx.traversal().V().has("name", "bob").profile().next().getMetrics(0);
+        assertEquals("JanusGraphStep([],[name.eq(bob)])", mCompSingle.getName());
+        assertTrue(mCompSingle.getDuration(TimeUnit.MICROSECONDS) > 0);
+        assertEquals(3, mCompSingle.getNested().size());
+        Metrics nested = (Metrics) mCompSingle.getNested().toArray()[0];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mCompSingle.getNested().toArray()[1];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mCompSingle.getNested().toArray()[2];
+        assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        Map<String, String> nameIdxAnnotations = new HashMap() {{
+            put("condition", "(name = bob)");
+            put("orders", "[]");
+            put("isFitted", "true");
+            put("isOrdered", "true");
+            put("query", "multiKSQ[1]@1000");
+            put("index", "nameIdx");
+        }};
+        assertEquals(nameIdxAnnotations, nested.getAnnotations());
+
+        // satisfied by unions of two separate graph-centric queries, each satisfied by a single composite index query
+        newTx();
+        Metrics mCompMultiOr = tx.traversal().V().or(__.has("name", "bob"), __.has("weight", 100))
+            .profile().next().getMetrics(0);
+        assertEquals("Or(JanusGraphStep([],[name.eq(bob)]),JanusGraphStep([],[weight.eq(100)]))", mCompMultiOr.getName());
+        assertTrue(mCompMultiOr.getDuration(TimeUnit.MICROSECONDS) > 0);
+        assertEquals(5, mCompMultiOr.getNested().size());
+        nested = (Metrics) mCompMultiOr.getNested().toArray()[0];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mCompMultiOr.getNested().toArray()[1];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mCompMultiOr.getNested().toArray()[2];
+        assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        assertEquals(nameIdxAnnotations, nested.getAnnotations());
+        nested = (Metrics) mCompMultiOr.getNested().toArray()[3];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mCompMultiOr.getNested().toArray()[4];
+        assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        Map<String, String> weightIdxAnnotations = new HashMap() {{
+            put("condition", "(weight = 100)");
+            put("orders", "[]");
+            put("isFitted", "true");
+            put("isOrdered", "true");
+            put("query", "multiKSQ[1]@1000");
+            put("index", "weightIdx");
+        }};
+        assertEquals(weightIdxAnnotations, nested.getAnnotations());
+
+        // satisfied by one graph-centric query, which satisfied by in-memory filtering after one composite index query
+        newTx();
+        Metrics mUnfittedMultiAnd = tx.traversal().V().and(__.has("name", "bob"), __.has("prop", 100))
+            .profile().next().getMetrics(0);
+        assertEquals("JanusGraphStep([],[name.eq(bob), prop.eq(100)])", mUnfittedMultiAnd.getName());
+        assertTrue(mUnfittedMultiAnd.getDuration(TimeUnit.MICROSECONDS) > 0);
+        assertEquals(3, mUnfittedMultiAnd.getNested().size());
+        nested = (Metrics) mUnfittedMultiAnd.getNested().toArray()[0];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mUnfittedMultiAnd.getNested().toArray()[1];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mUnfittedMultiAnd.getNested().toArray()[2];
+        assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        Map<String, String> annotations = new HashMap() {{
+            put("condition", "(name = bob AND prop = 100)");
+            put("orders", "[]");
+            put("isFitted", "false"); // not fitted because prop = 100 requires in-memory filtering
+            put("isOrdered", "true");
+            put("query", "multiKSQ[1]@2000");
+            put("index", "nameIdx");
+        }};
+        assertEquals(annotations, nested.getAnnotations());
+
+        // satisfied by union of two separate graph-centric queries, one satisfied by a composite index query and the other requires full scan
+        newTx();
+        Metrics mUnfittedMultiOr = tx.traversal().V().or(__.has("name", "bob"), __.has("prop", 100))
+            .profile().next().getMetrics(0);
+        assertEquals("Or(JanusGraphStep([],[name.eq(bob)]),JanusGraphStep([],[prop.eq(100)]))", mUnfittedMultiOr.getName());
+        assertTrue(mUnfittedMultiOr.getDuration(TimeUnit.MICROSECONDS) > 0);
+        assertEquals(5, mUnfittedMultiOr.getNested().size());
+        nested = (Metrics) mUnfittedMultiOr.getNested().toArray()[0];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mUnfittedMultiOr.getNested().toArray()[1];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mUnfittedMultiOr.getNested().toArray()[2];
+        assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        assertEquals(nameIdxAnnotations, nested.getAnnotations());
+        nested = (Metrics) mUnfittedMultiOr.getNested().toArray()[3];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mUnfittedMultiOr.getNested().toArray()[4];
+        assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        Map<String, String> fullScanAnnotations = new HashMap() {{
+            put("condition", "(prop = 100)");
+            put("orders", "[]");
+            put("isFitted", "false");
+            put("isOrdered", "true");
+            put("query", "[]");
+        }};
+        assertEquals(fullScanAnnotations, nested.getAnnotations());
+    }
+
+    @Test
+    public void testVertexCentricQueryProfiling() {
+        final PropertyKey time = mgmt.makePropertyKey("time").dataType(Integer.class).cardinality(Cardinality.SINGLE).make();
+        final EdgeLabel friend = mgmt.makeEdgeLabel("friend").multiplicity(Multiplicity.SIMPLE).make();
+        mgmt.buildEdgeIndex(friend, "byTime", OUT, desc, time);
+        finishSchema();
+
+        JanusGraphVertex v = tx.addVertex();
+        JanusGraphVertex o = tx.addVertex();
+        v.addEdge("friend", o, "time", 100);
+        v.addEdge("friend-no-index", o, "time", 100);
+        tx.commit();
+
+        // satisfied by a single vertex-centric query which is satisfied by one edge query
+        newTx();
+        Metrics mSingleLabel = tx.traversal().V(v).outE("friend").has("time", P.lt(10)).profile().next().getMetrics(1);
+        assertEquals("JanusGraphVertexStep([time.lt(10)])", mSingleLabel.getName());
+        assertTrue(mSingleLabel.getDuration(TimeUnit.MICROSECONDS) > 0);
+        Map<String, String> annotations = new HashMap() {{
+            put("condition", "(time < 10 AND type[friend])");
+            put("orders", "[]");
+            put("vertices", 1);
+            put("isFitted", "true");
+            put("isOrdered", "true");
+            put("query", "2069:byTime:SliceQuery[0xB0E0FF7FFFFFF6,0xB0E1)@2147483647");
+        }};
+        mSingleLabel.getAnnotations().remove("percentDur");
+        assertEquals(annotations, mSingleLabel.getAnnotations());
+    }
+
+    @Test
     public void testVertexCentricIndexWithNull() {
         EdgeLabel bought = makeLabel("bought");
         PropertyKey time = makeKey("time", Long.class);
@@ -6537,5 +6478,64 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
         g.io(f.getAbsolutePath()).read().iterate();
 
         assertEquals(1, g.V().has("name", f.getName()).count().next());
+    }
+
+    @Test
+    public void testGetMatchingIndexes() {
+        final PropertyKey name = makeKey("name", String.class);
+        final PropertyKey age = makeKey("age", Integer.class);
+        mgmt.buildIndex("byName", Vertex.class).addKey(name).buildCompositeIndex();
+        mgmt.buildIndex("byAge", Vertex.class).addKey(age).buildCompositeIndex();
+        finishSchema();
+
+        String searchName = "someName";
+        Integer searchAge = 42;
+
+        // test with no valid constraints
+        assertEquals(Collections.emptySet(), IndexSelectionUtil.getMatchingIndexes(null));
+        assertEquals(Collections.emptySet(), IndexSelectionUtil.getMatchingIndexes(null, null));
+        assertEquals(Collections.emptySet(), IndexSelectionUtil.getMatchingIndexes(null, i -> true));
+
+        // test with two valid constraints
+        List<PredicateCondition<String, JanusGraphElement>> constraints = Arrays.asList(
+            new PredicateCondition<>("name", JanusGraphPredicateUtils.convert(P.eq(searchName).getBiPredicate()), searchName),
+            new PredicateCondition<>("age", JanusGraphPredicateUtils.convert(P.eq(searchAge).getBiPredicate()), searchAge)
+        );
+        MultiCondition<JanusGraphElement> conditions = QueryUtil.constraints2QNF((StandardJanusGraphTx) tx, constraints);
+        assertEquals(2, IndexSelectionUtil.getMatchingIndexes(conditions).size());
+        assertEquals(1, IndexSelectionUtil.getMatchingIndexes(conditions, i -> i.getName().equals("byAge")).size());
+
+        // test with invalid filter
+        assertEquals(0, IndexSelectionUtil.getMatchingIndexes(conditions, null).size());
+    }
+
+    @Test
+    public void testExistsMatchingIndex() {
+        final PropertyKey name = makeKey("name", String.class);
+        final PropertyKey age = makeKey("age", Integer.class);
+        mgmt.buildIndex("byName", Vertex.class).addKey(name).buildCompositeIndex();
+        mgmt.buildIndex("byAge", Vertex.class).addKey(age).buildCompositeIndex();
+        finishSchema();
+
+        String searchName = "someName";
+        Integer searchAge = 42;
+
+        // test with no valid constraints
+        assertEquals(false, IndexSelectionUtil.existsMatchingIndex(null));
+        assertEquals(false, IndexSelectionUtil.existsMatchingIndex(null, null));
+        assertEquals(false, IndexSelectionUtil.existsMatchingIndex(null, i -> true));
+
+        // test with two valid constraints
+        List<PredicateCondition<String, JanusGraphElement>> constraints = Arrays.asList(
+            new PredicateCondition<>("name", JanusGraphPredicateUtils.convert(P.eq(searchName).getBiPredicate()), searchName),
+            new PredicateCondition<>("age", JanusGraphPredicateUtils.convert(P.eq(searchAge).getBiPredicate()), searchAge)
+        );
+        MultiCondition<JanusGraphElement> conditions = QueryUtil.constraints2QNF((StandardJanusGraphTx) tx, constraints);
+        assertEquals(true, IndexSelectionUtil.existsMatchingIndex(conditions));
+        assertEquals(true, IndexSelectionUtil.existsMatchingIndex(conditions, i -> i.getName().equals("byAge")));
+        assertEquals(false, IndexSelectionUtil.existsMatchingIndex(conditions, i -> i.getName().equals("byNonExistentKey")));
+
+        // test with invalid filter
+        assertEquals(false, IndexSelectionUtil.existsMatchingIndex(conditions, null));
     }
 }

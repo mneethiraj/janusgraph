@@ -16,15 +16,13 @@ package org.janusgraph.graphdb.olap.computer;
 
 import com.google.common.base.Preconditions;
 import org.janusgraph.core.JanusGraphTransaction;
-import org.janusgraph.graphdb.tinkerpop.optimize.JanusGraphLocalQueryOptimizerStrategy;
+import org.janusgraph.graphdb.tinkerpop.optimize.strategy.JanusGraphLocalQueryOptimizerStrategy;
 import org.janusgraph.graphdb.tinkerpop.optimize.JanusGraphTraversalUtil;
-import org.janusgraph.graphdb.tinkerpop.optimize.JanusGraphVertexStep;
+import org.janusgraph.graphdb.tinkerpop.optimize.step.JanusGraphVertexStep;
 import org.apache.tinkerpop.gremlin.process.traversal.Step;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.process.traversal.TraversalStrategies;
-import org.apache.tinkerpop.gremlin.process.computer.MessageCombiner;
 import org.apache.tinkerpop.gremlin.process.computer.MessageScope;
-import org.apache.tinkerpop.gremlin.process.computer.VertexProgram;
 import org.apache.tinkerpop.gremlin.process.traversal.step.filter.FilterStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.OrderGlobalStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.map.OrderLocalStep;
@@ -89,21 +87,4 @@ public class FulgoraUtil {
             throw new IllegalArgumentException("Encountered unsupported step in incident traversal: " + step);
         });
     }
-
-    public static<M> MessageCombiner<M> getMessageCombiner(VertexProgram<M> program) {
-        return program.getMessageCombiner().orElse(DEFAULT_COMBINER);
-    }
-
-
-    private static final MessageCombiner DEFAULT_COMBINER = new ThrowingCombiner<>();
-
-    private static class ThrowingCombiner<M> implements MessageCombiner<M> {
-
-        @Override
-        public M combine(M messageA, M messageB) {
-            throw new IllegalArgumentException("The VertexProgram needs to define a message combiner in order " +
-                    "to preserve memory and handle partitioned vertices");
-        }
-    }
-
 }

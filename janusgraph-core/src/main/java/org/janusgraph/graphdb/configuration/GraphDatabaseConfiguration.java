@@ -14,19 +14,22 @@
 
 package org.janusgraph.graphdb.configuration;
 
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableMap;
 import org.janusgraph.core.*;
 import org.janusgraph.core.schema.DefaultSchemaMaker;
-import org.janusgraph.core.schema.LoggingSchemaMaker;
 import org.janusgraph.diskstorage.configuration.Configuration;
 import org.janusgraph.diskstorage.StandardIndexProvider;
 import org.janusgraph.diskstorage.StandardStoreManager;
 import org.janusgraph.diskstorage.configuration.converter.ReadConfigurationConverter;
 import org.janusgraph.graphdb.configuration.converter.RegisteredAttributeClassesConverter;
-import org.janusgraph.graphdb.tinkerpop.JanusGraphDefaultSchemaMaker;
-import org.janusgraph.graphdb.tinkerpop.Tp3DefaultSchemaMaker;
-import org.janusgraph.graphdb.types.typemaker.DisableDefaultSchemaMaker;
+import org.janusgraph.graphdb.query.index.ApproximateIndexSelectionStrategy;
+import org.janusgraph.graphdb.query.index.BruteForceIndexSelectionStrategy;
+import org.janusgraph.graphdb.query.index.IndexSelectionStrategy;
+import org.janusgraph.graphdb.query.index.ThresholdBasedIndexSelectionStrategy;
+import org.janusgraph.core.schema.JanusGraphDefaultSchemaMaker;
+import org.janusgraph.core.schema.Tp3DefaultSchemaMaker;
+import org.janusgraph.core.schema.DisableDefaultSchemaMaker;
+import org.janusgraph.core.schema.IgnorePropertySchemaMaker;
+import org.janusgraph.util.StringUtils;
 import org.janusgraph.util.stats.NumberUtil;
 import org.janusgraph.diskstorage.util.time.*;
 import org.janusgraph.diskstorage.configuration.*;
@@ -42,9 +45,7 @@ import org.janusgraph.util.system.ConfigurationUtil;
 import org.janusgraph.util.system.NetworkUtil;
 
 import org.apache.tinkerpop.gremlin.structure.Graph;
-import info.ganglia.gmetric4j.gmetric.GMetric.UDPAddressingMode;
 
-import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -170,7 +171,7 @@ public class GraphDatabaseConfiguration {
 
     public static final ConfigOption<Boolean> ALLOW_STALE_CONFIG = new ConfigOption<>(GRAPH_NS,"allow-stale-config",
             "Whether to allow the local and storage-backend-hosted copies of the configuration to contain conflicting values for " +
-            "options with any of the following types: " + Joiner.on(", ").join(ConfigOption.getManagedTypes()) + ".  " +
+            "options with any of the following types: " + StringUtils.join(ConfigOption.getManagedTypes(), ", ") + ".  " +
             "These types are managed globally through the storage backend and cannot be overridden by changing the " +
             "local configuration.  This type of conflict usually indicates misconfiguration.  When this option is true, " +
             "JanusGraph will log these option conflicts, but continue normal operation using the storage-backend-hosted value " +
@@ -265,6 +266,20 @@ public class GraphDatabaseConfiguration {
                     "performance improvement if there is a non-trivial latency to the backend.",
             ConfigOption.Type.MASKABLE, false);
 
+    public static final ConfigOption<String> INDEX_SELECT_STRATEGY = new ConfigOption<>(QUERY_NS, "index-select-strategy",
+            String.format("Name of the index selection strategy or full class name. Following shorthands can be used: <br>" +
+                    "- `%s` (Try all combinations of index candidates and pick up optimal one)<br>" +
+                    "- `%s` (Use greedy algorithm to pick up approximately optimal index candidate)<br>" +
+                    "- `%s` (Use index-select-threshold to pick up either `%s` or `%s` strategy on runtime)",
+                    BruteForceIndexSelectionStrategy.NAME, ApproximateIndexSelectionStrategy.NAME, ThresholdBasedIndexSelectionStrategy.NAME,
+                    ApproximateIndexSelectionStrategy.NAME, ThresholdBasedIndexSelectionStrategy.NAME),
+            ConfigOption.Type.MASKABLE, ThresholdBasedIndexSelectionStrategy.NAME);
+
+    public static final ConfigOption<Boolean> OPTIMIZER_BACKEND_ACCESS = new ConfigOption<>(QUERY_NS, "optimizer-backend-access",
+            "Whether the optimizer should be allowed to fire backend queries during the optimization phase. Allowing these " +
+                "will give the optimizer a chance to find more efficient execution plan but also increase the optimization overhead.",
+            ConfigOption.Type.MASKABLE, true);
+
     public static final ConfigOption<Boolean> BATCH_PROPERTY_PREFETCHING = new ConfigOption<>(QUERY_NS,"batch-property-prefetch",
             "Whether to do a batched pre-fetch of all properties on adjacent vertices against the storage backend prior to evaluating a has condition against those vertices. " +
                     "Because these vertex properties will be loaded into the transaction-level cache of recently-used vertices when the condition is evaluated this can " +
@@ -281,8 +296,9 @@ public class GraphDatabaseConfiguration {
             "Configures the DefaultSchemaMaker to be used by this graph."
             + " Either one of the following shorthands can be used: <br>"
             + " - `default` (a blueprints compatible schema maker with MULTI edge labels and SINGLE property keys),<br>"
+            + " - `tp3` (same as default, but has LIST property keys),<br>"
             + " - `none` (automatic schema creation is disabled)<br>"
-            + " - `logging` (same as default, but with a log done when an automatic schema creation is done)<br>"
+            + " - `ignore-prop` (same as none, but simply ignore unknown properties rather than throw exceptions)<br>"
             + " - or to the full package and classname of a custom/third-party implementing the"
             + " interface `org.janusgraph.core.schema.DefaultSchemaMaker`",
             ConfigOption.Type.MASKABLE, "default", new Predicate<String>() {
@@ -299,11 +315,20 @@ public class GraphDatabaseConfiguration {
         }
     });
 
-    private static final Map<String, DefaultSchemaMaker> PREREGISTERED_AUTO_TYPE =
-            ImmutableMap.of("none", DisableDefaultSchemaMaker.INSTANCE,
-                    "default", JanusGraphDefaultSchemaMaker.INSTANCE,
-                    "tp3", Tp3DefaultSchemaMaker.INSTANCE,
-                    "logging", LoggingSchemaMaker.DEFAULT_INSTANCE);
+    private static final Map<String, DefaultSchemaMaker> PREREGISTERED_AUTO_TYPE = Collections.unmodifiableMap(
+        new HashMap<String, DefaultSchemaMaker>(4){{
+            put("none", DisableDefaultSchemaMaker.INSTANCE);
+            put("ignore-prop", IgnorePropertySchemaMaker.INSTANCE);
+            put("default", JanusGraphDefaultSchemaMaker.INSTANCE);
+            put("tp3", Tp3DefaultSchemaMaker.INSTANCE);
+        }}
+    );
+
+    public static final ConfigOption<Boolean> SCHEMA_MAKER_LOGGING = new ConfigOption<>(SCHEMA_NS, "logging",
+            "Controls whether logging is enabled for schema makers. This only takes effect if you set `schema.default` " +
+            "to `default` or `ignore-prop`. For `default` schema maker, warning messages will be logged before schema types " +
+            "are created automatically. For `ignore-prop` schema maker, warning messages will be logged before unknown properties " +
+            "are ignored.", ConfigOption.Type.MASKABLE, false);
 
     public static final ConfigOption<Boolean> SCHEMA_CONSTRAINTS = new ConfigOption<>(SCHEMA_NS, "constraints",
             "Configures the schema constraints to be used by this graph. If config 'schema.constraints' " +
@@ -438,7 +463,7 @@ public class GraphDatabaseConfiguration {
     public static final ConfigOption<String> STORAGE_BACKEND = new ConfigOption<>(STORAGE_NS,"backend",
             "The primary persistence provider used by JanusGraph.  This is required.  It should be set one of " +
             "JanusGraph's built-in shorthand names for its standard storage backends " +
-            "(shorthands: " + Joiner.on(", ").join(StandardStoreManager.getAllShorthands()) + ") " +
+            "(shorthands: " + String.join(", ", StandardStoreManager.getAllShorthands()) + ") " +
             "or to the full package and classname of a custom/third-party StoreManager implementation.",
             ConfigOption.Type.LOCAL, String.class);
 
@@ -833,7 +858,7 @@ public class GraphDatabaseConfiguration {
             "\"" + INDEX_NS.getName() + "\" and \"backend\" is unique among appearances." +
             "Similar to the storage backend, this should be set to one of " +
             "JanusGraph's built-in shorthand names for its standard index backends " +
-            "(shorthands: " + Joiner.on(", ").join(StandardIndexProvider.getAllShorthands()) + ") " +
+            "(shorthands: " + String.join(", ", StandardIndexProvider.getAllShorthands()) + ") " +
             "or to the full package and classname of a custom/third-party IndexProvider implementation.",
             ConfigOption.Type.GLOBAL_OFFLINE, "elasticsearch");
 
@@ -864,7 +889,7 @@ public class GraphDatabaseConfiguration {
             ConfigOption.Type.MASKABLE, 50);
 
     public static final ConfigOption<Boolean> INDEX_NAME_MAPPING = new ConfigOption<>(INDEX_NS,"map-name",
-            "Whether to use the name of the property key as the field name in the index. It must be ensured, that the" +
+            "Whether to use the name of the property key as the field name in the index. It must be ensured, that the " +
                     "indexed property key names are valid field names. Renaming the property key will NOT rename the field " +
                     "and its the developers responsibility to avoid field collisions.",
             ConfigOption.Type.GLOBAL, true);
@@ -1071,92 +1096,6 @@ public class GraphDatabaseConfiguration {
             ConfigOption.Type.MASKABLE, String.class);
 
     /**
-     * The configuration namespace within {@link #METRICS_NS} for Ganglia.
-     */
-    public static final ConfigNamespace METRICS_GANGLIA_NS = new ConfigNamespace(METRICS_NS,"ganglia","Configuration options for metrics reporting through Ganglia");
-
-    /**
-     * The unicast host or multicast group name to which Metrics will send
-     * Ganglia data. Setting this config key has no effect unless
-     * {@link #GANGLIA_INTERVAL} is also set.
-     */
-    public static final ConfigOption<String> GANGLIA_HOST_OR_GROUP = new ConfigOption<>(METRICS_GANGLIA_NS,"hostname",
-            "The unicast host or multicast group name to which Metrics will send Ganglia data",
-            ConfigOption.Type.MASKABLE, String.class);
-
-    /**
-     * The number of milliseconds to wait between sending Metrics data to the
-     * host or group specified by {@link #GANGLIA_HOST_OR_GROUP}. This has no
-     * effect unless {@link #GANGLIA_HOST_OR_GROUP} is also set.
-     */
-    public static final ConfigOption<Duration> GANGLIA_INTERVAL = new ConfigOption<>(METRICS_GANGLIA_NS,"interval",
-            "The number of milliseconds to wait between sending Metrics data to Ganglia",
-            ConfigOption.Type.MASKABLE, Duration.class);
-
-    /**
-     * The port to which Ganglia data are sent.
-     * <p>
-     */
-    public static final ConfigOption<Integer> GANGLIA_PORT = new ConfigOption<>(METRICS_GANGLIA_NS,"port",
-            "The port to which Ganglia data are sent",
-            ConfigOption.Type.MASKABLE, 8649);
-
-    /**
-     * Whether to interpret {@link #GANGLIA_HOST_OR_GROUP} as a unicast or
-     * multicast address. If present, it must be either the string "multicast"
-     * or the string "unicast".
-     * <p>
-     */
-    public static final ConfigOption<String> GANGLIA_ADDRESSING_MODE = new ConfigOption<>(METRICS_GANGLIA_NS,"addressing-mode",
-            "Whether to communicate to Ganglia via uni- or multicast",
-            ConfigOption.Type.MASKABLE, "unicast", s -> s!=null && s.equalsIgnoreCase("unicast") || s.equalsIgnoreCase("multicast"));
-
-    /**
-     * The multicast TTL to set on outgoing Ganglia datagrams. This has no
-     * effect when {@link #GANGLIA_ADDRESSING_MODE} is set to "multicast".
-     * <p>
-     * This is a TTL in the multicast protocol sense (number of routed hops),
-     * not a timestamp sense.
-     */
-    public static final ConfigOption<Integer> GANGLIA_TTL = new ConfigOption<>(METRICS_GANGLIA_NS,"ttl",
-            "The multicast TTL to set on outgoing Ganglia datagrams",
-            ConfigOption.Type.MASKABLE, 1);
-
-    /**
-     * Whether to send data to Ganglia in the 3.1 protocol format (true) or the
-     * 3.0 protocol format (false).
-     * <p>
-     */
-    public static final ConfigOption<Boolean> GANGLIA_USE_PROTOCOL_31 = new ConfigOption<>(METRICS_GANGLIA_NS,"protocol-31",
-            "Whether to send data to Ganglia in the 3.1 protocol format",
-            ConfigOption.Type.MASKABLE, true);
-
-    /**
-     * The host UUID to set on outgoing Ganglia datagrams. If null, no UUID is
-     * set on outgoing data.
-     * <p>
-     * See https://github.com/ganglia/monitor-core/wiki/UUIDSources
-     * <p>
-     */
-    public static final ConfigOption<String> GANGLIA_UUID = new ConfigOption<>(METRICS_GANGLIA_NS,"uuid",
-            "The host UUID to set on outgoing Ganglia datagrams. " +
-            "See https://github.com/ganglia/monitor-core/wiki/UUIDSources for information about this setting.",
-            ConfigOption.Type.LOCAL, String.class);
-
-    /**
-     * If non-null, it must be a valid Gmetric spoof string formatted as an
-     * IP:hostname pair. If null, Ganglia will automatically determine the IP
-     * and hostname to set on outgoing datagrams.
-     * <p>
-     * See https://github.com/ganglia/monitor-core/wiki/Gmetric-Spoofing
-     * <p>
-     */
-    public static final ConfigOption<String> GANGLIA_SPOOF = new ConfigOption<String>(METRICS_GANGLIA_NS,"spoof",
-            "If non-null, it must be a valid Gmetric spoof string formatted as an IP:hostname pair. " +
-            "See https://github.com/ganglia/monitor-core/wiki/Gmetric-Spoofing for information about this setting.",
-            ConfigOption.Type.MASKABLE, String.class, s -> s!=null && 0 < s.indexOf(':'));
-
-    /**
      * The configuration namespace within {@link #METRICS_NS} for
      * Graphite.
      */
@@ -1211,6 +1150,12 @@ public class GraphDatabaseConfiguration {
     public static final String SYSTEM_CONFIGURATION_IDENTIFIER = "configuration";
     public static final String USER_CONFIGURATION_IDENTIFIER = "userconfig";
 
+    private static final Map<String, String> REGISTERED_INDEX_SELECTION_STRATEGIES = new HashMap() {{
+        put(ThresholdBasedIndexSelectionStrategy.NAME, ThresholdBasedIndexSelectionStrategy.class.getName());
+        put(BruteForceIndexSelectionStrategy.NAME, BruteForceIndexSelectionStrategy.class.getName());
+        put(ApproximateIndexSelectionStrategy.NAME, ApproximateIndexSelectionStrategy.class.getName());
+    }};
+
     private final Configuration configuration;
     private final ReadConfiguration configurationAtOpen;
     private String uniqueGraphId;
@@ -1227,6 +1172,8 @@ public class GraphDatabaseConfiguration {
     private Boolean propertyPrefetching;
     private boolean adjustQueryLimit;
     private Boolean useMultiQuery;
+    private boolean optimizerBackendAccess;
+    private IndexSelectionStrategy indexSelectionStrategy;
     private Boolean batchPropertyPrefetching;
     private boolean allowVertexIdSetting;
     private boolean logTransactions;
@@ -1312,6 +1259,14 @@ public class GraphDatabaseConfiguration {
 
     public boolean useMultiQuery() {
         return useMultiQuery;
+    }
+
+    public boolean optimizerBackendAccess() {
+        return optimizerBackendAccess;
+    }
+
+    public IndexSelectionStrategy getIndexSelectionStrategy() {
+        return indexSelectionStrategy;
     }
 
     public boolean batchPropertyPrefetching() {
@@ -1414,6 +1369,8 @@ public class GraphDatabaseConfiguration {
         //Disable auto-type making when batch-loading is enabled since that may overwrite types without warning
         if (batchLoading) defaultSchemaMaker = DisableDefaultSchemaMaker.INSTANCE;
 
+        defaultSchemaMaker.enableLogging(configuration.get(SCHEMA_MAKER_LOGGING));
+
         hasDisabledSchemaConstraints = !configuration.get(SCHEMA_CONSTRAINTS);
 
         txVertexCacheSize = configuration.get(TX_CACHE_SIZE);
@@ -1428,6 +1385,9 @@ public class GraphDatabaseConfiguration {
 
         propertyPrefetching = configuration.get(PROPERTY_PREFETCHING);
         useMultiQuery = configuration.get(USE_MULTIQUERY);
+        indexSelectionStrategy = Backend.getImplementationClass(configuration, configuration.get(INDEX_SELECT_STRATEGY),
+            REGISTERED_INDEX_SELECTION_STRATEGIES);
+        optimizerBackendAccess = configuration.get(OPTIMIZER_BACKEND_ACCESS);
         batchPropertyPrefetching = configuration.get(BATCH_PROPERTY_PREFETCHING);
         adjustQueryLimit = configuration.get(ADJUST_LIMIT);
         allowVertexIdSetting = configuration.get(ALLOW_SETTING_VERTEX_ID);
@@ -1453,7 +1413,6 @@ public class GraphDatabaseConfiguration {
         configureMetricsCsvReporter();
         configureMetricsJmxReporter();
         configureMetricsSlf4jReporter();
-        configureMetricsGangliaReporter();
         configureMetricsGraphiteReporter();
     }
 
@@ -1480,37 +1439,6 @@ public class GraphDatabaseConfiguration {
             // null loggerName is allowed -- that means Metrics will use its internal default
             MetricManager.INSTANCE.addSlf4jReporter(configuration.get(METRICS_SLF4J_INTERVAL),
                 configuration.has(METRICS_SLF4J_LOGGER) ? configuration.get(METRICS_SLF4J_LOGGER) : null);
-        }
-    }
-
-    private void configureMetricsGangliaReporter() {
-        if (configuration.has(GANGLIA_HOST_OR_GROUP)) {
-            final String host = configuration.get(GANGLIA_HOST_OR_GROUP);
-            final Duration intervalDuration = configuration.get(GANGLIA_INTERVAL);
-            final Integer port = configuration.get(GANGLIA_PORT);
-
-            final UDPAddressingMode addressingMode;
-            final String addressingModeString = configuration.get(GANGLIA_ADDRESSING_MODE);
-            if (addressingModeString.equalsIgnoreCase("multicast")) {
-                addressingMode = UDPAddressingMode.MULTICAST;
-            } else if (addressingModeString.equalsIgnoreCase("unicast")) {
-                addressingMode = UDPAddressingMode.UNICAST;
-            } else throw new AssertionError();
-
-            final Boolean proto31 = configuration.get(GANGLIA_USE_PROTOCOL_31);
-
-            final int ttl = configuration.get(GANGLIA_TTL);
-
-            final UUID uuid = configuration.has(GANGLIA_UUID)? UUID.fromString(configuration.get(GANGLIA_UUID)):null;
-
-            String spoof = null;
-            if (configuration.has(GANGLIA_SPOOF)) spoof = configuration.get(GANGLIA_SPOOF);
-
-            try {
-                MetricManager.INSTANCE.addGangliaReporter(host, port, addressingMode, ttl, proto31, uuid, spoof, intervalDuration);
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
         }
     }
 

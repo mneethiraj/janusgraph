@@ -40,9 +40,17 @@ public interface QueryProfiler {
     String FULLSCAN_ANNOTATION = "fullscan";
     String INDEX_ANNOTATION = "index";
 
+    /* ==================================================================================
+                                       GROUP NAMES
+     ==================================================================================*/
     String OR_QUERY = "OR-query";
     String AND_QUERY = "AND-query";
+    String BACKEND_QUERY = "backend-query";
     String OPTIMIZATION = "optimization";
+    // graph centric query construction phase
+    String CONSTRUCT_GRAPH_CENTRIC_QUERY = "constructGraphCentricQuery";
+    // graph centric query execution phase
+    String GRAPH_CENTRIC_QUERY = "GraphCentricQuery";
 
     QueryProfiler NO_OP = new QueryProfiler() {
         @Override
@@ -83,12 +91,8 @@ public interface QueryProfiler {
         return profile(profiler,query,false,queryExecutor);
     }
 
-    static<Q extends Query,R extends Collection> R profile(String groupName, QueryProfiler profiler, Q query, Function<Q,R> queryExecutor) {
-        return profile(groupName,profiler,query,false,queryExecutor);
-    }
-
     static<Q extends Query,R extends Collection> R profile(QueryProfiler profiler, Q query, boolean multiQuery, Function<Q,R> queryExecutor) {
-        return profile("backend-query",profiler,query,multiQuery,queryExecutor);
+        return profile(BACKEND_QUERY,profiler,query,multiQuery,queryExecutor);
     }
 
     static<Q extends Query,R extends Collection> R profile(String groupName, QueryProfiler profiler, Q query, boolean multiQuery, Function<Q,R> queryExecutor) {
@@ -113,7 +117,7 @@ public interface QueryProfiler {
     }
 
     static QueryProfiler startProfile(QueryProfiler profiler, Subquery query) {
-        final QueryProfiler sub = profiler.addNested("backend-query");
+        final QueryProfiler sub = profiler.addNested(BACKEND_QUERY);
         sub.setAnnotation(QUERY_ANNOTATION, query);
         if (query.hasLimit()) sub.setAnnotation(LIMIT_ANNOTATION,query.getLimit());
         sub.startTimer();

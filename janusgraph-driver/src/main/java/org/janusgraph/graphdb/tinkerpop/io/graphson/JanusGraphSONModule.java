@@ -29,6 +29,8 @@ import org.apache.tinkerpop.shaded.jackson.core.type.WritableTypeId;
 import org.apache.tinkerpop.shaded.jackson.databind.DeserializationContext;
 import org.apache.tinkerpop.shaded.jackson.databind.deser.std.StdDeserializer;
 import org.janusgraph.core.attribute.Geoshape;
+import org.janusgraph.graphdb.tinkerpop.DeprecatedJanusGraphPSerializer;
+import org.janusgraph.graphdb.tinkerpop.io.JanusGraphP;
 import org.janusgraph.graphdb.relations.RelationIdentifier;
 import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONTokens;
 import org.apache.tinkerpop.gremlin.structure.io.graphson.TinkerPopJacksonModule;
@@ -50,6 +52,7 @@ public abstract class JanusGraphSONModule extends TinkerPopJacksonModule {
                 {
                     put(RelationIdentifier.class, "RelationIdentifier");
                     put(Geoshape.class, "Geoshape");
+                    put(JanusGraphP.class, "JanusGraphP");
                 }
             });
 
@@ -144,9 +147,58 @@ public abstract class JanusGraphSONModule extends TinkerPopJacksonModule {
         }
     }
 
-    public static class JanusGraphPDeserializerV2d0 extends StdDeserializer<P> {
+    public static class JanusGraphPSerializerV2d0 extends StdSerializer<JanusGraphP> {
+        public JanusGraphPSerializerV2d0() {
+            super(JanusGraphP.class);
+        }
+
+        @Override
+        public void serialize(final JanusGraphP predicate, final JsonGenerator jsonGenerator,
+                              final SerializerProvider serializerProvider) throws IOException {
+            jsonGenerator.writeString(predicate.toString());
+        }
+
+        @Override
+        public void serializeWithType(final JanusGraphP value, final JsonGenerator jgen,
+                                      final SerializerProvider serializerProvider, final TypeSerializer typeSerializer) throws IOException {
+            String predicateName = value.getBiPredicate().toString();
+            Object arg = value.getValue();
+
+            jgen.writeStartObject();
+            if (typeSerializer != null) jgen.writeStringField(GraphSONTokens.VALUETYPE, TYPE_NAMESPACE + ":" + TYPE_DEFINITIONS.get(JanusGraphP.class));
+            jgen.writeFieldName(GraphSONTokens.VALUEPROP);
+            GraphSONUtil.writeStartObject(value, jgen, typeSerializer);
+            GraphSONUtil.writeWithType(GraphSONTokens.PREDICATE, predicateName, jgen, serializerProvider, typeSerializer);
+            GraphSONUtil.writeWithType(GraphSONTokens.VALUE, arg, jgen, serializerProvider, typeSerializer);
+            GraphSONUtil.writeEndObject(value, jgen, typeSerializer);
+            jgen.writeEndObject();
+        }
+
+    }
+
+    public static class JanusGraphPDeserializerV2d0 extends AbstractObjectDeserializer<JanusGraphP> {
 
         public JanusGraphPDeserializerV2d0() {
+            super(JanusGraphP.class);
+        }
+
+        @Override
+        public JanusGraphP createObject(Map<String, Object> data) {
+            String predicate = (String) data.get(GraphSONTokens.PREDICATE);
+            Object value = data.get(GraphSONTokens.VALUE);
+            return JanusGraphPSerializer.createPredicateWithValue(predicate, value);
+        }
+
+        @Override
+        public boolean isCachable() {
+            return true;
+        }
+    }
+
+    @Deprecated
+    public static class DeprecatedJanusGraphPDeserializerV2d0 extends StdDeserializer<P> {
+
+        public DeprecatedJanusGraphPDeserializerV2d0() {
             super(P.class);
         }
 
@@ -166,7 +218,7 @@ public abstract class JanusGraphSONModule extends TinkerPopJacksonModule {
             }
 
             try {
-                return JanusGraphPSerializer.createPredicateWithValue(predicate, value);
+                return DeprecatedJanusGraphPSerializer.createPredicateWithValue(predicate, value);
             } catch (final Exception e) {
                 throw new IllegalStateException(e.getMessage(), e);
             }

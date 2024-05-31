@@ -1,11 +1,10 @@
 # Apache Solr
 
-> Solr is the popular, blazing fast open source enterprise search
-> platform from the Apache Lucene project. Solr is a standalone
-> enterprise search server with a REST-like API. Solr is highly
-> reliable, scalable and fault tolerant, providing distributed indexing,
-> replication and load-balanced querying, automated failover and
-> recovery, centralized configuration and more.
+> Solr is highly reliable, scalable and fault tolerant, 
+> providing distributed indexing, replication and load-balanced 
+> querying, automated failover and recovery, centralized configuration 
+> and more. Solr powers the search and navigation features of 
+> many of the world's largest internet sites. 
 >
 > —  [Apache Solr Homepage](https://lucene.apache.org/solr/)
 
@@ -25,14 +24,14 @@ JanusGraph:
 -   **Temporal**: Millisecond granularity temporal indexing.
 -   **Custom Analyzer**: Choose to use a custom analyzer
 
-Please see [Version Compatibility](../appendices.md#version-compatibility) 
+Please see [Version Compatibility](../changelog.md#version-compatibility)
 for details on what versions of Solr will work with JanusGraph.
 
 ## Solr Configuration Overview
 
 JanusGraph supports Solr running in either a SolrCloud or Solr
 Standalone (HTTP) configuration for use with a **mixed index** 
-(see [Mixed Index](../index-management/index-performance.md#mixed-index)). 
+(see [Mixed Index](../schema/index-management/index-performance.md#mixed-index)). 
 The desired connection mode is configured via the
 parameter `mode` which must be set to either `cloud` or `http`, the
 former being the default value. For example, to explicitly specify that
@@ -68,7 +67,7 @@ index.search.solr.zookeeper-url=localhost:2181
 A number of additional configuration options pertaining to the creation
 of new collections (which is only supported in SolrCloud operation mode)
 can be configured to control sharding behavior among other things. Refer
-to the [Configuration Reference](../basics/configuration-reference.md) for a complete listing of those options.
+to the [Configuration Reference](../configs/configuration-reference.md) for a complete listing of those options.
 
 SolrCloud leverages Zookeeper to coordinate collection and configset
 information between the Solr servers. The use of Zookeeper with
@@ -169,7 +168,7 @@ index.search.solr.http-urls=http://localhost:8983/solr
 
 Additional configuration options for controlling the maximum number of
 connections, connection timeout and transmission compression are
-available for the HTTP mode. Refer to the [Configuration Reference](../basics/configuration-reference.md) for a
+available for the HTTP mode. Refer to the [Configuration Reference](../configs/configuration-reference.md) for a
 complete listing of those options.
 
 ### Core Configuration

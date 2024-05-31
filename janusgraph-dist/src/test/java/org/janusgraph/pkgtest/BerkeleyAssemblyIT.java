@@ -14,16 +14,32 @@
 
 package org.janusgraph.pkgtest;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 public class BerkeleyAssemblyIT extends AbstractJanusGraphAssemblyIT {
+    @Override
+    protected String getConfigPath() {
+        return "conf/janusgraph-berkeleyje.properties";
+    }
+
+    @Override
+    protected String getServerConfigPath() {
+        return "conf/gremlin-server/gremlin-server-berkeleyje.yaml";
+    }
+
+    @Override
+    protected String getGraphName() {
+        return "berkeleyje";
+    }
 
     @Test
-    public void testBerkeleySimpleSession() throws Exception {
-        testSimpleGremlinSession("conf/janusgraph-berkeleyje.properties", "berkeleyje", false);
-    }
+    @Disabled
+    @Override
+    public void testGettingStartedAgainstGremlinSh() {}
+
     @Test
-    public void testBerkeleySimpleSessionFull() throws Exception {
-        testSimpleGremlinSession("conf/janusgraph-berkeleyje.properties", "berkeleyje", true);
-    }
+    @Disabled
+    @Override
+    public void testGettingStartedAgainstGremlinShFull() {}
 }

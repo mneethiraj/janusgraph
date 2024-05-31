@@ -16,26 +16,17 @@ package org.janusgraph.diskstorage.solr;
 
 import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
 import org.janusgraph.diskstorage.configuration.WriteConfiguration;
-import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
 import static org.janusgraph.BerkeleyStorageSetup.getBerkeleyJEConfiguration;
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.*;
 
-/**
- * @author Matthias Broecheler (me@matthiasb.com)
- */
-
+@Testcontainers
 public class BerkeleySolrTest extends SolrJanusGraphIndexTest {
 
     @Override
-    public WriteConfiguration getConfiguration() {
-        ModifiableConfiguration config = getBerkeleyJEConfiguration();
-        //Add index
-        config.set(INDEX_BACKEND,"solr",INDEX);
-        config.set(SolrIndex.ZOOKEEPER_URL, SolrRunner.getZookeeperUrls(), INDEX);
-        config.set(SolrIndex.WAIT_SEARCHER, true, INDEX);
-        config.set(GraphDatabaseConfiguration.INDEX_MAX_RESULT_SET_SIZE, 3, INDEX);
-        //TODO: set SOLR specific config options
-        return config.getConfiguration();
+    public ModifiableConfiguration getStorageConfiguration() {
+        return getBerkeleyJEConfiguration();
     }
 
     @Override

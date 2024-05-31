@@ -3,7 +3,7 @@
     <parent>
         <groupId>org.janusgraph</groupId>
         <artifactId>janusgraph</artifactId>
-        <version>0.5.4-SNAPSHOT</version>
+        <version>0.6.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>janusgraph-examples</artifactId>
@@ -14,7 +14,6 @@
     <modules>
         <module>example-common</module>
         <module>example-berkeleyje</module>
-        <module>example-cassandra</module>
         <module>example-cql</module>
         <module>example-hbase</module>
         <module>example-remotegraph</module>
@@ -35,7 +34,7 @@
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
-                <version>1.6.0</version>
+                <version>3.0.0</version>
                 <executions>
                     <execution>
                         <goals>

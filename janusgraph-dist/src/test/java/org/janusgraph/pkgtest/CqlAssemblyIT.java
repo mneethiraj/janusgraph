@@ -15,6 +15,7 @@
 package org.janusgraph.pkgtest;
 
 import org.janusgraph.JanusGraphCassandraContainer;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -25,13 +26,28 @@ public class CqlAssemblyIT extends AbstractJanusGraphAssemblyIT {
     @Container
     private static JanusGraphCassandraContainer cql = new JanusGraphCassandraContainer(true);
 
-    @Test
-    public void testCassandraThriftSimpleSession() throws Exception {
-        testSimpleGremlinSession("conf/janusgraph-cql.properties", "cql", false);
+    @Override
+    protected String getConfigPath() {
+        return "conf/janusgraph-cql.properties";
+    }
+
+    @Override
+    protected String getServerConfigPath() {
+        return "conf/gremlin-server/gremlin-server-cql.yaml";
+    }
+
+    @Override
+    protected String getGraphName() {
+        return "cql";
     }
 
     @Test
-    public void testCassandraThriftSimpleSessionFull() throws Exception {
-        testSimpleGremlinSession("conf/janusgraph-cql.properties", "cql", true);
-    }
+    @Disabled
+    @Override
+    public void testGettingStartedAgainstGremlinSh() {}
+
+    @Test
+    @Disabled
+    @Override
+    public void testGettingStartedAgainstGremlinShFull() {}
 }

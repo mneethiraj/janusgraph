@@ -17,6 +17,7 @@ package org.janusgraph.diskstorage.keycolumnvalue;
 import org.janusgraph.diskstorage.Entry;
 import org.janusgraph.diskstorage.StaticBuffer;
 import org.janusgraph.diskstorage.util.RecordIterator;
+import org.janusgraph.graphdb.olap.VertexJobConverter;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -33,6 +34,9 @@ public interface KeyIterator extends RecordIterator<StaticBuffer> {
      * Calling {@link #next()} might close previously returned RecordIterators
      * depending on the implementation, hence it is important to iterate over
      * (and close) the RecordIterator before calling {@link #next()} or {@link #hasNext()}.
+     *
+     * Important! Entries should be sorted inside iterator.
+     * Otherwise {@link VertexJobConverter} will not work correctly
      *
      * @return
      */

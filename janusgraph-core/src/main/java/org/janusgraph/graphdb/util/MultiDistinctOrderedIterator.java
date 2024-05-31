@@ -27,7 +27,7 @@ import java.util.TreeMap;
 import org.apache.tinkerpop.gremlin.process.traversal.step.util.ElementValueComparator;
 import org.apache.tinkerpop.gremlin.structure.util.CloseableIterator;
 import org.apache.tinkerpop.gremlin.util.function.MultiComparator;
-import org.janusgraph.graphdb.tinkerpop.optimize.HasStepFolder.OrderEntry;
+import org.janusgraph.graphdb.tinkerpop.optimize.step.HasStepFolder.OrderEntry;
 
 
 public class MultiDistinctOrderedIterator<E> implements CloseableIterator<E> {

@@ -120,10 +120,10 @@ Otherwise you will have to type in your gpg passphrase many times when prompted 
 *   [ ] Upload artifacts to a draft release
 *   [ ] Close the staging repository in [Sonatype](https://oss.sonatype.org/#stagingRepositories)
 *   [ ] Convert release draft to a public pre-release
-*   [ ] Create `[VOTE]` [janusgraph-dev](https://groups.google.com/forum/#!forum/janusgraph-dev) vote thread and [get required votes of 3 TSC members](https://www.apache.org/foundation/voting.html)
+*   [ ] Create `[VOTE]` [janusgraph-dev](https://lists.lfaidata.foundation/g/janusgraph-dev) vote thread and [get required votes of 3 TSC members](https://www.apache.org/foundation/voting.html)
 *   [ ] Release the staging repository in Sonatype
 *   [ ] Remove pre-release label on the [releases page](https://github.com/JanusGraph/janusgraph/releases/)
-*   [ ] Announce the new release in [janusgraph-user](https://groups.google.com/forum/#!forum/janusgraph-users)
+*   [ ] Announce the new release
 *   [ ] Prepare the next SNAPSHOT release
 *   [ ] Document lessons learned
 
@@ -182,7 +182,7 @@ You may also need to update the following files in the main repo for any new or 
 
 Create a release commit:
 ```Shell
-git commit -m "JanusGraph release <version> [full build]" -s
+git commit -m "JanusGraph release <version> [tp-tests]" -s
 ```
 
 After that create a release tag with the next command:
@@ -197,7 +197,7 @@ git tag -a v0.3.2 -m ""
 #### Create the Pull Request
 
 Open up pull requests for the version updates.
-It is recommended to add `[full build]` to the commit message so the full suite of compatibility tests will run.
+It is recommended to add `[tp-tests]` to the commit message so the TinkerPop test suite will run.
 After the updates are approved and merged, continue on with the release process.
 
 # Build Release Artifacts
@@ -319,9 +319,9 @@ Create an issue to initialize the next SNAPSHOT release.
 Open a pull request with the `pom.xml` updates as a fix for that issue and also
 update `snapshot_version` in the `mkdocs.yml`. 
 
-### Announce the release
+### Announce the new release
 
-Once it has been verified that the artifacts have populated in Nexus the release manager should announce the release in [janusgraph-users](https://groups.google.com/forum/#!forum/janusgraph-users).
+Once it has been verified that the artifacts have populated in Nexus the release manager should announce the release in [janusgraph-user](https://lists.lfaidata.foundation/g/janusgraph-users), [janusgraph-dev](https://lists.lfaidata.foundation/g/janusgraph-dev) and [janusgraph-announce](https://lists.lfaidata.foundation/g/janusgraph-announce).
 Here is an [example announcement thread](https://groups.google.com/forum/#!searchin/janusgraph-users/ANNOUNCE%7Csort:date/janusgraph-users/nAgHta8mw-A/pOsd8qpqBgAJ).
 
 ### Document lessons learned

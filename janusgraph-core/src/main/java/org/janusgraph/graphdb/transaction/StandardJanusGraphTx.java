@@ -16,9 +16,6 @@ package org.janusgraph.graphdb.transaction;
 
 import com.carrotsearch.hppc.LongArrayList;
 import com.google.common.base.Preconditions;
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.Weigher;
 import com.google.common.collect.*;
 import org.janusgraph.core.*;
 import org.janusgraph.core.attribute.Cmp;
@@ -29,6 +26,7 @@ import org.janusgraph.diskstorage.util.time.TimestampProvider;
 import org.janusgraph.diskstorage.BackendTransaction;
 import org.janusgraph.diskstorage.EntryList;
 import org.janusgraph.diskstorage.keycolumnvalue.SliceQuery;
+import org.janusgraph.graphdb.query.index.IndexSelectionStrategy;
 import org.janusgraph.graphdb.query.profile.QueryProfiler;
 import org.janusgraph.graphdb.relations.RelationComparator;
 import org.janusgraph.graphdb.relations.RelationIdentifier;
@@ -59,6 +57,8 @@ import org.janusgraph.graphdb.transaction.indexcache.ConcurrentIndexCache;
 import org.janusgraph.graphdb.transaction.indexcache.IndexCache;
 import org.janusgraph.graphdb.transaction.indexcache.SimpleIndexCache;
 import org.janusgraph.graphdb.transaction.lock.*;
+import org.janusgraph.graphdb.transaction.subquerycache.GuavaSubqueryCache;
+import org.janusgraph.graphdb.transaction.subquerycache.SubqueryCache;
 import org.janusgraph.graphdb.transaction.vertexcache.GuavaVertexCache;
 import org.janusgraph.graphdb.transaction.vertexcache.VertexCache;
 import org.janusgraph.graphdb.types.*;
@@ -119,6 +119,7 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction implem
     private BackendTransaction txHandle;
     private final EdgeSerializer edgeSerializer;
     private final IndexSerializer indexSerializer;
+    private final IndexSelectionStrategy indexSelector;
 
     /* ###############################################
             Internal Data Structures
@@ -147,7 +148,7 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction implem
      * to be passed to the IndexProvider. This cache will drop entries when it overflows
      * since the result set can always be retrieved from the IndexProvider
      */
-    private final Cache<JointIndexQuery.Subquery, List<Object>> indexCache;
+    private final SubqueryCache indexCache;
     /**
      * Builds an inverted index for newly added properties so they can be considered in index queries.
      * This cache my not release elements since that would entail an expensive linear scan over addedRelations
@@ -201,6 +202,7 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction implem
         this.attributeHandler = graph.getDataSerializer();
         this.edgeSerializer = graph.getEdgeSerializer();
         this.indexSerializer = graph.getIndexSerializer();
+        this.indexSelector = graph.getIndexSelector();
 
         temporaryIds = new IDPool() {
 
@@ -244,7 +246,7 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction implem
 
         vertexCache = new GuavaVertexCache(effectiveVertexCacheSize,concurrencyLevel,config.getDirtyVertexSize());
 
-        indexCache = CacheBuilder.newBuilder().weigher((Weigher<JointIndexQuery.Subquery, List<Object>>) (q, r) -> 2 + r.size()).concurrencyLevel(concurrencyLevel).maximumWeight(config.getIndexCacheWeight()).build();
+        indexCache = new GuavaSubqueryCache(concurrencyLevel, config.getIndexCacheWeight());
 
         uniqueLocks = UNINITIALIZED_LOCKS;
         deletedRelations = EMPTY_DELETED_RELATIONS;
@@ -1344,7 +1346,7 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction implem
                             return indexCache.get(adjustedQuery,
                                 () -> QueryProfiler.profile(subquery.getProfiler(), adjustedQuery, q -> indexSerializer.query(q, txHandle).collect(Collectors.toList())));
                         } catch (Exception e) {
-                            throw new JanusGraphException("Could not call index", e.getCause());
+                            throw new JanusGraphException("Could not call index", e);
                         }
                     });
                 }
@@ -1414,7 +1416,7 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction implem
 
     @Override
     public GraphCentricQueryBuilder query() {
-        return new GraphCentricQueryBuilder(this, graph.getIndexSerializer());
+        return new GraphCentricQueryBuilder(this, graph.getIndexSerializer(), indexSelector);
     }
 
     @Override

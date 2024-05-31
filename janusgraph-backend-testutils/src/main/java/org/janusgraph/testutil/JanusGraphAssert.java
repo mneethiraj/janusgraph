@@ -14,6 +14,7 @@
 
 package org.janusgraph.testutil;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -21,13 +22,26 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
+import com.google.common.collect.Sets;
+import org.apache.tinkerpop.gremlin.process.traversal.Step;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
+import org.apache.tinkerpop.gremlin.process.traversal.TraversalStrategies;
+import org.apache.tinkerpop.gremlin.process.traversal.TraversalStrategy;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversal;
+import org.apache.tinkerpop.gremlin.process.traversal.step.map.GraphStep;
+import org.apache.tinkerpop.gremlin.process.traversal.step.sideEffect.StartStep;
+import org.apache.tinkerpop.gremlin.process.traversal.util.DefaultTraversalStrategies;
+import org.apache.tinkerpop.gremlin.process.traversal.util.Metrics;
+import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalMetrics;
 import org.apache.tinkerpop.gremlin.structure.Element;
+import org.janusgraph.graphdb.query.profile.QueryProfiler;
 
 import java.lang.reflect.Array;
 import java.util.Collection;
 import java.util.Iterator;
+import java.util.stream.IntStream;
+import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 /**
@@ -70,6 +84,36 @@ public class JanusGraphAssert {
         assertFalse(req.hasNext());
     }
 
+    public static void assertIntRange(GraphTraversal<?, Integer> traversal, int start, int end) {
+        int[] intArray;
+        if (start <= end) {
+            intArray = IntStream.range(start, end).toArray();
+        } else {
+            intArray = IntStream.range(end, start).map(i -> start + end - i).toArray();
+        }
+        assertArrayEquals(intArray, traversal.toList().stream().mapToInt(i -> i).toArray());
+    }
+
+    private static boolean hasBackendHit(Metrics metrics) {
+        if (QueryProfiler.BACKEND_QUERY.equals(metrics.getName())) return true;
+        for (Metrics subMetrics : metrics.getNested()) {
+            if (hasBackendHit(subMetrics)) return true;
+        }
+        return false;
+    }
+
+    public static void assertBackendHit(TraversalMetrics profile) {
+        assertTrue(profile.getMetrics().stream().anyMatch(metrics -> {
+            return hasBackendHit(metrics);
+        }));
+    }
+
+    public static void assertNoBackendHit(TraversalMetrics profile) {
+        assertFalse(profile.getMetrics().stream().anyMatch(metrics -> {
+            return hasBackendHit(metrics);
+        }));
+    }
+
     private static boolean isEmpty(Object obj) {
         Preconditions.checkArgument(obj != null);
         if (obj instanceof Traversal) return !((Traversal) obj).hasNext();
@@ -81,4 +125,59 @@ public class JanusGraphAssert {
         throw new IllegalArgumentException("Cannot determine size of: " + obj);
     }
 
+    /**
+     * Checks the number of matching steps within a traversal and the size of it's evaluated output simultaneously.
+     *
+     * @param expectedResults The expected number of returned results.
+     * @param expectedSteps The expected number of steps of type <code>expectedStepTypes</code>.
+     * @param traversal The checked traversal.
+     * @param expectedStepTypes The step types to be counted.
+     */
+    public static void assertNumStep(int expectedResults, int expectedSteps, GraphTraversal traversal, Class<? extends Step>... expectedStepTypes) {
+        assertEquals(expectedResults, traversal.toList().size());
+
+        //Verify that steps line up with what is expected after JanusGraph's optimizations are applied
+        List<Step> steps = traversal.asAdmin().getSteps();
+        Set<Class<? extends Step>> expSteps = Sets.newHashSet(expectedStepTypes);
+        int numSteps = 0;
+        for (Step s : steps) {
+            if (s.getClass().equals(GraphStep.class) || s.getClass().equals(StartStep.class)) continue;
+
+            if (expSteps.contains(s.getClass())) {
+                numSteps++;
+            }
+        }
+        assertEquals(expectedSteps, numSteps);
+    }
+
+    public static void assertOptimization(Traversal<?, ?> expectedTraversal, Traversal<?, ?> originalTraversal,
+                                          TraversalStrategy... optimizationStrategies) {
+        final TraversalStrategies optimizations = new DefaultTraversalStrategies();
+        for (final TraversalStrategy<?> strategy : optimizationStrategies) {
+            optimizations.addStrategies(strategy);
+        }
+
+        originalTraversal.asAdmin().setStrategies(optimizations);
+        originalTraversal.asAdmin().applyStrategies();
+
+        assertEquals(expectedTraversal.asAdmin().getSteps().toString(),
+            originalTraversal.asAdmin().getSteps().toString());
+    }
+
+    public static void assertSameResultWithOptimizations(Traversal<?, ?> originalTraversal, TraversalStrategy<?>... strategies) {
+        Traversal.Admin<?,?> optimizedTraversal = originalTraversal.asAdmin().clone();
+        optimizedTraversal.getStrategies().addStrategies(strategies);
+        List<?> optimizedResult = optimizedTraversal.toList();
+
+        Traversal.Admin<?,?> unOptimizedTraversal = originalTraversal.asAdmin().clone();
+        Stream.of(strategies).forEach(s -> unOptimizedTraversal.getStrategies().removeStrategies(s.getClass()));
+        List<?> unOptimizedResult = unOptimizedTraversal.toList();
+
+        assertEquals(unOptimizedResult, optimizedResult);
+    }
+
+    public static boolean queryProfilerAnnotationIsPresent(Traversal t, String queryProfilerAnnotation) {
+        TraversalMetrics metrics = t.asAdmin().getSideEffects().get("~metrics");
+        return metrics.toString().contains(queryProfilerAnnotation + "=true");
+    }
 }

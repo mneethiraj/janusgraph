@@ -17,7 +17,7 @@ is not limited to:
 For these sorts of changes, contributors will:
 
 - Create one or more issues in the GitHub issue tracker
-- Start a DISCUSS thread on the [janusgraph-dev](https://groups.google.com/forum/#!forum/janusgraph-dev)
+- Start a DISCUSS thread on the [janusgraph-dev](https://lists.lfaidata.foundation/g/janusgraph-dev)
  list where the proposed change may be discussed by committers and other community members
 - When the proposer feels it appropriate, a VOTE shall be called
 - Two +1 votes are required for the change to be accepted
@@ -118,7 +118,7 @@ is merged into a downstream release branch.
 
 Any JanusGraph committer may propose a release. To propose a release,
 simple start a new RELEASE thread on
-[janusgraph-dev](https://groups.google.com/forum/#!forum/janusgraph-dev)
+[janusgraph-dev](https://lists.lfaidata.foundation/g/janusgraph-dev)
 proposing the new release and requesting feedback on what should be
 included in the release. After consensus is reached the release manager
 will perform the following tasks:
@@ -126,7 +126,7 @@ will perform the following tasks:
 -   Create a release branch so that work may continue on `master`
 -   Prepare the release artifacts
 -   Call a vote to approve the release on
-    [janusgraph-dev](https://groups.google.com/forum/#!forum/janusgraph-dev)
+    [janusgraph-dev](https://lists.lfaidata.foundation/g/janusgraph-dev)
 -   Committers will be given 72 hours to review and vote on the release
     artifacts
 -   Three +1 votes are required for a release to be approved
@@ -151,11 +151,10 @@ To build JanusGraph you need [git](http://git-scm.com/) and
 3.  For comprehensive test coverage, execute
     `mvn clean test -P comprehensive`. This will run additional test
     covering communication to external storage backends, performance
-    tests and concurrency tests. The comprehensive test suite uses
-    Cassandra and HBase as external databases and requires that
-    Cassandra and HBase are installed. Note, that running the
-    comprehensive test suite requires a significant amount of of time
-    (&gt; 1 hour).
+    tests and concurrency tests. The comprehensive test suite uses 
+    HBase as external database and requires that HBase is installed. 
+    Note, that running the comprehensive test suite requires a 
+    significant amount of of time (&gt; 1 hour).
 
 ### Depending on JanusGraph Snapshots
 

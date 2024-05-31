@@ -77,8 +77,7 @@ data from the storage backend.
 
 JanusGraph directly supports following graphReader classes:
 
-* `CqlInputFormat` for use with Cassandra 3
-* `CassandraInputFormat` for use with Cassandra 2
+* `CqlInputFormat` for use with Cassandra
 * `HBaseInputFormat` and `HBaseSnapshotInputFormat` for use with HBase
 
 The following `.properties` files can be used to connect a JanusGraph
@@ -86,10 +85,6 @@ instance such that it can be used with HadoopGraph to run OLAP queries.
 
 ```properties tab='read-cql.properties'
 {!../janusgraph-dist/src/assembly/static/conf/hadoop-graph/read-cql.properties!}
-```
-
-```properties tab='read-cassandra.properties'
-{!../janusgraph-dist/src/assembly/static/conf/hadoop-graph/read-cassandra.properties!}
 ```
 
 ```properties tab='read-hbase.properties'
@@ -117,33 +112,6 @@ same on the Gremlin Console to run OLAP queries as follows:
     gremlin> // 2. Configure the traversal to run with Spark
     gremlin> g = graph.traversal().withComputer(SparkGraphComputer)
     ==>graphtraversalsource[hadoopgraph[cqlinputformat->gryooutputformat], sparkgraphcomputer]
-    gremlin> // 3. Run some OLAP traversals
-    gremlin> g.V().count()
-    ......
-    ==>808
-    gremlin> g.E().count()
-    ......
-    ==> 8046
-    ```
-
-=== "read-cassandra.properties"
-    ```bash
-    bin/gremlin.sh
-
-            \,,,/
-            (o o)
-    -----oOOo-(3)-oOOo-----
-    plugin activated: janusgraph.imports
-    gremlin> :plugin use tinkerpop.hadoop
-    ==>tinkerpop.hadoop activated
-    gremlin> :plugin use tinkerpop.spark
-    ==>tinkerpop.spark activated
-    gremlin> // 1. Open a the graph for OLAP processing reading in from Cassandra 2
-    gremlin> graph = GraphFactory.open('conf/hadoop-graph/read-cassandra.properties')
-    ==>hadoopgraph[cassandrainputformat->gryooutputformat]
-    gremlin> // 2. Configure the traversal to run with Spark
-    gremlin> g = graph.traversal().withComputer(SparkGraphComputer)
-    ==>graphtraversalsource[hadoopgraph[cassandrainputformat->gryooutputformat], sparkgraphcomputer]
     gremlin> // 3. Run some OLAP traversals
     gremlin> g.V().count()
     ......
@@ -205,10 +173,6 @@ The final properties file used for OLAP traversal is as follows:
 {!../janusgraph-dist/src/assembly/static/conf/hadoop-graph/read-cql-standalone-cluster.properties!}
 ```
 
-```properties tab='read-cassandra-standalone-cluster.properties'
-{!../janusgraph-dist/src/assembly/static/conf/hadoop-graph/read-cassandra-standalone-cluster.properties!}
-```
-
 ```properties tab='read-hbase-standalone-cluster.properties'
 {!../janusgraph-dist/src/assembly/static/conf/hadoop-graph/read-hbase-standalone-cluster.properties!}
 ```
@@ -233,33 +197,6 @@ Then use the properties file as follows from the Gremlin Console:
     gremlin> // 2. Configure the traversal to run with Spark
     gremlin> g = graph.traversal().withComputer(SparkGraphComputer)
     ==>graphtraversalsource[hadoopgraph[cqlinputformat->gryooutputformat], sparkgraphcomputer]
-    gremlin> // 3. Run some OLAP traversals
-    gremlin> g.V().count()
-    ......
-    ==>808
-    gremlin> g.E().count()
-    ......
-    ==> 8046
-    ```
-
-=== "read-cassandra-standalone-cluster.properties"
-    ```bash
-    bin/gremlin.sh
-
-            \,,,/
-            (o o)
-    -----oOOo-(3)-oOOo-----
-    plugin activated: janusgraph.imports
-    gremlin> :plugin use tinkerpop.hadoop
-    ==>tinkerpop.hadoop activated
-    gremlin> :plugin use tinkerpop.spark
-    ==>tinkerpop.spark activated
-    gremlin> // 1. Open a the graph for OLAP processing reading in from Cassandra 2
-    gremlin> graph = GraphFactory.open('conf/hadoop-graph/read-cassandra-standalone-cluster.properties')
-    ==>hadoopgraph[cassandrainputformat->gryooutputformat]
-    gremlin> // 2. Configure the traversal to run with Spark
-    gremlin> g = graph.traversal().withComputer(SparkGraphComputer)
-    ==>graphtraversalsource[hadoopgraph[cassandrainputformat->gryooutputformat], sparkgraphcomputer]
     gremlin> // 3. Run some OLAP traversals
     gremlin> g.V().count()
     ......

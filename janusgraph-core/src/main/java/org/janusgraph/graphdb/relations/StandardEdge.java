@@ -15,14 +15,13 @@
 package org.janusgraph.graphdb.relations;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Lists;
 import org.janusgraph.core.EdgeLabel;
 import org.janusgraph.core.PropertyKey;
 import org.janusgraph.graphdb.internal.ElementLifeCycle;
 import org.janusgraph.graphdb.internal.InternalVertex;
 import org.janusgraph.graphdb.types.system.ImplicitKey;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -33,16 +32,16 @@ import java.util.Map;
 
 public class StandardEdge extends AbstractEdge implements StandardRelation, ReassignableRelation {
 
-    public StandardEdge(long id, EdgeLabel label, InternalVertex start, InternalVertex end, byte lifecycle) {
-        super(id, label, start, end);
-        this.lifecycle = lifecycle;
-    }
-
-    private static final Map<PropertyKey, Object> EMPTY_PROPERTIES = ImmutableMap.of();
+    private static final Map<PropertyKey, Object> EMPTY_PROPERTIES = Collections.emptyMap();
 
     private byte lifecycle;
     private long previousID = 0;
     private volatile Map<PropertyKey, Object> properties = EMPTY_PROPERTIES;
+
+    public StandardEdge(long id, EdgeLabel label, InternalVertex start, InternalVertex end, byte lifecycle) {
+        super(id, label, start, end);
+        this.lifecycle = lifecycle;
+    }
 
     @Override
     public long getPreviousID() {
@@ -81,7 +80,7 @@ public class StandardEdge extends AbstractEdge implements StandardRelation, Reas
 
     @Override
     public Iterable<PropertyKey> getPropertyKeysDirect() {
-        return Lists.newArrayList(properties.keySet());
+        return new ArrayList<>(properties.keySet());
     }
 
     @Override

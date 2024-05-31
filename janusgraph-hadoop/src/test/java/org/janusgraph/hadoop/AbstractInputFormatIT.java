@@ -14,7 +14,6 @@
 
 package org.janusgraph.hadoop;
 
-import com.google.common.collect.ImmutableSet;
 import org.janusgraph.core.Cardinality;
 import org.janusgraph.core.JanusGraphVertex;
 import org.janusgraph.example.GraphOfTheGodsFactory;
@@ -31,12 +30,7 @@ import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
-import com.google.common.collect.Sets;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -84,10 +78,10 @@ public abstract class AbstractInputFormatIT extends JanusGraphBaseTest {
         GraphTraversalSource t = g.traversal().withComputer(SparkGraphComputer.class);
         assertEquals(numV, (long) t.V().count().next());
         propertiesOnVertex = t.V().valueMap().next();
-        final Set<?> observedValuesOnP = ImmutableSet.copyOf((List)propertiesOnVertex.values().iterator().next());
+        final Set<?> observedValuesOnP = Collections.unmodifiableSet(new HashSet<>((List)propertiesOnVertex.values().iterator().next()));
         assertEquals(numProps, observedValuesOnP.size());
         // order may not be preserved in multi-value properties
-        assertEquals(ImmutableSet.copyOf(valuesOnP), observedValuesOnP, "Unexpected values");
+        assertEquals(Collections.unmodifiableSet(new HashSet<>(valuesOnP)), observedValuesOnP, "Unexpected values");
     }
 
     @Test
@@ -114,7 +108,8 @@ public abstract class AbstractInputFormatIT extends JanusGraphBaseTest {
         Iterator<Object> edgeIdIterator = t.V().has("name", "sky").bothE().id();
         assertNotNull(edgeIdIterator);
         assertTrue(edgeIdIterator.hasNext());
-        Set<Object> edges = Sets.newHashSet(edgeIdIterator);
+        Set<Object> edges = new HashSet<>();
+        edgeIdIterator.forEachRemaining(edges::add);
         assertEquals(2, edges.size());
     }
 
@@ -128,7 +123,8 @@ public abstract class AbstractInputFormatIT extends JanusGraphBaseTest {
         Iterator<Object> geoIterator = t.E().values("place");
         assertNotNull(geoIterator);
         assertTrue(geoIterator.hasNext());
-        Set<Object> geoShapes = Sets.newHashSet(geoIterator);
+        Set<Object> geoShapes = new HashSet<>();
+        geoIterator.forEachRemaining(geoShapes::add);
         assertEquals(3, geoShapes.size());
     }
 
@@ -169,6 +165,42 @@ public abstract class AbstractInputFormatIT extends JanusGraphBaseTest {
         Graph g = getGraph();
         GraphTraversalSource t = g.traversal().withComputer(SparkGraphComputer.class);
         assertEquals(0L, (long) t.V().count().next());
+    }
+
+    @Test
+    public void testReadWithMetaProperties() throws Exception {
+        GraphOfTheGodsFactory.load(graph, null, true);
+        GraphTraversalSource t = graph.traversal();
+
+        assertEquals(0L, (long) t.V().has("name", "sky").properties("property").count().next());
+
+        mgmt.makePropertyKey("prop").cardinality(Cardinality.SINGLE).dataType(String.class).make();
+        mgmt.makePropertyKey("meta_property").cardinality(Cardinality.SINGLE).dataType(String.class).make();
+        mgmt.commit();
+        finishSchema();
+
+        t.V().has("name", "sky")
+            .property("prop", "value")
+            .iterate();
+        graph.tx().commit();
+        assertEquals(1L, (long) t.V().has("name", "sky").properties("prop").count().next());
+        assertEquals(0L, (long) t.V().has("name", "sky").properties("prop")
+            .properties("meta_property").count().next());
+
+        t.V()
+            .has("name", "sky")
+            .properties("prop")
+            .property("meta_property", "meta_value")
+            .iterate();
+        graph.tx().commit();
+        assertEquals(1L, (long) t.V().has("name", "sky").properties("prop")
+            .properties("meta_property").count().next());
+
+        Graph g = getGraph();
+        t = g.traversal().withComputer(SparkGraphComputer.class);
+        assertEquals(1L, (long) t.V().has("name", "sky").properties("prop").count().next());
+        assertEquals(1L, (long) t.V().has("name", "sky").properties("prop")
+            .properties("meta_property").count().next());
     }
 
     abstract protected Graph getGraph() throws IOException, ConfigurationException;

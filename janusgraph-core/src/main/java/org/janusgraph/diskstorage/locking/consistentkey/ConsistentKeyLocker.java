@@ -15,7 +15,6 @@
 package org.janusgraph.diskstorage.locking.consistentkey;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import org.janusgraph.core.JanusGraphConfigurationException;
 
@@ -56,7 +55,7 @@ import static org.janusgraph.util.encoding.StringEncoding.UTF8_CHARSET;
  * Lock contention between transactions within a shared process is arbitrated by
  * the {@code LocalLockMediator} class. This mediator uses standard
  * {@code java.util.concurrent} classes to guarantee that at most one thread
- * holds a lock on any given {@link KeyColumn} at any given time. The code that
+ * holds a lock on any given {@link org.janusgraph.diskstorage.util.KeyColumn} at any given time. The code that
  * uses a mediator to resolve inter-thread lock contention is common to multiple
  * {@code Locker} implementations and lives in the abstract base class
  * {@link AbstractLocker}.
@@ -82,7 +81,7 @@ import static org.janusgraph.util.encoding.StringEncoding.UTF8_CHARSET;
  * <li>Write a single column to the store with the following data
  * <dl>
  * <dt>key</dt>
- * <dd>{@link KeyColumn#getKey()} followed by {@link KeyColumn#getColumn()}.</dd>
+ * <dd>{@link org.janusgraph.diskstorage.util.KeyColumn#getKey()} followed by {@link org.janusgraph.diskstorage.util.KeyColumn#getColumn()}.</dd>
  * <dt>column</dt>
  * <dd>the approximate current timestamp in nanoseconds followed by this
  * process's {@code rid} (an opaque identifier which uniquely identify
@@ -409,7 +408,7 @@ public class ConsistentKeyLocker extends AbstractLocker<ConsistentKeyLockStatus>
         try {
             newTx = overrideTimestamp(txh, delTimer.getStartTime());
 
-            store.mutate(key, ImmutableList.of(), Collections.singletonList(col), newTx);
+            store.mutate(key, Collections.emptyList(), Collections.singletonList(col), newTx);
 
             newTx.commit();
             newTx = null;
@@ -445,8 +444,8 @@ public class ConsistentKeyLocker extends AbstractLocker<ConsistentKeyLockStatus>
         // ...and then filter out the TimestampRid objects with expired timestamps
         // (This doesn't use Iterables.filter and Predicate so that we can throw a checked exception if necessary)
         final List<TimestampRid> unexpiredTRs = new ArrayList<>(Iterables.size(iterable));
+        final Instant cutoffTime = now.minus(lockExpire);
         for (TimestampRid tr : iterable) {
-            final Instant cutoffTime = now.minus(lockExpire);
             if (tr.getTimestamp().isBefore(cutoffTime)) {
                 log.warn("Discarded expired claim on {} with timestamp {}", kc, tr.getTimestamp());
                 if (null != cleanerService)
@@ -545,12 +544,12 @@ public class ConsistentKeyLocker extends AbstractLocker<ConsistentKeyLockStatus>
 
     @Override
     protected void deleteSingleLock(KeyColumn kc, ConsistentKeyLockStatus ls, StoreTransaction tx) {
-        List<StaticBuffer> deletions = ImmutableList.of(serializer.toLockCol(ls.getWriteTimestamp(), rid, times));
+        List<StaticBuffer> deletions = Collections.singletonList(serializer.toLockCol(ls.getWriteTimestamp(), rid, times));
         for (int i = 0; i < lockRetryCount; i++) {
             StoreTransaction newTx = null;
             try {
                 newTx = overrideTimestamp(tx, times.getTime());
-                store.mutate(serializer.toLockKey(kc.getKey(), kc.getColumn()), ImmutableList.of(), deletions, newTx);
+                store.mutate(serializer.toLockKey(kc.getKey(), kc.getColumn()), Collections.emptyList(), deletions, newTx);
 
                 newTx.commit();
                 newTx = null;

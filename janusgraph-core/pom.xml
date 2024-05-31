@@ -3,7 +3,7 @@
     <parent>
         <groupId>org.janusgraph</groupId>
         <artifactId>janusgraph</artifactId>
-        <version>0.5.4-SNAPSHOT</version>
+        <version>0.6.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>janusgraph-core</artifactId>
@@ -34,7 +34,7 @@
         <dependency>
             <groupId>org.glassfish</groupId>
             <artifactId>javax.json</artifactId>
-            <version>1.0</version>
+            <version>1.1.4</version>
         </dependency>
         <dependency>
             <groupId>io.dropwizard.metrics</groupId>
@@ -42,18 +42,11 @@
         </dependency>
         <dependency>
             <groupId>io.dropwizard.metrics</groupId>
-            <artifactId>metrics-ganglia</artifactId>
-            <exclusions>
-                <!-- LGPL licensed - users will need to install this jar manually -->
-                <exclusion>
-                    <groupId>org.acplt</groupId>
-                    <artifactId>oncrpc</artifactId>
-                </exclusion>
-            </exclusions>
+            <artifactId>metrics-graphite</artifactId>
         </dependency>
         <dependency>
             <groupId>io.dropwizard.metrics</groupId>
-            <artifactId>metrics-graphite</artifactId>
+            <artifactId>metrics-jmx</artifactId>
         </dependency>
         <dependency>
             <groupId>net.oneandone.reflections8</groupId>
@@ -109,7 +102,7 @@
                 <configuration>
                     <archive>
                         <manifestEntries>
-                            <Gremlin-Plugin-Dependencies>org.janusgraph:janusgraph-cassandra:${project.version};org.janusgraph:janusgraph-hadoop:${project.version}</Gremlin-Plugin-Dependencies>
+                            <Gremlin-Plugin-Dependencies>org.janusgraph:janusgraph-cql:${project.version};org.janusgraph:janusgraph-hadoop:${project.version}</Gremlin-Plugin-Dependencies>
                         </manifestEntries>
                     </archive>
                 </configuration>

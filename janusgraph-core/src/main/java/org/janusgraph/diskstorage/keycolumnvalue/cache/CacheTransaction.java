@@ -15,9 +15,6 @@
 package org.janusgraph.diskstorage.keycolumnvalue.cache;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
-
 import org.janusgraph.diskstorage.*;
 import org.janusgraph.diskstorage.keycolumnvalue.KCVMutation;
 import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStore;
@@ -106,10 +103,19 @@ public class CacheTransaction implements StoreTransaction, LoggableTransaction {
 
     private KCVMutation convert(KCVEntryMutation mutation) {
         assert !mutation.isEmpty();
-        if (!mutation.hasDeletions())
-            return new KCVMutation(mutation.getAdditions(), KeyColumnValueStore.NO_DELETIONS);
-        else
-            return new KCVMutation(mutation.getAdditions(), Lists.newArrayList(Iterables.transform(mutation.getDeletions(), KCVEntryMutation.ENTRY2COLUMN_FCT)));
+        if (mutation.hasDeletions()) {
+            return new KCVMutation(
+                () -> new ArrayList<>(mutation.getAdditions()),
+                () -> {
+                    List<Entry> deletions = mutation.getDeletions();
+                    ArrayList<StaticBuffer> convertedDeletions = new ArrayList<>(deletions.size());
+                    for(Entry entry : deletions){
+                        convertedDeletions.add(KCVEntryMutation.ENTRY2COLUMN_FCT.apply(entry));
+                    }
+                    return convertedDeletions;
+                });
+        }
+        return new KCVMutation(mutation.getAdditions(), KeyColumnValueStore.NO_DELETIONS);
     }
 
     private void flushInternal() throws BackendException {

@@ -14,21 +14,15 @@
 
 package org.janusgraph.core.attribute;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.EnumSet;
-import java.util.List;
-import java.util.Set;
-
-import org.apache.commons.lang.StringUtils;
-import org.apache.commons.text.similarity.LevenshteinDistance;
-import org.apache.tinkerpop.gremlin.process.traversal.P;
-import org.janusgraph.graphdb.query.JanusGraphPredicate;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import java.util.*;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Sets;
+import org.apache.commons.lang.StringUtils;
+import org.apache.commons.text.similarity.LevenshteinDistance;
+import org.janusgraph.graphdb.query.JanusGraphPredicate;
+import org.janusgraph.graphdb.tinkerpop.io.JanusGraphP;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Comparison relations for text objects. These comparisons are based on a tokenized representation
@@ -52,7 +46,7 @@ public enum Text implements JanusGraphPredicate {
 
         @Override
         public boolean evaluateRaw(String value, String terms) {
-            Set<String> tokens = Sets.newHashSet(tokenize(value.toLowerCase()));
+            Set<String> tokens = new HashSet<>(tokenize(value.toLowerCase()));
             terms = terms.trim();
             List<String> tokenTerms = tokenize(terms.toLowerCase());
             if (!terms.isEmpty() && tokenTerms.isEmpty()) return false;
@@ -249,6 +243,9 @@ public enum Text implements JanusGraphPredicate {
 
     };
 
+    private static final LevenshteinDistance ONE_LEVENSHTEIN_DISTANCE = new LevenshteinDistance(1);
+    private static final LevenshteinDistance TWO_LEVENSHTEIN_DISTANCE = new LevenshteinDistance(2);
+
     /**
      * Whether {@code term} is at X Levenshtein of a {@code value} 
      * with X=:
@@ -260,16 +257,15 @@ public enum Text implements JanusGraphPredicate {
      * @return true if {@code term} is similar to {@code value} 
      */
     private static boolean isFuzzy(String term, String value){
-        int distance;
         term = term.trim();
         if (term.length() < 3) {
-            distance = 0;
+            return term.equals(value);
         } else if (term.length() < 6) {
-            distance = 1;
-        } else {
-            distance = 2;
+            int levenshteinDistance = ONE_LEVENSHTEIN_DISTANCE.apply(value, term);
+            return levenshteinDistance <= 1 && levenshteinDistance >= 0;
         }
-        return LevenshteinDistance.getDefaultInstance().apply(value, term)<=distance;
+        int levenshteinDist = TWO_LEVENSHTEIN_DISTANCE.apply(value, term);
+        return levenshteinDist <= 2 && levenshteinDist >= 0;
     }
 
     private static final Logger log = LoggerFactory.getLogger(Text.class);
@@ -322,25 +318,25 @@ public enum Text implements JanusGraphPredicate {
     public final static Set<Text> HAS_CONTAINS = Collections
             .unmodifiableSet(EnumSet.of(CONTAINS, CONTAINS_PREFIX, CONTAINS_REGEX, CONTAINS_FUZZY));
 
-    public static <V> P<V> textContains(final V value) {
-        return new P(Text.CONTAINS, value);
+    public static <V> JanusGraphP textContains(final V value) {
+        return new JanusGraphP(Text.CONTAINS, value);
     }
-    public static <V> P<V> textContainsPrefix(final V value) {
-        return new P(Text.CONTAINS_PREFIX, value);
+    public static <V> JanusGraphP textContainsPrefix(final V value) {
+        return new JanusGraphP(Text.CONTAINS_PREFIX, value);
     }
-    public static <V> P<V> textContainsRegex(final V value) {
-        return new P(Text.CONTAINS_REGEX, value);
+    public static <V> JanusGraphP textContainsRegex(final V value) {
+        return new JanusGraphP(Text.CONTAINS_REGEX, value);
     }
-    public static <V> P<V> textPrefix(final V value) {
-        return new P(Text.PREFIX, value);
+    public static <V> JanusGraphP textPrefix(final V value) {
+        return new JanusGraphP(Text.PREFIX, value);
     }
-    public static <V> P<V> textRegex(final V value) {
-        return new P(Text.REGEX, value);
+    public static <V> JanusGraphP textRegex(final V value) {
+        return new JanusGraphP(Text.REGEX, value);
     }
-    public static <V> P<V> textContainsFuzzy(final V value) {
-        return new P(Text.CONTAINS_FUZZY, value);
+    public static <V> JanusGraphP textContainsFuzzy(final V value) {
+        return new JanusGraphP(Text.CONTAINS_FUZZY, value);
     }
-    public static <V> P<V> textFuzzy(final V value) {
-        return new P(Text.FUZZY, value);
+    public static <V> JanusGraphP textFuzzy(final V value) {
+        return new JanusGraphP(Text.FUZZY, value);
     }
 }

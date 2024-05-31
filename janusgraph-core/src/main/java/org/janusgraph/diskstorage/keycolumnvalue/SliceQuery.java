@@ -18,7 +18,7 @@ import org.janusgraph.diskstorage.Entry;
 import org.janusgraph.diskstorage.EntryList;
 import org.janusgraph.diskstorage.StaticBuffer;
 import org.janusgraph.diskstorage.util.BufferUtil;
-import org.janusgraph.diskstorage.util.StaticArrayEntryList;
+import org.janusgraph.diskstorage.util.EntryArrayList;
 import org.janusgraph.graphdb.query.BackendQuery;
 import org.janusgraph.graphdb.query.BaseQuery;
 
@@ -42,6 +42,12 @@ public class SliceQuery extends BaseQuery implements BackendQuery<SliceQuery> {
 
     private final StaticBuffer sliceStart;
     private final StaticBuffer sliceEnd;
+    private String type;
+
+    public SliceQuery(final StaticBuffer sliceStart, final StaticBuffer sliceEnd, final String type) {
+        this(sliceStart, sliceEnd);
+        this.type = type;
+    }
 
     public SliceQuery(final StaticBuffer sliceStart, final StaticBuffer sliceEnd) {
         assert sliceStart != null && sliceEnd != null;
@@ -114,7 +120,7 @@ public class SliceQuery extends BaseQuery implements BackendQuery<SliceQuery> {
             if (e.getColumnAs(StaticBuffer.STATIC_FACTORY).compareTo(sliceEnd) < 0) result.add(e);
             else break;
         }
-        return StaticArrayEntryList.of(result);
+        return EntryArrayList.of(result);
     }
 
     public boolean contains(StaticBuffer buffer) {
@@ -135,6 +141,16 @@ public class SliceQuery extends BaseQuery implements BackendQuery<SliceQuery> {
     @Override
     public SliceQuery updateLimit(int newLimit) {
         return new SliceQuery(sliceStart, sliceEnd).setLimit(newLimit);
+    }
+
+    @Override
+    public String toString() {
+        StringBuilder sb = new StringBuilder();
+        if (type != null) {
+            sb.append(type).append(":");
+        }
+        sb.append("SliceQuery[").append(getSliceStart()).append(",").append(getSliceEnd()).append(")@").append(getLimit());
+        return sb.toString();
     }
 
 }

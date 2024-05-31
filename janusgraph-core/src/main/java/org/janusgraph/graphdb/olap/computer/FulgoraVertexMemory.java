@@ -15,7 +15,6 @@
 package org.janusgraph.graphdb.olap.computer;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
 import org.janusgraph.diskstorage.EntryList;
@@ -28,6 +27,7 @@ import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -54,10 +54,10 @@ public class FulgoraVertexMemory<M> {
         vertexStates = new NonBlockingHashMapLong<>(numVertices);
         partitionVertices = new NonBlockingHashMapLong<>(64);
         this.idManager = idManager;
-        this.combiner = FulgoraUtil.getMessageCombiner(vertexProgram);
+        this.combiner = vertexProgram.getMessageCombiner().orElse(null);
         this.computeKeys = vertexProgram.getVertexComputeKeys();
         this.elementKeyMap = getIdMap(vertexProgram.getVertexComputeKeys().stream().map(VertexComputeKey::getKey).collect(Collectors.toCollection(HashSet::new)));
-        this.previousScopes = ImmutableMap.of();
+        this.previousScopes = Collections.emptyMap();
     }
 
     private VertexState<M> get(long vertexId, boolean create) {
@@ -94,7 +94,7 @@ public class FulgoraVertexMemory<M> {
         else state.setMessage(message,scope,currentScopes);
     }
 
-    M getMessage(long vertexId, MessageScope scope) {
+    Stream<M> getMessage(long vertexId, MessageScope scope) {
         return get(vertexId,false).getMessage(normalizeScope(scope),previousScopes);
     }
 
@@ -157,7 +157,7 @@ public class FulgoraVertexMemory<M> {
         getPartitioned(vertexId).addMessage(message,normalizeScope(scope),previousScopes,combiner);
     }
 
-    M getAggregateMessage(long vertexId, MessageScope scope) {
+    Stream<M> getAggregateMessage(long vertexId, MessageScope scope) {
         return getPartitioned(vertexId).getMessage(normalizeScope(scope),previousScopes);
     }
 
@@ -167,12 +167,12 @@ public class FulgoraVertexMemory<M> {
     }
 
     public static <K> Map<K,Integer> getIdMap(Iterable<K> elements) {
-        ImmutableMap.Builder<K,Integer> b = ImmutableMap.builder();
+        Map<K,Integer> b = new HashMap<>();
         int size = 0;
         for (K key : elements) {
             b.put(key,size++);
         }
-        return b.build();
+        return Collections.unmodifiableMap(b);
     }
 
 

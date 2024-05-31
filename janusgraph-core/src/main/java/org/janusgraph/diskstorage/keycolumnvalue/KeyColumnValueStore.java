@@ -14,12 +14,12 @@
 
 package org.janusgraph.diskstorage.keycolumnvalue;
 
-import com.google.common.collect.ImmutableList;
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.Entry;
 import org.janusgraph.diskstorage.EntryList;
 import org.janusgraph.diskstorage.StaticBuffer;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -38,8 +38,8 @@ import java.util.Map;
  */
 public interface KeyColumnValueStore {
 
-    List<Entry> NO_ADDITIONS = ImmutableList.of();
-    List<StaticBuffer> NO_DELETIONS = ImmutableList.of();
+    List<Entry> NO_ADDITIONS = Collections.emptyList();
+    List<StaticBuffer> NO_DELETIONS = Collections.emptyList();
 
     /**
      * Retrieves the list of entries (i.e. column-value pairs) for a specified query.
@@ -172,6 +172,19 @@ public interface KeyColumnValueStore {
      */
     KeyIterator getKeys(SliceQuery query, StoreTransaction txh) throws BackendException;
     // like current getKeys if column-slice is such that it queries for vertex state property
+
+    /**
+     * Returns a {@link KeySlicesIterator} over all keys in the store that have one or more columns matching the column-range. Calling {@link KeySlicesIterator#getEntries()}
+     * returns the map of all entries that match the column-range specified by the given queries.
+     * <p>
+     * This method is mandatory for stores which do not guaranty key orders while running parallel scans.
+     *
+     * @param queries
+     * @param txh
+     * @return
+     * @throws org.janusgraph.diskstorage.BackendException
+     */
+    KeySlicesIterator getKeys(MultiSlicesQuery queries, StoreTransaction txh) throws BackendException;
 
     /**
      * Returns the name of this store. Each store has a unique name which is used to open it.

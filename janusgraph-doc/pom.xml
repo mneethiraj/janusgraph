@@ -3,7 +3,7 @@
     <parent>
         <groupId>org.janusgraph</groupId>
         <artifactId>janusgraph</artifactId>
-        <version>0.5.4-SNAPSHOT</version>
+        <version>0.6.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <packaging>pom</packaging>
@@ -73,7 +73,7 @@
                             <mainClass>org.janusgraph.util.system.ConfigurationPrinter</mainClass>
                             <arguments>
                                 <argument>org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.ROOT_NS</argument>
-                                <argument>${doc.dir}/basics/janusgraph-cfg.md</argument>
+                                <argument>${doc.dir}/configs/janusgraph-cfg.md</argument>
                             </arguments>
                         </configuration>
                     </execution>

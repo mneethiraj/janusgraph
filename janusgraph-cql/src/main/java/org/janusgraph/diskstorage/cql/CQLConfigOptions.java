@@ -14,6 +14,7 @@
 
 package org.janusgraph.diskstorage.cql;
 
+import com.datastax.oss.driver.api.core.config.DefaultDriverOption;
 import org.janusgraph.diskstorage.configuration.ConfigElement;
 import org.janusgraph.diskstorage.configuration.ConfigNamespace;
 import org.janusgraph.diskstorage.configuration.ConfigOption;
@@ -133,14 +134,6 @@ public interface CQLConfigOptions {
             ConfigOption.Type.FIXED,
             String[].class);
 
-    ConfigOption<Boolean> CF_COMPACT_STORAGE = new ConfigOption<>(
-            CQL_NS,
-            "compact-storage",
-            "Whether the storage backend should use compact storage on tables. This option is only available for Cassandra 2 and earlier and defaults to true.",
-            ConfigOption.Type.FIXED,
-            Boolean.class,
-            true);
-
     // Compression
     ConfigOption<Boolean> CF_COMPRESSION = new ConfigOption<>(
             CQL_NS,
@@ -165,20 +158,6 @@ public interface CQLConfigOptions {
             ConfigOption.Type.FIXED,
             64);
 
-    ConfigOption<Integer> LOCAL_CORE_CONNECTIONS_PER_HOST = new ConfigOption<>(
-            CQL_NS,
-            "local-core-connections-per-host",
-            "The number of connections initially created and kept open to each host for local datacenter",
-            ConfigOption.Type.FIXED,
-            1);
-
-    ConfigOption<Integer> REMOTE_CORE_CONNECTIONS_PER_HOST = new ConfigOption<>(
-            CQL_NS,
-            "remote-core-connections-per-host",
-            "The number of connections initially created and kept open to each host for remote datacenter",
-            ConfigOption.Type.FIXED,
-            1);
-
     ConfigOption<Integer> LOCAL_MAX_CONNECTIONS_PER_HOST = new ConfigOption<>(
             CQL_NS,
             "local-max-connections-per-host",
@@ -193,19 +172,26 @@ public interface CQLConfigOptions {
             ConfigOption.Type.FIXED,
             1);
 
-    ConfigOption<Integer> LOCAL_MAX_REQUESTS_PER_CONNECTION = new ConfigOption<>(
+    ConfigOption<Integer> MAX_REQUESTS_PER_CONNECTION = new ConfigOption<>(
             CQL_NS,
-            "local-max-requests-per-connection",
-            "The maximum number of requests per connection for local datacenter",
+            "max-requests-per-connection",
+            "The maximum number of requests that can be executed concurrently on a connection.",
             ConfigOption.Type.FIXED,
             1024);
 
-    ConfigOption<Integer> REMOTE_MAX_REQUESTS_PER_CONNECTION = new ConfigOption<>(
-            CQL_NS,
-            "remote-max-requests-per-connection",
-            "The maximum number of requests per connection for remote datacenter",
-            ConfigOption.Type.FIXED,
-            256);
+    ConfigOption<Long> HEARTBEAT_INTERVAL = new ConfigOption<>(
+        CQL_NS,
+        "heartbeat-interval",
+        "The connection heartbeat interval in milliseconds.",
+        ConfigOption.Type.MASKABLE,
+        Long.class);
+
+    ConfigOption<Long> HEARTBEAT_TIMEOUT = new ConfigOption<>(
+        CQL_NS,
+        "heartbeat-timeout",
+        "How long the driver waits for the response (in milliseconds) to a heartbeat.",
+        ConfigOption.Type.MASKABLE,
+        Long.class);
 
     // SSL
     ConfigNamespace SSL_NS = new ConfigNamespace(
@@ -236,6 +222,13 @@ public interface CQLConfigOptions {
             "Controls use of the SSL connection to Cassandra",
             ConfigOption.Type.LOCAL,
             false);
+
+    ConfigOption<Boolean> SSL_HOSTNAME_VALIDATION = new ConfigOption<>(
+        SSL_NS,
+        "hostname_validation",
+        "Enable / disable SSL hostname validation.",
+        ConfigOption.Type.LOCAL,
+        false);
 
     ConfigOption<String> SSL_KEYSTORE_LOCATION = new ConfigOption<>(
             SSL_KEYSTORE_NS,
@@ -273,24 +266,284 @@ public interface CQLConfigOptions {
             "");
 
     // Other options
-    ConfigOption<String> CLUSTER_NAME = new ConfigOption<>(
+    ConfigOption<String> SESSION_NAME = new ConfigOption<>(
             CQL_NS,
-            "cluster-name",
-            "Default name for the Cassandra cluster",
+            "session-name",
+            "Default name for the Cassandra session",
             ConfigOption.Type.MASKABLE,
-            "JanusGraph Cluster");
+            "JanusGraph Session");
 
     ConfigOption<String> LOCAL_DATACENTER = new ConfigOption<>(
             CQL_NS,
             "local-datacenter",
-            "The name of the local or closest Cassandra datacenter.  When set and not whitespace, " +
-                    "this value will be passed into ConnectionPoolConfigurationImpl.setLocalDatacenter. " +
-                    "When unset or set to whitespace, setLocalDatacenter will not be invoked.",
+            "The name of the local or closest Cassandra datacenter. " +
+                "This value will be passed into CqlSessionBuilder.withLocalDatacenter.",
             /*
              * It's between either LOCAL or MASKABLE. MASKABLE could be useful for cases where all the JanusGraph instances are closest to
              * the same Cassandra DC.
              */
             ConfigOption.Type.MASKABLE,
-            String.class);
+            String.class,
+        "datacenter1");
 
+    // Netty
+
+    ConfigNamespace NETTY = new ConfigNamespace(
+        CQL_NS,
+        "netty",
+        "Configuration options related to the Netty event loop groups used internally by the CQL driver.");
+
+    ConfigOption<Integer> NETTY_IO_SIZE = new ConfigOption<>(
+        NETTY,
+        "io-size",
+        "The number of threads for the event loop group used for I/O operations " +
+            "(reading and writing to Cassandra nodes). " +
+            "If this is set to 0, the driver will use `Runtime.getRuntime().availableProcessors() * 2`.",
+        ConfigOption.Type.LOCAL,
+        Integer.class,
+        0);
+
+    ConfigOption<Integer> NETTY_ADMIN_SIZE = new ConfigOption<>(
+        NETTY,
+        "admin-size",
+        "The number of threads for the event loop group used for admin tasks not related to request I/O " +
+            "(handle cluster events, refresh metadata, schedule reconnections, etc.). " +
+            "If this is set to 0, the driver will use `Runtime.getRuntime().availableProcessors() * 2`.",
+        ConfigOption.Type.LOCAL,
+        Integer.class,
+        0);
+
+    ConfigOption<Long> NETTY_TIMER_TICK_DURATION = new ConfigOption<>(
+        NETTY,
+        "timer-tick-duration",
+        "The timer tick duration in milliseconds. This is how frequent the timer should wake up to check for timed-out tasks " +
+            "or speculative executions. See DataStax Java Driver option `" +
+            DefaultDriverOption.NETTY_TIMER_TICK_DURATION.getPath() + "` for more information.",
+        ConfigOption.Type.LOCAL,
+        Long.class);
+
+    ConfigOption<Integer> NETTY_TIMER_TICKS_PER_WHEEL = new ConfigOption<>(
+        NETTY,
+        "timer-ticks-per-wheel",
+        "Number of ticks in a Timer wheel. See DataStax Java Driver option `" +
+            DefaultDriverOption.NETTY_TIMER_TICKS_PER_WHEEL.getPath() + "` for more information.",
+        ConfigOption.Type.LOCAL,
+        Integer.class);
+
+    // Metrics
+
+    ConfigNamespace METRICS = new ConfigNamespace(
+        CQL_NS,
+        "metrics",
+        "Configuration options for CQL metrics");
+
+    ConfigOption<String[]> METRICS_SESSION_ENABLED = new ConfigOption<>(
+        METRICS,
+        "session-enabled",
+        "Comma separated list of enabled session metrics. Used only when basic metrics are enabled. " +
+            "Check DataStax Cassandra Driver 4 documentation for available metrics " +
+            "(example: bytes-sent, bytes-received, connected-nodes).",
+        ConfigOption.Type.LOCAL,
+        String[].class);
+
+    ConfigOption<Long> METRICS_SESSION_REQUESTS_HIGHEST_LATENCY = new ConfigOption<>(
+        METRICS,
+        "cql-requests-highest-latency",
+        "The largest latency that we expect to record for requests in milliseconds. " +
+            "Used if 'cql-requests' session metric is enabled. "+
+            "See DataStax driver configuration option `"
+            +DefaultDriverOption.METRICS_SESSION_CQL_REQUESTS_HIGHEST.getPath()+"`",
+        ConfigOption.Type.LOCAL,
+        Long.class);
+
+    ConfigOption<Integer> METRICS_SESSION_REQUESTS_SIGNIFICANT_DIGITS = new ConfigOption<>(
+        METRICS,
+        "cql-requests-significant-digits",
+        "The number of significant decimal digits to which internal structures will maintain value resolution " +
+            "and separation for requests. This must be between 0 and 5. " +
+            "Used if 'cql-requests' session metric is enabled. "+
+            "See DataStax driver configuration option `"
+            +DefaultDriverOption.METRICS_SESSION_CQL_REQUESTS_DIGITS.getPath()+"`",
+        ConfigOption.Type.LOCAL,
+        Integer.class);
+
+    ConfigOption<Long> METRICS_SESSION_REQUESTS_REFRESH_INTERVAL = new ConfigOption<>(
+        METRICS,
+        "cql-requests-refresh-interval",
+        "The interval at which percentile data is refreshed in milliseconds for requests. " +
+            "Used if 'cql-requests' session metric is enabled. "+
+            "See DataStax driver configuration option `"
+            +DefaultDriverOption.METRICS_SESSION_CQL_REQUESTS_INTERVAL.getPath()+"`",
+        ConfigOption.Type.LOCAL,
+        Long.class);
+
+    ConfigOption<Long> METRICS_SESSION_THROTTLING_HIGHEST_LATENCY = new ConfigOption<>(
+        METRICS,
+        "throttling-delay-highest-latency",
+        "The largest latency that we expect to record for throttling in milliseconds. " +
+            "Used if 'throttling.delay' session metric is enabled. "+
+            "See DataStax driver configuration option `"
+            +DefaultDriverOption.METRICS_SESSION_THROTTLING_HIGHEST.getPath()+"`",
+        ConfigOption.Type.LOCAL,
+        Long.class);
+
+    ConfigOption<Integer> METRICS_SESSION_THROTTLING_SIGNIFICANT_DIGITS = new ConfigOption<>(
+        METRICS,
+        "throttling-delay-significant-digits",
+        "The number of significant decimal digits to which internal structures will maintain value resolution " +
+            "and separation for throttling. This must be between 0 and 5. " +
+            "Used if 'throttling.delay' session metric is enabled. "+
+            "See DataStax driver configuration option `"
+            +DefaultDriverOption.METRICS_SESSION_THROTTLING_DIGITS.getPath()+"`",
+        ConfigOption.Type.LOCAL,
+        Integer.class);
+
+    ConfigOption<Long> METRICS_SESSION_THROTTLING_REFRESH_INTERVAL = new ConfigOption<>(
+        METRICS,
+        "throttling-delay-refresh-interval",
+        "The interval at which percentile data is refreshed in milliseconds for throttling. " +
+            "Used if 'throttling.delay' session metric is enabled. "+
+            "See DataStax driver configuration option `"
+            +DefaultDriverOption.METRICS_SESSION_THROTTLING_INTERVAL.getPath()+"`",
+        ConfigOption.Type.LOCAL,
+        Long.class);
+
+    ConfigOption<String[]> METRICS_NODE_ENABLED = new ConfigOption<>(
+        METRICS,
+        "node-enabled",
+        "Comma separated list of enabled node metrics. Used only when basic metrics are enabled. " +
+            "Check DataStax Cassandra Driver 4 documentation for available metrics " +
+            "(example: pool.open-connections, pool.available-streams, bytes-sent).",
+        ConfigOption.Type.LOCAL,
+        String[].class);
+
+    ConfigOption<Long> METRICS_NODE_MESSAGES_HIGHEST_LATENCY = new ConfigOption<>(
+        METRICS,
+        "cql-messages-highest-latency",
+        "The largest latency that we expect to record for requests in milliseconds. " +
+            "Used if 'cql-messages' node metric is enabled. "+
+            "See DataStax driver configuration option `"
+            +DefaultDriverOption.METRICS_NODE_CQL_MESSAGES_HIGHEST.getPath()+"`",
+        ConfigOption.Type.LOCAL,
+        Long.class);
+
+    ConfigOption<Integer> METRICS_NODE_MESSAGES_SIGNIFICANT_DIGITS = new ConfigOption<>(
+        METRICS,
+        "cql-messages-significant-digits",
+        "The number of significant decimal digits to which internal structures will maintain value resolution " +
+            "and separation for requests. This must be between 0 and 5. " +
+            "Used if 'cql-messages' node metric is enabled. "+
+            "See DataStax driver configuration option `"
+            +DefaultDriverOption.METRICS_NODE_CQL_MESSAGES_DIGITS.getPath()+"`",
+        ConfigOption.Type.LOCAL,
+        Integer.class);
+
+    ConfigOption<Long> METRICS_NODE_MESSAGES_REFRESH_INTERVAL = new ConfigOption<>(
+        METRICS,
+        "cql-messages-delay-refresh-interval",
+        "The interval at which percentile data is refreshed in milliseconds for requests. " +
+            "Used if 'cql-messages' node metric is enabled. "+
+            "See DataStax driver configuration option `"
+            +DefaultDriverOption.METRICS_NODE_CQL_MESSAGES_INTERVAL.getPath()+"`",
+        ConfigOption.Type.LOCAL,
+        Long.class);
+
+    ConfigOption<Long> METRICS_NODE_EXPIRE_AFTER = new ConfigOption<>(
+        METRICS,
+        "node-expire-after",
+        "The time after which the node level metrics will be evicted in milliseconds.",
+        ConfigOption.Type.LOCAL,
+        Long.class);
+
+    // Request tracker (request logging)
+
+    ConfigNamespace REQUEST_TRACKER = new ConfigNamespace(
+        CQL_NS,
+        "request-tracker",
+        "Configuration options for CQL request tracker and builtin request logger");
+
+    ConfigOption<String> REQUEST_TRACKER_CLASS = new ConfigOption<>(
+        REQUEST_TRACKER,
+        "class",
+        "It is either a predefined DataStax driver value for a builtin request tracker " +
+            "or a full qualified class name which implements " +
+            "`com.datastax.oss.driver.internal.core.tracker.RequestTracker` interface. " +
+            "If no any value provided, the default DataStax request tracker is used, which is `NoopRequestTracker` " +
+            "which doesn't do anything. If `RequestLogger` value is provided, the DataStax [RequestLogger]" +
+            "(https://docs.datastax.com/en/developer/java-driver/4.9/manual/core/request_tracker/#request-logger) " +
+            "is used.",
+        ConfigOption.Type.LOCAL,
+        String.class);
+
+    ConfigOption<Boolean> REQUEST_LOGGER_SUCCESS_ENABLED = new ConfigOption<>(
+        REQUEST_TRACKER,
+        "logs-success-enabled",
+        "Whether to log successful requests. " +
+            "Can be used when `" + REQUEST_TRACKER_CLASS.toString() + "` is set to `RequestLogger`.",
+        ConfigOption.Type.LOCAL,
+        Boolean.class);
+
+    ConfigOption<Long> REQUEST_LOGGER_SLOW_THRESHOLD = new ConfigOption<>(
+        REQUEST_TRACKER,
+        "logs-slow-threshold",
+        "The threshold to classify a successful request as `slow`. In milliseconds. " +
+            "Can be used when `" + REQUEST_TRACKER_CLASS.toString() + "` is set to `RequestLogger`.",
+        ConfigOption.Type.LOCAL,
+        Long.class);
+
+    ConfigOption<Boolean> REQUEST_LOGGER_SLOW_ENABLED = new ConfigOption<>(
+        REQUEST_TRACKER,
+        "logs-slow-enabled",
+        "Whether to log `slow` requests." +
+            "Can be used when `" + REQUEST_TRACKER_CLASS.toString() + "` is set to `RequestLogger`.",
+        ConfigOption.Type.LOCAL,
+        Boolean.class);
+
+    ConfigOption<Boolean> REQUEST_LOGGER_ERROR_ENABLED = new ConfigOption<>(
+        REQUEST_TRACKER,
+        "logs-error-enabled",
+        "Whether to log failed requests." +
+            "Can be used when `" + REQUEST_TRACKER_CLASS.toString() + "` is set to `RequestLogger`.",
+        ConfigOption.Type.LOCAL,
+        Boolean.class);
+
+    ConfigOption<Integer> REQUEST_LOGGER_MAX_QUERY_LENGTH = new ConfigOption<>(
+        REQUEST_TRACKER,
+        "logs-max-query-length",
+        "The maximum length of the query string in the log message. " +
+            "Can be used when `" + REQUEST_TRACKER_CLASS.toString() + "` is set to `RequestLogger`.",
+        ConfigOption.Type.LOCAL,
+        Integer.class);
+
+    ConfigOption<Boolean> REQUEST_LOGGER_SHOW_VALUES = new ConfigOption<>(
+        REQUEST_TRACKER,
+        "logs-show-values",
+        "Whether to log bound values in addition to the query string. " +
+            "Can be used when `" + REQUEST_TRACKER_CLASS.toString() + "` is set to `RequestLogger`.",
+        ConfigOption.Type.LOCAL,
+        Boolean.class);
+
+    ConfigOption<Integer> REQUEST_LOGGER_MAX_VALUE_LENGTH = new ConfigOption<>(
+        REQUEST_TRACKER,
+        "logs-max-value-length",
+        "The maximum length for bound values in the log message. " +
+            "Can be used when `" + REQUEST_TRACKER_CLASS.toString() + "` is set to `RequestLogger`.",
+        ConfigOption.Type.LOCAL,
+        Integer.class);
+
+    ConfigOption<Integer> REQUEST_LOGGER_MAX_VALUES = new ConfigOption<>(
+        REQUEST_TRACKER,
+        "logs-max-values",
+        "The maximum number of bound values to log. " +
+            "Can be used when `" + REQUEST_TRACKER_CLASS.toString() + "` is set to `RequestLogger`.",
+        ConfigOption.Type.LOCAL,
+        Integer.class);
+
+    ConfigOption<Boolean> REQUEST_LOGGER_SHOW_STACK_TRACES = new ConfigOption<>(
+        REQUEST_TRACKER,
+        "logs-show-stack-traces",
+        "Whether to log stack traces for failed queries. " +
+            "Can be used when `" + REQUEST_TRACKER_CLASS.toString() + "` is set to `RequestLogger`.",
+        ConfigOption.Type.LOCAL,
+        Boolean.class);
 }

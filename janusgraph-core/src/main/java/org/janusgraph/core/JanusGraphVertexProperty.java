@@ -47,6 +47,10 @@ public interface JanusGraphVertexProperty<V> extends JanusGraphRelation, VertexP
         return (PropertyKey)getType();
     }
 
+    public static <V> JanusGraphVertexProperty<V> empty() {
+        return EmptyJanusGraphVertexProperty.instance();
+    }
+
     static Consumer<JanusGraphVertexProperty> getRemover(VertexProperty.Cardinality cardinality, Object value) {
         if (cardinality == VertexProperty.Cardinality.single) {
             return JanusGraphElement::remove;

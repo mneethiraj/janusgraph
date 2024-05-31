@@ -16,7 +16,6 @@ package org.janusgraph.pkgtest;
 
 import org.janusgraph.JanusGraphCassandraContainer;
 import org.janusgraph.diskstorage.es.JanusGraphElasticsearchContainer;
-import org.junit.jupiter.api.Test;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.junit.jupiter.Container;
 
@@ -27,14 +26,21 @@ public class CqlESAssemblyIT extends AbstractJanusGraphAssemblyIT {
     private static JanusGraphCassandraContainer cql = new JanusGraphCassandraContainer(true);
 
     @Container
-    private static JanusGraphElasticsearchContainer esr = new JanusGraphElasticsearchContainer(true);
+    private static JanusGraphElasticsearchContainer es = new JanusGraphElasticsearchContainer(true);
 
-    @Test
-    public void testCassandraGettingStarted() throws Exception {
-        testGettingStartedGremlinSession("conf/janusgraph-cql-es.properties", "cql", false);
+    @Override
+    protected String getConfigPath() {
+        return "conf/janusgraph-cql-es.properties";
     }
-    @Test
-    public void testCassandraGettingStartedFull() throws Exception {
-        testGettingStartedGremlinSession("conf/janusgraph-cql-es.properties", "cql", true);
+
+    @Override
+    protected String getServerConfigPath() {
+        return "conf/gremlin-server/gremlin-server-cql-es.yaml";
     }
+
+    @Override
+    protected String getGraphName() {
+        return "cql";
+    }
+
 }

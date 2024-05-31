@@ -4,7 +4,7 @@
     <parent>
         <groupId>org.janusgraph</groupId>
         <artifactId>janusgraph</artifactId>
-        <version>0.5.4-SNAPSHOT</version>
+        <version>0.6.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>janusgraph-cql</artifactId>
@@ -12,7 +12,7 @@
     <url>https://janusgraph.org</url>
 
     <properties>
-        <vavr.version>0.9.0</vavr.version>
+        <vavr.version>0.10.3</vavr.version>
         <test.byteordered>byteordered</test.byteordered>
         <test.murmur>murmur</test.murmur>
         <test.javaagent.opts>-javaagent:${com.github.jbellis:jamm:jar}</test.javaagent.opts>
@@ -20,14 +20,12 @@
         <test.jvm.opts>-Xms256m -Xmx1280m -ea -XX:+HeapDumpOnOutOfMemoryError ${test.extra.jvm.opts}</test.jvm.opts>
         <test.excluded.groups>MEMORY_TESTS,PERFORMANCE_TESTS,BRITTLE_TESTS</test.excluded.groups>
         <top.level.basedir>${basedir}/..</top.level.basedir>
-        <test.docker.version.cassandra2>2.2.14</test.docker.version.cassandra2>
-        <test.docker.version.cassandra3>3.11.4</test.docker.version.cassandra3>
+        <test.docker.version.cassandra3>3.11.9</test.docker.version.cassandra3>
     </properties>
 
     <dependencies>
-        <!-- Logging backends.
-             Enforce a classpath ordering constraint to ensure log4j is used for logging.
-             See comment in janusgraph-cassandra POM for more information. -->
+        <!-- Logging backends. -->
+        <!-- Enforce a classpath ordering constraint to ensure log4j is used for logging. -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-log4j12</artifactId>
@@ -116,9 +114,74 @@
         </dependency>
 
         <dependency>
+            <groupId>com.datastax.oss</groupId>
+            <artifactId>java-driver-core</artifactId>
+            <version>${cassandra-driver.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.json</groupId>
+                    <artifactId>json</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.tinkerpop</groupId>
+                    <artifactId>gremlin-core</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.tinkerpop</groupId>
+                    <artifactId>tinkergraph-gremlin</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.netty</groupId>
+                    <artifactId>netty-handler</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.datastax.oss</groupId>
+            <artifactId>java-driver-query-builder</artifactId>
+            <version>${cassandra-driver.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.json</groupId>
+                    <artifactId>json</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.tinkerpop</groupId>
+                    <artifactId>gremlin-core</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.tinkerpop</groupId>
+                    <artifactId>tinkergraph-gremlin</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.netty</groupId>
+                    <artifactId>netty-handler</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- Required for Cassandra-3 connectivity, see issue 172 -->
+        <dependency>
             <groupId>com.datastax.cassandra</groupId>
             <artifactId>cassandra-driver-core</artifactId>
-            <version>${cassandra-driver.version}</version>
+            <version>3.10.2</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.github.jnr</groupId>
+                    <artifactId>jnr-ffi</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.github.jnr</groupId>
+                    <artifactId>jnr-posix</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.dropwizard.metrics</groupId>
+                    <artifactId>metrics-core</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>io.netty</groupId>
+                    <artifactId>netty-handler</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>io.vavr</groupId>
@@ -259,44 +322,6 @@
 	        <properties>
 	            <test.extra.jvm.opts>${jacoco.opts} ${test.javaagent.opts}</test.extra.jvm.opts>
 	        </properties>
-        </profile>
-
-        <profile>
-            <id>cassandra2-byteordered</id>
-	        <activation>
-	            <activeByDefault>false</activeByDefault>
-	        </activation>
-            <properties>
-                <cassandra.docker.version>${test.docker.version.cassandra2}</cassandra.docker.version>
-                <cassandra.docker.partitioner>${test.byteordered}</cassandra.docker.partitioner>
-                <test.skip.murmur-serial>true</test.skip.murmur-serial>
-                <test.cql.excludes>${test.excluded.groups},SERIAL_TESTS</test.cql.excludes>
-            </properties>
-        </profile>
-        <profile>
-            <id>cassandra2-murmur</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <properties>
-                <cassandra.docker.version>${test.docker.version.cassandra2}</cassandra.docker.version>
-                <cassandra.docker.partitioner>${test.murmur}</cassandra.docker.partitioner>
-                <test.skip.murmur-serial>false</test.skip.murmur-serial>
-                <test.cql.excludes>${test.excluded.groups},SERIAL_TESTS</test.cql.excludes>
-            </properties>
-        </profile>
-        <profile>
-            <id>cassandra2-murmur-ssl</id>
-	        <activation>
-	            <activeByDefault>false</activeByDefault>
-	        </activation>
-            <properties>
-                <cassandra.docker.version>${test.docker.version.cassandra2}</cassandra.docker.version>
-                <cassandra.docker.partitioner>${test.murmur}</cassandra.docker.partitioner>
-                <cassandra.docker.useSSL>true</cassandra.docker.useSSL>
-                <test.skip.murmur-serial>false</test.skip.murmur-serial>
-                <test.cql.excludes>${test.excluded.groups},SERIAL_TESTS</test.cql.excludes>
-            </properties>
         </profile>
 
         <profile>

@@ -92,7 +92,7 @@ create the feature branch from. If you intend to add a new feature, then
 `master` is the right branch. Bug fixes however should also be applied to
 other releases, so you should create your feature branch from the release
 branch with the lowest version number that is still active (e.g., `v0.2`).
-When in doubt, ask on [janusgraph-dev](https://groups.google.com/forum/#!forum/janusgraph-dev).
+When in doubt, ask on [janusgraph-dev](https://lists.lfaidata.foundation/g/janusgraph-dev).
 Changes to all release branches will also be merged into `master`.
 
 Do not develop on the release branch: feature branches are intended to be
@@ -118,7 +118,7 @@ Make that feature or bugfix awesome!
 ## Configuration changes
 
 If you add any configuration or change any configuration, 
-you have to update `docs/basics/janusgraph-cfg.md`. 
+you have to update `docs/configs/janusgraph-cfg.md`. 
 
 To update config reference use following command:
 
@@ -169,18 +169,6 @@ you've signed the contribution.
 > `git ci -v` will get you a diff of your commit while writing your commit
 > message.
 
-> Note: If this is a non-code change, e.g. documentation, add `[doc only]` to the
-> PR subject line. This is to save CPU time on Travis CI, which lets us get more
-> build time for the other changes which actually change the code.
->
-> The tests actually run twice for each PR:
-> 
-> * when the PR is submitted for review
-> * when the PR is merged to the base branch
->
-> Having [doc only] in the commit skips the first one, but the merge commit also
-> needs it, so having it in the title (first line of commit) helps it easily
-> propagate to both places.
 
 ## Push your changes to your GitHub fork
 
@@ -213,3 +201,9 @@ for all of the commits in your PR.
 
 If you are not sure what's wrong, reach out to
 janusgraph-cla@googlegroups.com with further questions.
+
+### Code Review
+
+JanusGraph uses [Codacy](https://www.codacy.com) for static analysis pull requests to ensure code
+quality. Codacy creates in-line comments for items which require attention, and can generate a large
+number of potentially unwanted emails. Adding codacy-bot to your [blocked users](https://github.com/settings/blocked_users) will stop the notifications.

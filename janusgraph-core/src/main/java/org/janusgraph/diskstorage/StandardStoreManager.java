@@ -14,9 +14,6 @@
 
 package org.janusgraph.diskstorage;
 
-import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
-
 import java.util.*;
 
 /**
@@ -25,52 +22,58 @@ import java.util.*;
  */
 public enum StandardStoreManager {
     BDB_JE("org.janusgraph.diskstorage.berkeleyje.BerkeleyJEStoreManager", "berkeleyje"),
-    CASSANDRA_THRIFT("org.janusgraph.diskstorage.cassandra.thrift.CassandraThriftStoreManager", "cassandrathrift"),
-    CASSANDRA_ASTYANAX("org.janusgraph.diskstorage.cassandra.astyanax.AstyanaxStoreManager", ImmutableList.of("cassandra", "astyanax")),
-    CASSANDRA_EMBEDDED("org.janusgraph.diskstorage.cassandra.embedded.CassandraEmbeddedStoreManager", "embeddedcassandra"),
     CQL("org.janusgraph.diskstorage.cql.CQLStoreManager", "cql"),
     HBASE("org.janusgraph.diskstorage.hbase.HBaseStoreManager", "hbase"),
     IN_MEMORY("org.janusgraph.diskstorage.inmemory.InMemoryStoreManager", "inmemory"),
     RDBMS("org.janusgraph.diskstorage.rdbms.RdbmsStoreManager", "rdbms");
 
-    private final String managerClass;
-    private final ImmutableList<String> shorthands;
+    private static final Set<String> ALL_SHORTHANDS;
+    private static final Map<String, String> ALL_MANAGER_CLASSES;
 
-    StandardStoreManager(String managerClass, ImmutableList<String> shorthands) {
+    private final String managerClass;
+    private final Set<String> shorthands;
+    private final String firstStoreShorthand;
+
+    StandardStoreManager(String managerClass, Collection<String> shorthands) {
+        if(shorthands == null || shorthands.size() <= 0){
+            throw new IllegalArgumentException("At least one shorthand should be specified for manager class "+managerClass);
+        }
         this.managerClass = managerClass;
-        this.shorthands = shorthands;
+        this.shorthands = Collections.unmodifiableSet(new LinkedHashSet<>(shorthands));
+        this.firstStoreShorthand = shorthands.iterator().next();
     }
 
     StandardStoreManager(String managerClass, String shorthand) {
-        this(managerClass, ImmutableList.of(shorthand));
+        this(managerClass, Collections.singleton(shorthand));
     }
 
-    public List<String> getShorthands() {
+    public Set<String> getShorthands() {
         return shorthands;
+    }
+
+    public String getFirstStoreShorthand(){
+        return firstStoreShorthand;
     }
 
     public String getManagerClass() {
         return managerClass;
     }
 
-    private static final ImmutableList<String> ALL_SHORTHANDS;
-    private static final ImmutableMap<String, String> ALL_MANAGER_CLASSES;
-
     static {
         StandardStoreManager[] backends = values();
-        final List<String> tempShorthands = new ArrayList<>();
-        final Map<String, String> tempClassMap = new HashMap<>();
+        final Set<String> tempShorthands = new LinkedHashSet<>(backends.length);
+        final Map<String, String> tempClassMap = new HashMap<>(backends.length);
         for (final StandardStoreManager backend : backends) {
-            tempShorthands.addAll(backend.getShorthands());
-            for (final String shorthand : backend.getShorthands()) {
+            backend.getShorthands().forEach(shorthand -> {
+                tempShorthands.add(shorthand);
                 tempClassMap.put(shorthand, backend.getManagerClass());
-            }
+            });
         }
-        ALL_SHORTHANDS = ImmutableList.copyOf(tempShorthands);
-        ALL_MANAGER_CLASSES = ImmutableMap.copyOf(tempClassMap);
+        ALL_SHORTHANDS = Collections.unmodifiableSet(tempShorthands);
+        ALL_MANAGER_CLASSES = Collections.unmodifiableMap(tempClassMap);
     }
 
-    public static List<String> getAllShorthands() {
+    public static Set<String> getAllShorthands() {
         return ALL_SHORTHANDS;
     }
 

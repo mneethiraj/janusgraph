@@ -27,7 +27,13 @@ abs_path() {
 }
 
 BIN=`abs_path`
-GSRV_CONFIG_TAG=cassandra-es
+GSRV_CONFIG_TAG=cql-es
+
+if [ -z "$JANUSGRAPH_HOME" ]; then
+    JANUSGRAPH_HOME="`dirname "$0"`/.."
+fi
+
+
 : ${CASSANDRA_STARTUP_TIMEOUT_S:=60}
 : ${CASSANDRA_SHUTDOWN_TIMEOUT_S:=60}
 
@@ -61,8 +67,8 @@ if [ -z "$JPS" ]; then
     exit 1
 fi
 
-GREMLIN_FRIENDLY_NAME='Gremlin-Server'
-GREMLIN_CLASS_NAME=org.apache.tinkerpop.gremlin.server.GremlinServer
+JANUSGRAPH_FRIENDLY_NAME='JanusGraph-Server'
+JANUSGRAPH_CLASS_NAME=org.janusgraph.graphdb.server.JanusGraphServer
 ES_FRIENDLY_NAME=Elasticsearch
 ES_CLASS_NAME=org.elasticsearch.bootstrap.Elasticsearch
 CASSANDRA_FRIENDLY_NAME=Cassandra
@@ -71,14 +77,14 @@ CASSANDRA_CLASS_NAME=org.apache.cassandra.service.CassandraDaemon
 wait_for_cassandra() {
     local now_s=`date '+%s'`
     local stop_s=$(( $now_s + $CASSANDRA_STARTUP_TIMEOUT_S ))
-    local status_thrift=
+    local statusbinary=
 
-    echo -n 'Running `nodetool statusthrift`'
+    echo -n 'Running `nodetool statusbinary`'
     while [ $now_s -le $stop_s ]; do
         echo -n .
         # The \r\n deletion bit is necessary for Cygwin compatibility
-        status_thrift="`$BIN/nodetool statusthrift 2>/dev/null | tr -d '\n\r'`"
-        if [ $? -eq 0 -a 'running' = "$status_thrift" ]; then
+        statusbinary="`$BIN/../cassandra/bin/nodetool statusbinary 2>/dev/null | tr -d '\n\r'`"
+        if [ $? -eq 0 -a 'running' = "$statusbinary" ]; then
             echo ' OK (returned exit status 0 and printed string "running").'
             return 0
         fi
@@ -147,9 +153,9 @@ start() {
     status_class $CASSANDRA_FRIENDLY_NAME $CASSANDRA_CLASS_NAME >/dev/null && status && echo "Stop services before starting" && exit 1
     echo "Forking Cassandra..."
     if [ -n "$VERBOSE" ]; then
-        CASSANDRA_INCLUDE="$BIN"/cassandra.in.sh "$BIN"/cassandra || exit 1
+        "$BIN"/../cassandra/bin/cassandra || exit 1
     else
-        CASSANDRA_INCLUDE="$BIN"/cassandra.in.sh "$BIN"/cassandra >/dev/null 2>&1 || exit 1
+        "$BIN"/../cassandra/bin/cassandra >/dev/null 2>&1 || exit 1
     fi
     wait_for_cassandra || {
         echo "See $BIN/../logs/cassandra.log for Cassandra log output."    >&2
@@ -168,15 +174,15 @@ start() {
         return 1
     }
 
-    status_class $GREMLIN_FRIENDLY_NAME $GREMLIN_CLASS_NAME >/dev/null && status && echo "Stop services before starting" && exit 1
-    echo "Forking Gremlin-Server..."
+    status_class $JANUSGRAPH_FRIENDLY_NAME $JANUSGRAPH_CLASS_NAME >/dev/null && status && echo "Stop services before starting" && exit 1
+    echo "Forking $JANUSGRAPH_FRIENDLY_NAME..."
     if [ -n "$VERBOSE" ]; then
-        "$BIN"/gremlin-server.sh conf/gremlin-server/gremlin-server-cql-es.yaml &
+        "$BIN"/janusgraph-server.sh console conf/gremlin-server/gremlin-server-cql-es.yaml &
     else
-        "$BIN"/gremlin-server.sh conf/gremlin-server/gremlin-server-cql-es.yaml >/dev/null 2>&1 &
+        "$BIN"/janusgraph-server.sh console conf/gremlin-server/gremlin-server-cql-es.yaml >/dev/null 2>&1 &
     fi
-    wait_for_startup 'Gremlin-Server' $GSRV_IP $GSRV_PORT $GSRV_STARTUP_TIMEOUT_S || {
-        echo "See $BIN/../logs/gremlin-server.log for Gremlin-Server log output."  >&2
+    wait_for_startup $JANUSGRAPH_FRIENDLY_NAME $GSRV_IP $GSRV_PORT $GSRV_STARTUP_TIMEOUT_S || {
+        echo "See $BIN/../logs/janusgraph.log for $JANUSGRAPH_FRIENDLY_NAME log output."  >&2
         return 1
     }
     disown
@@ -185,8 +191,8 @@ start() {
 }
 
 stop() {
-    kill_class        $GREMLIN_FRIENDLY_NAME $GREMLIN_CLASS_NAME
-    wait_for_shutdown $GREMLIN_FRIENDLY_NAME $GREMLIN_CLASS_NAME $GSRV_SHUTDOWN_TIMEOUT_S
+    kill_class        $JANUSGRAPH_FRIENDLY_NAME $JANUSGRAPH_CLASS_NAME
+    wait_for_shutdown $JANUSGRAPH_FRIENDLY_NAME $JANUSGRAPH_CLASS_NAME $GSRV_SHUTDOWN_TIMEOUT_S
     kill_class        $ES_FRIENDLY_NAME $ES_CLASS_NAME
     wait_for_shutdown $ES_FRIENDLY_NAME $ES_CLASS_NAME $ELASTICSEARCH_SHUTDOWN_TIMEOUT_S
     kill_class        $CASSANDRA_FRIENDLY_NAME $CASSANDRA_CLASS_NAME
@@ -218,7 +224,7 @@ status_class() {
 }
 
 status() {
-    status_class $GREMLIN_FRIENDLY_NAME $GREMLIN_CLASS_NAME
+    status_class $JANUSGRAPH_FRIENDLY_NAME $JANUSGRAPH_CLASS_NAME
     status_class $ES_FRIENDLY_NAME $ES_CLASS_NAME
     status_class $CASSANDRA_FRIENDLY_NAME $CASSANDRA_CLASS_NAME
 }

@@ -15,46 +15,25 @@
 package org.janusgraph.diskstorage.solr;
 
 import org.janusgraph.diskstorage.PermanentBackendException;
-import org.janusgraph.diskstorage.configuration.Configuration;
-import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
-import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+@Testcontainers
 public class SolrIndexKerberosMissingConfigTest {
 
-	@BeforeAll
-	public static void setUpMiniCluster() throws Exception {
-		SolrRunner.start();
-	}
-
-	@AfterAll
-	public static void tearDownMiniCluster() throws Exception {
-		SolrRunner.stop();
-	}
+    @Container
+    protected static JanusGraphSolrContainer solrContainer = new JanusGraphSolrContainer();
 
 	/**
 	 * This test needs to stand alone because the java.security.auth.login.config
 	 * property is JVM wide and is required for the KDC to run.
-	 * 
-	 * @throws Exception
-	 */
+     */
 	@Test
-	public void testIndexInitializationFailsWhenMissingJavaSecurityAuthLoginConfig() throws Exception {
-        assertThrows(PermanentBackendException.class, () -> new SolrIndex(getLocalSolrTestConfig()));
-	}
-
-	protected Configuration getLocalSolrTestConfig() {
-		final String index = "solr";
-		final ModifiableConfiguration config = GraphDatabaseConfiguration.buildGraphConfiguration();
-
-		config.set(SolrIndex.ZOOKEEPER_URL, SolrRunner.getZookeeperUrls(), index);
-		config.set(SolrIndex.WAIT_SEARCHER, true, index);
-		config.set(GraphDatabaseConfiguration.INDEX_MAX_RESULT_SET_SIZE, 3, index);
-		config.set(SolrIndex.KERBEROS_ENABLED, true, index);
-		return config.restrictTo(index);
-	}
+	public void testIndexInitializationFailsWhenMissingJavaSecurityAuthLoginConfig() {
+        System.clearProperty("java.security.auth.login.config");
+        assertThrows(PermanentBackendException.class, () -> new SolrIndex(solrContainer.getLocalSolrTestConfigOverwriteKerberos()));
+    }
 }

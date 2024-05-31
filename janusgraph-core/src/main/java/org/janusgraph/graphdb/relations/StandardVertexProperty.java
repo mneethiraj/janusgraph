@@ -15,17 +15,14 @@
 package org.janusgraph.graphdb.relations;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Lists;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
-import org.janusgraph.core.JanusGraphElement;
-import org.janusgraph.core.JanusGraphRelation;
 import org.janusgraph.core.JanusGraphVertexProperty;
 import org.janusgraph.core.PropertyKey;
 import org.janusgraph.graphdb.internal.ElementLifeCycle;
 import org.janusgraph.graphdb.internal.InternalVertex;
 import org.janusgraph.graphdb.types.system.ImplicitKey;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -37,17 +34,17 @@ import java.util.function.Consumer;
 
 public class StandardVertexProperty extends AbstractVertexProperty implements StandardRelation, ReassignableRelation {
 
-    public StandardVertexProperty(long id, PropertyKey type, InternalVertex vertex, Object value, byte lifecycle) {
-        super(id, type, vertex, value);
-        this.lifecycle = lifecycle;
-    }
-
-    private static final Map<PropertyKey, Object> EMPTY_PROPERTIES = ImmutableMap.of();
+    private static final Map<PropertyKey, Object> EMPTY_PROPERTIES = Collections.emptyMap();
 
     private boolean isUpsert;
     private byte lifecycle;
     private long previousID = 0;
     private volatile Map<PropertyKey, Object> properties = EMPTY_PROPERTIES;
+
+    public StandardVertexProperty(long id, PropertyKey type, InternalVertex vertex, Object value, byte lifecycle) {
+        super(id, type, vertex, value);
+        this.lifecycle = lifecycle;
+    }
 
     /**
      * Mark this property as 'upsert', i.e. the old property value is not read from DB and marked as
@@ -94,7 +91,7 @@ public class StandardVertexProperty extends AbstractVertexProperty implements St
 
     @Override
     public Iterable<PropertyKey> getPropertyKeysDirect() {
-        return Lists.newArrayList(properties.keySet());
+        return new ArrayList<>(properties.keySet());
     }
 
     @Override

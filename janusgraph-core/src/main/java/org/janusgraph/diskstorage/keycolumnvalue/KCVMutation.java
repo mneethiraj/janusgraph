@@ -14,13 +14,14 @@
 
 package org.janusgraph.diskstorage.keycolumnvalue;
 
-import com.google.common.base.Functions;
 import org.janusgraph.diskstorage.Entry;
 import org.janusgraph.diskstorage.Mutation;
 import org.janusgraph.diskstorage.StaticBuffer;
 import org.janusgraph.diskstorage.keycolumnvalue.cache.KCVEntryMutation;
 
 import java.util.List;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * {@link Mutation} type for {@link KeyColumnValueStore}.
@@ -34,13 +35,17 @@ public class KCVMutation extends Mutation<Entry,StaticBuffer> {
         super(additions, deletions);
     }
 
+    public KCVMutation(Supplier<List<Entry>> additionsCopySupplier, Supplier<List<StaticBuffer>> deletionsCopySupplier) {
+        super(additionsCopySupplier, deletionsCopySupplier);
+    }
+
     @Override
     public void consolidate() {
-        super.consolidate(KCVEntryMutation.ENTRY2COLUMN_FCT, Functions.identity());
+        super.consolidate(KCVEntryMutation.ENTRY2COLUMN_FCT, Function.identity());
     }
 
     @Override
     public boolean isConsolidated() {
-        return super.isConsolidated(KCVEntryMutation.ENTRY2COLUMN_FCT, Functions.identity());
+        return super.isConsolidated(KCVEntryMutation.ENTRY2COLUMN_FCT, Function.identity());
     }
 }

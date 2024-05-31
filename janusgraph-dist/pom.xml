@@ -3,7 +3,7 @@
     <parent>
         <groupId>org.janusgraph</groupId>
         <artifactId>janusgraph</artifactId>
-        <version>0.5.4-SNAPSHOT</version>
+        <version>0.6.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <packaging>pom</packaging>
@@ -22,11 +22,16 @@
         <assembly.static.dir>${project.basedir}/src/assembly/static</assembly.static.dir>
         <assembly.resources.dir>${project.basedir}/src/assembly/resources</assembly.resources.dir>
         <assembly.es.dir>${project.build.directory}/elasticsearch-${elasticsearch.version}</assembly.es.dir>
+        <assembly.cassandra.dir>${project.build.directory}/apache-cassandra-${cassandra.version}</assembly.cassandra.dir>
+
+        <packname.standard>janusgraph-${project.version}</packname.standard>
+        <packname.full>janusgraph-full-${project.version}</packname.full>
 
         <!-- Variables for integration testing on release-candidate archive files -->
         <test.expect.dir>${project.build.directory}/test-classes</test.expect.dir>
-        <test.zipfile.path>${project.build.directory}/janusgraph-${project.version}.zip</test.zipfile.path>
-        <test.zipfile-full.path>${project.build.directory}/janusgraph-full-${project.version}.zip</test.zipfile-full.path>
+        <test.zipfile.path>${project.build.directory}/${packname.standard}.zip</test.zipfile.path>
+        <test.zipfile-full.path>${project.build.directory}/${packname.full}.zip</test.zipfile-full.path>
+        <build.full>package</build.full>
 
         <!-- RPM/DEB packaging -->
         <pkg.release>1</pkg.release>
@@ -47,13 +52,6 @@
             <groupId>net.java.dev.jna</groupId>
             <artifactId>jna</artifactId>
             <version>${jna.version}</version>
-        </dependency>
-        <!-- C*2.1 uses airline for command line parsing (incl. nodetool).
-             This dep is not provided through cassandra-all/janusgraph-cassandra. -->
-        <dependency>
-            <groupId>io.airlift</groupId>
-            <artifactId>airline</artifactId>
-            <version>0.6</version>
         </dependency>
         <dependency>
             <groupId>org.apache.tinkerpop</groupId>
@@ -77,6 +75,14 @@
                     <groupId>javax.annotation</groupId>
                     <artifactId>javax.annotation-api</artifactId>
                 </exclusion>
+                <exclusion>
+                    <groupId>org.apache.commons</groupId>
+                    <artifactId>commons-compress</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>com.github.spotbugs</groupId>
+                    <artifactId>spotbugs-annotations</artifactId>
+                </exclusion>
             </exclusions>
         </dependency>
         <dependency>
@@ -97,6 +103,11 @@
                     <groupId>org.apache.solr</groupId>
                 </exclusion>
             </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.github.jbellis</groupId>
+            <artifactId>jamm</artifactId>
+            <version>${jamm.version}</version>
         </dependency>
         
         <!-- Test dependencies -->
@@ -174,7 +185,7 @@
             <plugin>
                 <groupId>com.googlecode.maven-download-plugin</groupId>
                 <artifactId>download-maven-plugin</artifactId>
-                <version>1.5.0</version>
+                <version>1.6.1</version>
                 <executions>
                     <execution>
                         <id>get-elasticsearch</id>
@@ -188,6 +199,18 @@
                             <outputDirectory>${project.build.directory}</outputDirectory>
                         </configuration>
                     </execution>
+                    <execution>
+                        <id>get-cassandra</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>wget</goal>
+                        </goals>
+                        <configuration>
+                            <url>http://ftp.halifax.rwth-aachen.de/apache/cassandra/${cassandra.version}/apache-cassandra-${cassandra.version}-bin.tar.gz</url>
+                            <outputFileName>apache-cassandra.tar.gz</outputFileName>
+                            <outputDirectory>${project.build.directory}</outputDirectory>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <plugin>
@@ -195,6 +218,7 @@
                 <artifactId>maven-antrun-plugin</artifactId>
                 <executions>
                     <execution>
+                        <id>extract-elasticsearch</id>
                         <phase>generate-test-resources</phase>
                         <goals>
                             <goal>run</goal>
@@ -204,6 +228,23 @@
                                 <exec executable="tar">
                                     <arg value="-xzf"/>
                                     <arg value="${project.build.directory}/elasticsearch.tar.gz"/>
+                                    <arg value="-C"/>
+                                    <arg value="${project.build.directory}"/>
+                                </exec>
+                            </target>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>extract-cassandra</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <exec executable="tar">
+                                    <arg value="-xzf"/>
+                                    <arg value="${project.build.directory}/apache-cassandra.tar.gz"/>
                                     <arg value="-C"/>
                                     <arg value="${project.build.directory}"/>
                                 </exec>
@@ -247,7 +288,7 @@
                             <mainClass>org.janusgraph.util.system.ConfigurationPrinter</mainClass>
                             <arguments>
                                 <argument>org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.ROOT_NS</argument>
-                                <argument>${doc.dir}/basics/janusgraph-cfg.md</argument>
+                                <argument>${doc.dir}/configs/janusgraph-cfg.md</argument>
                             </arguments>
                         </configuration>
                     </execution>
@@ -274,16 +315,6 @@
                     </execution>
                     <execution>
                         <id>generate-janusgraph-gremlin-imports</id>
-                        <phase>none</phase>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <plugin>
-                <artifactId>maven-install-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>default-install</id>
                         <phase>none</phase>
                     </execution>
                 </executions>
@@ -345,7 +376,7 @@
                     <plugin>
                         <groupId>org.codehaus.mojo</groupId>
                         <artifactId>build-helper-maven-plugin</artifactId>
-                        <version>1.8</version>
+                        <version>3.2.0</version>
                         <inherited>false</inherited>
                         <executions>
                             <execution>
@@ -647,21 +678,14 @@
                         <executions>
                             <execution>
                                 <id>assemble-full-distribution-archive</id>
-                                <phase>package</phase>
+                                <phase>${build.full}</phase>
                                 <goals>
                                     <goal>single</goal>
                                 </goals>
                                 <configuration>
                                     <!--
                                         We set attached=true so that the gpg plugin will
-                                        sign all of our assembly artifacts. We handle
-                                        deployment of the artifacts manually because
-                                        maven-deploy-plugin can't upload files to a flat
-                                        S3 directory; it insists on creating a
-                                        long/packagename/and/artifactid/and/version/
-                                        path at the destination before uploading, and we
-                                        don't want that for our files S3. codehaus's
-                                        wagon:upload plugin comes to our rescue.
+                                        sign all of our assembly artifacts.
                                     -->
                                     <attach>true</attach>
                                     <!--
@@ -669,7 +693,7 @@
                                         ${finalName}-${<id /> from assembly descriptor}.${archive
                                         format extension}
                                     -->
-                                    <finalName>janusgraph-full-${project.version}</finalName>
+                                    <finalName>${packname.full}</finalName>
                                     <appendAssemblyId>false</appendAssemblyId>
                                     <tarLongFileMode>gnu</tarLongFileMode>
                                     <descriptors>
@@ -689,14 +713,7 @@
                                 <configuration>
                                     <!--
                                         We set attached=true so that the gpg plugin will
-                                        sign all of our assembly artifacts. We handle
-                                        deployment of the artifacts manually because
-                                        maven-deploy-plugin can't upload files to a flat
-                                        S3 directory; it insists on creating a
-                                        long/packagename/and/artifactid/and/version/
-                                        path at the destination before uploading, and we
-                                        don't want that for our files S3. codehaus's
-                                        wagon:upload plugin comes to our rescue.
+                                        sign all of our assembly artifacts.
                                     -->
                                     <attach>true</attach>
                                     <!--
@@ -704,7 +721,7 @@
                                         ${finalName}-${<id /> from assembly descriptor}.${archive
                                         format extension}
                                     -->
-                                    <finalName>janusgraph-${project.version}</finalName>
+                                    <finalName>${packname.standard}</finalName>
                                     <appendAssemblyId>false</appendAssemblyId>
                                     <tarLongFileMode>gnu</tarLongFileMode>
                                     <descriptors>

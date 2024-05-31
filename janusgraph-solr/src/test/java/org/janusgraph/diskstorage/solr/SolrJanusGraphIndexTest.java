@@ -14,32 +14,32 @@
 
 package org.janusgraph.diskstorage.solr;
 
+import io.github.artsok.RepeatedIfExceptionsTest;
+import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
+import org.janusgraph.diskstorage.configuration.WriteConfiguration;
 import org.janusgraph.graphdb.JanusGraphIndexTest;
-import org.janusgraph.testutil.FlakyTest;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.junit.jupiter.Container;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
  */
 public abstract class SolrJanusGraphIndexTest extends JanusGraphIndexTest {
 
-    @BeforeAll
-    public static void setUpMiniCluster() throws Exception {
-        SolrRunner.start();
-    }
-
-    @AfterAll
-    public static void tearDownMiniCluster() throws Exception {
-        SolrRunner.stop();
-    }
-
+    @Container
+    protected static JanusGraphSolrContainer solrContainer = new JanusGraphSolrContainer();
 
     protected SolrJanusGraphIndexTest() {
         super(true, true, true);
     }
+
+    @Override
+    public WriteConfiguration getConfiguration() {
+        return solrContainer.getLocalSolrTestConfig(getStorageConfiguration(), getIndexBackends()).getConfiguration();
+    }
+
+    public abstract ModifiableConfiguration getStorageConfiguration();
 
     @Override
     public boolean supportsLuceneStyleQueries() {
@@ -49,6 +49,16 @@ public abstract class SolrJanusGraphIndexTest extends JanusGraphIndexTest {
     @Override
     protected boolean supportsCollections() {
         return true;
+    }
+
+    @Override
+    public boolean supportsGeoPointExistsQuery() {
+        return false;
+    }
+
+    @Override
+    public String getStringField(String propertyKey) {
+        return propertyKey + "_s";
     }
 
     @Test
@@ -67,7 +77,7 @@ public abstract class SolrJanusGraphIndexTest extends JanusGraphIndexTest {
     }
 
     @Override
-    @FlakyTest(minSuccess = 1, invocationCount = 6)
+    @RepeatedIfExceptionsTest(repeats = 10, suspend = 1000L)
     public void testIndexReplay() throws Exception {
         super.testIndexReplay();
     }
