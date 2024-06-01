@@ -44,19 +44,15 @@ optimizations (e.g. local conflict detection) and detection of failure
 scenarios (e.g. expired locks).
 
 The actual lock application mechanism is abstracted such that JanusGraph
-can use multiple implementations of a locking provider. Currently, two
-locking providers are supported in the JanusGraph distribution:
+can use multiple implementations of a locking provider. Currently, only one
+locking provider is included in the JanusGraph distribution:
 
-1.  A locking implementation based on key-consistent read and write
-    operations that is agnostic to the underlying storage backend as
-    long as it supports key-consistent operations (which includes
-    Cassandra and HBase). This is the default implementation and uses
-    timestamp based lock applications to determine which transaction
-    holds the lock.
-2.  A Cassandra specific locking implementation based on the Astyanax
-    locking recipe.
-
-Both locking providers require that clocks are synchronized across all
+A locking implementation based on key-consistent read and write
+operations that is agnostic to the underlying storage backend as
+long as it supports key-consistent operations (which includes
+Cassandra and HBase). This is the default implementation and uses
+timestamp based lock applications to determine which transaction
+holds the lock. It requires that clocks are synchronized across all
 machines in the cluster.
 
 !!! warning
@@ -148,6 +144,9 @@ Index entries might point to nonexistent vertices or edges. Similarly, a
 vertex or edge appears in the graph but is not yet indexed and hence
 ignored by global graph queries.
 
+In some situations due to server failures permanent index inconsistency can 
+happen. See how to deal with permanent stale index entries [here](stale-index.md).
+
 **Half-Edges**  
 Only one direction of an edge gets persisted or deleted which might lead
 to the edge not being or incorrectly being retrieved.
@@ -176,7 +175,7 @@ The following strategies can be used to mitigate this issue:
 
 **Existence checks**  
 Configure transactions to (double) check for the existence of vertices
-prior to returning them. Please see [Transaction Configuration](../interactions/transactions.md#transaction-configuration) for more
+prior to returning them. Please see [Transaction Configuration](../basics/transactions.md#transaction-configuration) for more
 information and note that this can significantly decrease performance.
 Note, that this does not fix the inconsistencies but hides some of them
 from the user.

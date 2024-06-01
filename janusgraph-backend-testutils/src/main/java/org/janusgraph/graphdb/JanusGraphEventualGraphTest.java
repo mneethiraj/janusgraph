@@ -17,21 +17,26 @@ package org.janusgraph.graphdb;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
+import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.apache.tinkerpop.gremlin.structure.Edge;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 import org.janusgraph.TestCategory;
-import org.janusgraph.core.*;
+import org.janusgraph.core.Cardinality;
+import org.janusgraph.core.EdgeLabel;
+import org.janusgraph.core.JanusGraphEdge;
+import org.janusgraph.core.JanusGraphException;
+import org.janusgraph.core.JanusGraphRelation;
+import org.janusgraph.core.JanusGraphTransaction;
+import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.core.JanusGraphVertexProperty;
+import org.janusgraph.core.Multiplicity;
+import org.janusgraph.core.PropertyKey;
 import org.janusgraph.core.attribute.Cmp;
-
-
 import org.janusgraph.core.schema.ConsistencyModifier;
 import org.janusgraph.core.schema.JanusGraphIndex;
 import org.janusgraph.diskstorage.util.TestLockerManager;
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
-
-import org.apache.tinkerpop.gremlin.structure.Direction;
-import org.apache.tinkerpop.gremlin.structure.Edge;
-import static org.apache.tinkerpop.gremlin.structure.Direction.*;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
-import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -39,8 +44,16 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Iterator;
 
+import static org.apache.tinkerpop.gremlin.structure.Direction.IN;
+import static org.apache.tinkerpop.gremlin.structure.Direction.OUT;
 import static org.janusgraph.testutil.JanusGraphAssert.assertCount;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -97,8 +110,8 @@ public abstract class JanusGraphEventualGraphTest extends JanusGraphBaseTest {
         tx1.commit();
 
         // Fetch vertex ids
-        long id1 = getId(v1);
-        long id2 = getId(v2);
+        Object id1 = getId(v1);
+        Object id2 = getId(v2);
 
         // Transaction 2: Remove "name" property from v1, set "address" property; create
         // an edge v2 -> v1
@@ -193,7 +206,7 @@ public abstract class JanusGraphEventualGraphTest extends JanusGraphBaseTest {
         tx.commit();
 
         tx = graph.buildTransaction().commitTime(Instant.ofEpochSecond(200)).start();
-        v1 = tx.getVertex(v1.longId());
+        v1 = tx.getVertex(v1.id());
         assertNotNull(v1);
         e = Iterators.getOnlyElement(v1.edges(Direction.OUT, "related"));
         assertNotNull(e);
@@ -202,7 +215,7 @@ public abstract class JanusGraphEventualGraphTest extends JanusGraphBaseTest {
         tx.commit();
 
         tx = graph.buildTransaction().commitTime(Instant.ofEpochSecond(300)).start();
-        v1 = tx.getVertex(v1.longId());
+        v1 = tx.getVertex(v1.id());
         assertNotNull(v1);
         e = Iterators.getOnlyElement(v1.edges(Direction.OUT, "related"));
         assertEquals(Integer.valueOf(125), e.value("time"));
@@ -297,7 +310,7 @@ public abstract class JanusGraphEventualGraphTest extends JanusGraphBaseTest {
         rs[5]=sign(v.addEdge("emf",u),transactionId);
 
         newTx();
-        long vid = getId(v), uid = getId(u);
+        Object vid = getId(v), uid = getId(u);
 
         JanusGraphTransaction tx1 = graph.newTransaction();
         JanusGraphTransaction tx2 = graph.newTransaction();
@@ -317,37 +330,36 @@ public abstract class JanusGraphEventualGraphTest extends JanusGraphBaseTest {
         assertEquals("Bob",p.value());
         assertEquals(wintx,p.<Integer>value("sig").intValue());
         p = getOnlyElement(v.properties("value"));
-        assertEquals(rs[2].longId(),getId(p));
+        assertEquals(rs[2].id(),getId(p));
         assertEquals(wintx,p.<Integer>value("sig").intValue());
         assertCount(2,v.properties("valuef"));
         for (Iterator<VertexProperty<Object>> ppiter = v.properties("valuef"); ppiter.hasNext(); ) {
             VertexProperty pp = ppiter.next();
-            assertNotEquals(rs[3].longId(),getId(pp));
+            assertNotEquals(rs[3].id(),getId(pp));
             assertEquals(2,pp.value());
         }
 
         Edge e = Iterables.getOnlyElement(v.query().direction(OUT).labels("es").edges());
         assertEquals(wintx,e.<Integer>value("sig").intValue());
-        assertNotEquals(rs[6].longId(),getId(e));
+        assertNotEquals(rs[6].id(),getId(e));
 
         e = Iterables.getOnlyElement(v.query().direction(OUT).labels("o2o").edges());
         assertEquals(wintx,e.<Integer>value("sig").intValue());
-        assertEquals(rs[7].longId(), getId(e));
+        assertEquals(rs[7].id(), getId(e));
         e = Iterables.getOnlyElement(v.query().direction(OUT).labels("o2m").edges());
         assertEquals(wintx,e.<Integer>value("sig").intValue());
-        assertNotEquals(rs[8].longId(),getId(e));
+        assertNotEquals(rs[8].id(),getId(e));
         e = Iterables.getOnlyElement(v.query().direction(OUT).labels("em").edges());
         assertEquals(wintx,e.<Integer>value("sig").intValue());
-        assertEquals(rs[4].longId(), getId(e));
-        for (Object o : v.query().direction(OUT).labels("emf").edges()) {
-            Edge ee = (Edge) o;
-            assertNotEquals(rs[5].longId(),getId(ee));
-            assertEquals(uid,ee.inVertex().id());
+        assertEquals(rs[4].id(), getId(e));
+        for (Edge o : v.query().direction(OUT).labels("emf").edges()) {
+            assertNotEquals(rs[5].id(),getId(o));
+            assertEquals(uid, o.inVertex().id());
         }
     }
 
 
-    private void processTx(JanusGraphTransaction tx, int transactionId, long vid, long uid) {
+    private void processTx(JanusGraphTransaction tx, int transactionId, Object vid, Object uid) {
         JanusGraphVertex v = getV(tx,vid);
         JanusGraphVertex u = getV(tx,uid);
         assertEquals(5.0, v.<Double>value("weight"),0.00001);
@@ -366,13 +378,13 @@ public abstract class JanusGraphEventualGraphTest extends JanusGraphBaseTest {
             sign((JanusGraphVertexProperty)p,transactionId);
         }
 
-        Edge e = Iterables.getOnlyElement(v.query().direction(OUT).labels("es").edges());
+        JanusGraphEdge e = Iterables.getOnlyElement(v.query().direction(OUT).labels("es").edges());
         assertEquals(1,e.<Integer>value("sig").intValue());
         e.remove();
         sign(v.addEdge("es",u),transactionId);
         e = Iterables.getOnlyElement(v.query().direction(OUT).labels("o2o").edges());
         assertEquals(1,e.<Integer>value("sig").intValue());
-        sign((JanusGraphEdge)e,transactionId);
+        sign(e,transactionId);
         e = Iterables.getOnlyElement(v.query().direction(OUT).labels("o2m").edges());
         assertEquals(1,e.<Integer>value("sig").intValue());
         e.remove();
@@ -380,7 +392,7 @@ public abstract class JanusGraphEventualGraphTest extends JanusGraphBaseTest {
         for (String label : new String[]{"em","emf"}) {
             e = Iterables.getOnlyElement(v.query().direction(OUT).labels(label).edges());
             assertEquals(1,e.<Integer>value("sig").intValue());
-            sign((JanusGraphEdge)e,transactionId);
+            sign(e,transactionId);
         }
     }
 

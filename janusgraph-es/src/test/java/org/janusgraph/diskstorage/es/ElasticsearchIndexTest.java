@@ -16,15 +16,19 @@ package org.janusgraph.diskstorage.es;
 
 import com.google.common.base.Throwables;
 import com.google.common.collect.HashMultimap;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Multimap;
-
-import org.apache.commons.configuration.BaseConfiguration;
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang.RandomStringUtils;
-import org.apache.commons.lang.reflect.FieldUtils;
+import org.apache.commons.lang3.RandomStringUtils;
+import org.apache.commons.lang3.reflect.FieldUtils;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpHost;
-import org.apache.http.client.methods.*;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpDelete;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpHead;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.utils.URIBuilder;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -33,18 +37,27 @@ import org.apache.http.util.EntityUtils;
 import org.apache.tinkerpop.shaded.jackson.databind.ObjectMapper;
 import org.janusgraph.core.Cardinality;
 import org.janusgraph.core.JanusGraphException;
-import org.janusgraph.core.attribute.*;
+import org.janusgraph.core.attribute.Cmp;
+import org.janusgraph.core.attribute.Geo;
+import org.janusgraph.core.attribute.Geoshape;
+import org.janusgraph.core.attribute.Text;
+import org.janusgraph.core.schema.Mapping;
 import org.janusgraph.core.schema.Parameter;
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.configuration.BasicConfiguration;
 import org.janusgraph.diskstorage.configuration.Configuration;
 import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
 import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
-import org.janusgraph.diskstorage.indexing.*;
-import org.janusgraph.core.schema.Mapping;
+import org.janusgraph.diskstorage.indexing.IndexProvider;
+import org.janusgraph.diskstorage.indexing.IndexProviderTest;
+import org.janusgraph.diskstorage.indexing.IndexQuery;
+import org.janusgraph.diskstorage.indexing.KeyInformation;
+import org.janusgraph.diskstorage.indexing.StandardKeyInformation;
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
+import org.janusgraph.graphdb.internal.Order;
 import org.janusgraph.graphdb.query.condition.PredicateCondition;
 import org.janusgraph.graphdb.types.ParameterType;
+import org.janusgraph.util.system.ConfigurationUtil;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
@@ -68,7 +81,11 @@ import java.util.UUID;
 import java.util.stream.Stream;
 
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.INDEX_NAME;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -122,9 +139,17 @@ public class ElasticsearchIndexTest extends IndexProviderTest {
         return "keyword";
     }
 
+    @Override
+    public Mapping preferredGeoShapeMapping() {
+        if(JanusGraphElasticsearchContainer.getEsMajorVersion().value <= 6){
+            return Mapping.PREFIX_TREE;
+        }
+        return Mapping.BKD;
+    }
+
     public Configuration getESTestConfig() {
         final String index = "es";
-        final CommonsConfiguration cc = new CommonsConfiguration(new BaseConfiguration());
+        final CommonsConfiguration cc = new CommonsConfiguration(ConfigurationUtil.createBaseConfiguration());
         cc.set("index." + index + ".elasticsearch.ingest-pipeline.ingestvertex", "pipeline_1");
         return makeESTestConfig(index, cc);
     }
@@ -138,14 +163,25 @@ public class ElasticsearchIndexTest extends IndexProviderTest {
     @Test
     public void testSupport() {
         assertTrue(index.supports(of(String.class, Cardinality.SINGLE), Text.CONTAINS));
+        assertTrue(index.supports(of(String.class, Cardinality.SINGLE), Text.NOT_CONTAINS));
         assertTrue(index.supports(of(String.class, Cardinality.SINGLE, Mapping.TEXT.asParameter()), Text.CONTAINS_PREFIX));
+        assertTrue(index.supports(of(String.class, Cardinality.SINGLE, Mapping.TEXT.asParameter()), Text.NOT_CONTAINS_PREFIX));
+        assertTrue(index.supports(of(String.class, Cardinality.SINGLE, Mapping.TEXT.asParameter()), Text.CONTAINS_PHRASE));
+        assertTrue(index.supports(of(String.class, Cardinality.SINGLE, Mapping.TEXT.asParameter()), Text.NOT_CONTAINS_PHRASE));
         assertTrue(index.supports(of(String.class, Cardinality.SINGLE, Mapping.TEXT.asParameter()), Text.CONTAINS_REGEX));
+        assertTrue(index.supports(of(String.class, Cardinality.SINGLE, Mapping.TEXT.asParameter()), Text.NOT_CONTAINS_REGEX));
         assertTrue(index.supports(of(String.class, Cardinality.SINGLE, Mapping.TEXT.asParameter()), Text.CONTAINS_FUZZY));
+        assertTrue(index.supports(of(String.class, Cardinality.SINGLE, Mapping.TEXT.asParameter()), Text.NOT_CONTAINS_FUZZY));
         assertFalse(index.supports(of(String.class, Cardinality.SINGLE, Mapping.TEXT.asParameter()), Text.REGEX));
+        assertFalse(index.supports(of(String.class, Cardinality.SINGLE, Mapping.TEXT.asParameter()), Text.NOT_REGEX));
         assertFalse(index.supports(of(String.class, Cardinality.SINGLE, Mapping.STRING.asParameter()), Text.CONTAINS));
+        assertFalse(index.supports(of(String.class, Cardinality.SINGLE, Mapping.STRING.asParameter()), Text.NOT_CONTAINS));
         assertTrue(index.supports(of(String.class, Cardinality.SINGLE, Mapping.STRING.asParameter()), Text.PREFIX));
+        assertTrue(index.supports(of(String.class, Cardinality.SINGLE, Mapping.STRING.asParameter()), Text.NOT_PREFIX));
         assertTrue(index.supports(of(String.class, Cardinality.SINGLE, Mapping.STRING.asParameter()), Text.FUZZY));
+        assertTrue(index.supports(of(String.class, Cardinality.SINGLE, Mapping.STRING.asParameter()), Text.NOT_FUZZY));
         assertTrue(index.supports(of(String.class, Cardinality.SINGLE, Mapping.STRING.asParameter()), Text.REGEX));
+        assertTrue(index.supports(of(String.class, Cardinality.SINGLE, Mapping.STRING.asParameter()), Text.NOT_REGEX));
         assertTrue(index.supports(of(String.class, Cardinality.SINGLE, Mapping.STRING.asParameter()), Cmp.EQUAL));
         assertTrue(index.supports(of(String.class, Cardinality.SINGLE, Mapping.STRING.asParameter()), Cmp.NOT_EQUAL));
 
@@ -171,6 +207,10 @@ public class ElasticsearchIndexTest extends IndexProviderTest {
         assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE, Mapping.PREFIX_TREE.asParameter()), Geo.INTERSECT));
         assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE, Mapping.PREFIX_TREE.asParameter()), Geo.CONTAINS));
         assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE, Mapping.PREFIX_TREE.asParameter()), Geo.DISJOINT));
+        assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE, Mapping.BKD.asParameter()), Geo.WITHIN));
+        assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE, Mapping.BKD.asParameter()), Geo.INTERSECT));
+        assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE, Mapping.BKD.asParameter()), Geo.CONTAINS));
+        assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE, Mapping.BKD.asParameter()), Geo.DISJOINT));
     }
 
     @Test
@@ -189,6 +229,9 @@ public class ElasticsearchIndexTest extends IndexProviderTest {
         String message = Throwables.getRootCause(janusGraphException).getMessage();
 
         switch (JanusGraphElasticsearchContainer.getEsMajorVersion().value){
+            case 8:
+                assertTrue(message.contains("document_parsing_exception"));
+                break;
             case 7:
             case 6:
                 assertTrue(message.contains("mapper_parsing_exception"));
@@ -303,8 +346,8 @@ public class ElasticsearchIndexTest extends IndexProviderTest {
 
         String mappingTypeName = "vertex";
         String indexPrefix = "janusgraph";
-        String parameterName = "boost";
-        Double parameterValue = 5.5;
+        String parameterName = "store";
+        Boolean parameterValue = true;
 
         String field = "field_with_custom_prop";
 
@@ -406,15 +449,41 @@ public class ElasticsearchIndexTest extends IndexProviderTest {
     }
 
     @Test
+    public void testTextStringSort() throws Exception {
+        initialize("vertex");
+
+        Multimap<String, Object> firstDoc = HashMultimap.create();
+        firstDoc.put(TEXT_STRING, "John Doe");
+
+        Multimap<String, Object> secondDoc = HashMultimap.create();
+        secondDoc.put(TEXT_STRING, "Jane Doe");
+
+        add("vertex", "test1", firstDoc, true);
+        add("vertex", "test2", secondDoc, true);
+
+        clopen();
+
+        Object[] result = tx.queryStream(new IndexQuery("vertex", PredicateCondition.of(TEXT_STRING, Text.CONTAINS, "Doe"),
+            ImmutableList.of(new IndexQuery.OrderEntry(TEXT_STRING, Order.ASC, String.class)))).toArray();
+        assertEquals("test2", result[0]);
+        assertEquals("test1", result[1]);
+
+        result = tx.queryStream(new IndexQuery("vertex", PredicateCondition.of(TEXT_STRING, Text.CONTAINS, "Doe"),
+            ImmutableList.of(new IndexQuery.OrderEntry(TEXT_STRING, Order.DESC, String.class)))).toArray();
+        assertEquals("test1", result[0]);
+        assertEquals("test2", result[1]);
+    }
+
+    @Test
     public void testShouldNotShareIndexStoreNameCacheBetweenElasticSearchIndexInstances() throws BackendException, IllegalAccessException, NoSuchMethodException, InvocationTargetException {
         final String index1 = "es1";
         final String index2 = "es2";
 
-        final CommonsConfiguration cc1 = new CommonsConfiguration(new BaseConfiguration());
+        final CommonsConfiguration cc1 = new CommonsConfiguration(ConfigurationUtil.createBaseConfiguration());
         cc1.set("index." + index1 + ".elasticsearch.ingest-pipeline.ingestvertex", "pipeline_1");
         cc1.set("index." + index1 + ".elasticsearch.enable_index_names_cache", true);
 
-        final CommonsConfiguration cc2 = new CommonsConfiguration(new BaseConfiguration());
+        final CommonsConfiguration cc2 = new CommonsConfiguration(ConfigurationUtil.createBaseConfiguration());
         cc1.set("index." + index2 + ".elasticsearch.ingest-pipeline.ingestvertex", "pipeline_1");
         cc1.set("index." + index2 + ".elasticsearch.enable_index_names_cache", true);
 
@@ -454,7 +523,7 @@ public class ElasticsearchIndexTest extends IndexProviderTest {
     public void testShouldNotUseIndexStoreNameCache() throws BackendException, IllegalAccessException, NoSuchMethodException, InvocationTargetException {
         final String index = "es1";
 
-        final CommonsConfiguration cc = new CommonsConfiguration(new BaseConfiguration());
+        final CommonsConfiguration cc = new CommonsConfiguration(ConfigurationUtil.createBaseConfiguration());
         cc.set("index." + index + ".elasticsearch.ingest-pipeline.ingestvertex", "pipeline_1");
         cc.set("index." + index + ".elasticsearch.enable_index_names_cache", false);
 
@@ -503,5 +572,4 @@ public class ElasticsearchIndexTest extends IndexProviderTest {
         IOUtils.closeQuietly(response);
         return exists;
     }
-
 }

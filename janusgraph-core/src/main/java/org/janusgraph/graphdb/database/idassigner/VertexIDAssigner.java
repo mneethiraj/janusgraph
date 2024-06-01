@@ -16,34 +16,48 @@ package org.janusgraph.graphdb.database.idassigner;
 
 
 import com.google.common.base.Preconditions;
-import org.janusgraph.core.*;
-import org.janusgraph.graphdb.configuration.PreInitializeConfigOptions;
-import org.janusgraph.graphdb.internal.InternalRelationType;
-import org.janusgraph.graphdb.relations.EdgeDirection;
-import org.janusgraph.graphdb.relations.ReassignableRelation;
-import org.janusgraph.util.stats.NumberUtil;
-
+import org.janusgraph.core.EdgeLabel;
+import org.janusgraph.core.JanusGraphRelation;
+import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.core.PropertyKey;
+import org.janusgraph.core.VertexLabel;
 import org.janusgraph.diskstorage.Backend;
 import org.janusgraph.diskstorage.IDAuthority;
 import org.janusgraph.diskstorage.configuration.ConfigOption;
 import org.janusgraph.diskstorage.configuration.Configuration;
 import org.janusgraph.diskstorage.keycolumnvalue.StoreFeatures;
-import org.janusgraph.graphdb.database.idassigner.placement.*;
+import org.janusgraph.graphdb.configuration.PreInitializeConfigOptions;
+import org.janusgraph.graphdb.database.idassigner.placement.IDPlacementStrategy;
+import org.janusgraph.graphdb.database.idassigner.placement.PartitionAssignment;
+import org.janusgraph.graphdb.database.idassigner.placement.PartitionIDRange;
+import org.janusgraph.graphdb.database.idassigner.placement.SimpleBulkPlacementStrategy;
 import org.janusgraph.graphdb.idmanagement.IDManager;
 import org.janusgraph.graphdb.internal.InternalElement;
 import org.janusgraph.graphdb.internal.InternalRelation;
+import org.janusgraph.graphdb.internal.InternalRelationType;
 import org.janusgraph.graphdb.internal.InternalVertex;
+import org.janusgraph.graphdb.relations.EdgeDirection;
+import org.janusgraph.graphdb.relations.ReassignableRelation;
 import org.janusgraph.graphdb.types.vertices.JanusGraphSchemaVertex;
-
+import org.janusgraph.util.stats.NumberUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
-import java.util.*;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.*;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.CLUSTER_MAX_PARTITIONS;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.IDS_BLOCK_SIZE;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.IDS_NS;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.IDS_RENEW_BUFFER_PERCENTAGE;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.IDS_RENEW_TIMEOUT;
 
 @PreInitializeConfigOptions
 public class VertexIDAssigner implements AutoCloseable {
@@ -133,6 +147,7 @@ public class VertexIDAssigner implements AutoCloseable {
 
     public synchronized void close() {
         schemaIdPool.close();
+        partitionVertexIdPool.close();
         for (PartitionIDPool pool : idPools.values()) {
             pool.close();
         }
@@ -161,13 +176,20 @@ public class VertexIDAssigner implements AutoCloseable {
                     partitionID = placementStrategy.getPartition(element);
             } else if (element instanceof InternalRelation) {
                 InternalRelation relation = (InternalRelation)element;
-                if (attempt < relation.getLen()) { //On the first attempts, try to use partition of incident vertices
+                // On the first attempts, try to use partition of incident vertices
+                if (attempt < relation.getLen()) {
                     InternalVertex incident = relation.getVertex(attempt);
                     Preconditions.checkArgument(incident.hasId());
-                    if (!IDManager.VertexIDType.PartitionedVertex.is(incident.longId()) || relation.isProperty()) {
-                        partitionID = getPartitionID(incident);
+                    if (incident.id() instanceof Number) {
+                        if (!IDManager.VertexIDType.PartitionedVertex.is(incident.id()) || relation.isProperty()) {
+                            partitionID = getPartitionID(incident);
+                        } else {
+                            continue;
+                        }
                     } else {
-                        continue;
+                        // for custom string vertex ids, we find a consistent partitionId
+                        assert incident.id() instanceof String;
+                        partitionID = Math.abs(incident.id().hashCode() % partitionIdBound);
                     }
                 } else {
                     partitionID = placementStrategy.getPartition(element);
@@ -194,7 +216,7 @@ public class VertexIDAssigner implements AutoCloseable {
                 if (relation.isProperty() && isPartitionedAt(relation,0)) {
                     //Always assign properties to the canonical representative of a partitioned vertex
                     InternalVertex vertex = relation.getVertex(0);
-                    ((ReassignableRelation)relation).setVertexAt(0,vertex.tx().getInternalVertex(idManager.getCanonicalVertexId(vertex.longId())));
+                    ((ReassignableRelation)relation).setVertexAt(0,vertex.tx().getInternalVertex(idManager.getCanonicalVertexId(((Number) vertex.id()).longValue())));
                 } else if (relation.isEdge()) {
                     for (int pos = 0; pos < relation.getArity(); pos++) {
                         if (isPartitionedAt(relation, pos)) {
@@ -203,7 +225,7 @@ public class VertexIDAssigner implements AutoCloseable {
                             int otherPosition = (pos+1)%2;
                             if (((InternalRelationType)relation.getType()).multiplicity().isUnique(EdgeDirection.fromPosition(pos))) {
                                 //If the relation is unique in the direction, we assign it to the canonical vertex...
-                                newPartition = idManager.getPartitionId(idManager.getCanonicalVertexId(incident.longId()));
+                                newPartition = idManager.getPartitionId(idManager.getCanonicalVertexId(((Number) incident.id()).longValue()));
                             } else if (!isPartitionedAt(relation,otherPosition)) {
                                 //...else, we assign it to the partition of the non-partitioned vertex...
                                 newPartition = getPartitionID(relation.getVertex(otherPosition));
@@ -211,7 +233,7 @@ public class VertexIDAssigner implements AutoCloseable {
                                 //...and if such does not exists (i.e. both end vertices are partitioned) we use the hash of the relation id
                                 newPartition = idManager.getPartitionHashForId(relation.longId());
                             }
-                            if (idManager.getPartitionId(incident.longId())!=newPartition) {
+                            if (idManager.getPartitionId((long) incident.id())!=newPartition) {
                                 ((ReassignableRelation)relation).setVertexAt(pos,incident.tx().getOtherPartitionVertex(incident, newPartition));
                             }
                         }
@@ -224,7 +246,7 @@ public class VertexIDAssigner implements AutoCloseable {
     }
 
     private boolean isPartitionedAt(InternalRelation relation, int position) {
-        return idManager.isPartitionedVertex(relation.getVertex(position).longId());
+        return idManager.isPartitionedVertex(relation.getVertex(position).id());
     }
 
     public void assignIDs(Iterable<InternalRelation> addedRelations) {
@@ -285,7 +307,7 @@ public class VertexIDAssigner implements AutoCloseable {
     }
 
     private long getPartitionID(final InternalVertex v) {
-        long vid = v.longId();
+        long vid = ((Number) v.id()).longValue();
         if (IDManager.VertexIDType.Schema.is(vid)) return IDManager.SCHEMA_PARTITION;
         else return idManager.getPartitionId(vid);
     }

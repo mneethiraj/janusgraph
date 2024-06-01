@@ -21,7 +21,16 @@ import org.apache.velocity.Template;
 import org.apache.velocity.VelocityContext;
 import org.apache.velocity.app.Velocity;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.PrintStream;
+import java.io.Writer;
+import java.nio.file.Paths;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Properties;
@@ -42,15 +51,15 @@ public abstract class JanusGraphAssemblyBaseIT {
 
         try {
             props = new Properties();
-            java.io.FileReader fr = new FileReader(Joiner.on(File.separator).join(new String[] { "target", "test-classes", "target.properties" }));
+            java.io.FileReader fr = new FileReader(Joiner.on(File.separator).join(new String[]{"target", "test-classes", "target.properties"}));
             props.load(fr);
             fr.close();
         } catch (IOException e) {
             throw new AssertionError(e);
         }
 
-        BUILD_DIR    = props.getProperty("build.dir");
-        EXPECT_DIR   = props.getProperty("expect.dir");
+        BUILD_DIR = props.getProperty("build.dir");
+        EXPECT_DIR = props.getProperty("expect.dir");
         ZIPFILE_PATH = props.getProperty("zipfile.path");
         ZIPFILE_EXTRACTED = ZIPFILE_PATH.substring(0, ZIPFILE_PATH.length() - 4);
         ZIPFILE_FULL_PATH = props.getProperty("zipfile-full.path");
@@ -60,6 +69,8 @@ public abstract class JanusGraphAssemblyBaseIT {
         p.put("file.resource.loader.path", EXPECT_DIR);
         Velocity.init(p);
     }
+
+    protected abstract String getGraphName();
 
     protected void unzipAndRunExpect(String expectTemplateName, Map<String, String> contextVars, boolean full, boolean debug) throws Exception {
         if (full) {
@@ -103,10 +114,14 @@ public abstract class JanusGraphAssemblyBaseIT {
     }
 
     protected void unzipAndRunExpect(String expectTemplateName, String graphConfig, String graphToString, boolean full, boolean debug) throws Exception {
-        unzipAndRunExpect(expectTemplateName, ImmutableMap.of("graphConfig", graphConfig, "graphToString", graphToString), full, debug);
+        unzipAndRunExpect(expectTemplateName, graphConfig, "", graphToString, full, debug);
     }
 
-    private static void expect(String dir, String expectScript, boolean debug) throws IOException, InterruptedException {
+    protected void unzipAndRunExpect(String expectTemplateName, String graphConfig, String sparkGraphConfig, String graphToString, boolean full, boolean debug) throws Exception {
+        unzipAndRunExpect(expectTemplateName, ImmutableMap.of("graphConfig", graphConfig, "sparkGraphConfig", sparkGraphConfig, "graphToString", graphToString), full, debug);
+    }
+
+    private void expect(String dir, String expectScript, boolean debug) throws IOException, InterruptedException {
         if (debug) {
             command(new File(dir), "expect", "-d", expectScript);
         } else {
@@ -114,13 +129,18 @@ public abstract class JanusGraphAssemblyBaseIT {
         }
     }
 
-    protected static void unzip(String dir, String zipFile) throws IOException, InterruptedException {
+    protected void unzip(String dir, String zipFile) throws IOException, InterruptedException {
         command(new File(dir), "unzip", "-q", zipFile);
     }
 
-    protected static void command(File dir, String... command) throws IOException, InterruptedException {
+    protected void command(File dir, String... command) throws IOException, InterruptedException {
         ProcessBuilder pb = new ProcessBuilder(command);
+
+        Map<String, String> env = pb.environment();
+        env.put("JAVA_OPTIONS", "-Xms1024m -Xmx1024m");
         pb.directory(dir);
+        pb.environment().put("LOG_DIR", Paths.get(BUILD_DIR, "logs-" + getGraphName()).toString());
+        pb.environment().put("CASSANDRA_LOG_DIR", Paths.get(BUILD_DIR, "logs-" + getGraphName()).toString());
 //        pb.redirectInput(Redirect.PIPE);
         /*
          * Using Redirect.INHERIT with expect breaks maven-failsafe-plugin when

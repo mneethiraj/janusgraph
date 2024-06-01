@@ -15,40 +15,55 @@
 package org.janusgraph.core;
 
 import com.google.common.base.Preconditions;
-
+import org.apache.commons.configuration2.BaseConfiguration;
+import org.apache.commons.configuration2.Configuration;
+import org.apache.commons.configuration2.PropertiesConfiguration;
+import org.apache.commons.configuration2.ex.ConfigurationException;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.janusgraph.core.log.LogProcessorFramework;
 import org.janusgraph.core.log.TransactionRecovery;
 import org.janusgraph.diskstorage.Backend;
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.StandardStoreManager;
-import org.janusgraph.diskstorage.configuration.*;
+import org.janusgraph.diskstorage.configuration.BasicConfiguration;
+import org.janusgraph.diskstorage.configuration.ConfigOption;
+import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
+import org.janusgraph.diskstorage.configuration.ReadConfiguration;
+import org.janusgraph.diskstorage.configuration.WriteConfiguration;
 import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
-import org.janusgraph.graphdb.configuration.builder.GraphDatabaseConfigurationBuilder;
-import org.janusgraph.graphdb.management.JanusGraphManager;
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.*;
-import static org.janusgraph.util.system.LoggerUtil.sanitizeAndLaunder;
-import static org.janusgraph.graphdb.management.JanusGraphManager.JANUS_GRAPH_MANAGER_EXPECTED_STATE_MSG;
-
+import org.janusgraph.graphdb.configuration.builder.GraphDatabaseConfigurationBuilder;
 import org.janusgraph.graphdb.database.StandardJanusGraph;
 import org.janusgraph.graphdb.log.StandardLogProcessorFramework;
 import org.janusgraph.graphdb.log.StandardTransactionLogProcessor;
-import org.apache.commons.configuration.BaseConfiguration;
-import org.apache.commons.configuration.Configuration;
-import org.apache.commons.configuration.ConfigurationException;
-import org.apache.commons.configuration.PropertiesConfiguration;
-import org.apache.commons.lang.StringUtils;
+import org.janusgraph.graphdb.management.JanusGraphManager;
+import org.janusgraph.util.system.ConfigurationUtil;
 import org.janusgraph.util.system.IOUtils;
-import org.apache.tinkerpop.gremlin.structure.Graph;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.time.Instant;
-import java.util.*;
+import java.util.List;
+import java.util.Set;
+import java.util.Spliterators;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.GRAPH_NAME;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.INDEX_CONF_FILE;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.INDEX_DIRECTORY;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.INDEX_NS;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.ROOT_NS;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_BACKEND;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_CONF_FILE;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_DIRECTORY;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_HOSTS;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_NS;
+import static org.janusgraph.graphdb.management.JanusGraphManager.JANUS_GRAPH_MANAGER_EXPECTED_STATE_MSG;
+import static org.janusgraph.util.system.LoggerUtil.sanitizeAndLaunder;
 
 /**
  * JanusGraphFactory is used to open or instantiate a JanusGraph graph database.
@@ -203,6 +218,7 @@ public class JanusGraphFactory {
         final JanusGraphManager jgm = JanusGraphManagerUtility.getInstance();
         if (jgm != null) {
             jgm.removeGraph(g.getGraphName());
+            jgm.removeTraversalSource(ConfiguredGraphFactory.toTraversalSourceName(g.getGraphName()));
         }
         if (graph.isOpen()) {
             graph.close();
@@ -301,7 +317,7 @@ public class JanusGraphFactory {
             Preconditions.checkArgument(StandardStoreManager.getAllManagerClasses().containsKey(backend.toLowerCase()), "Backend shorthand unknown: %s", backend);
             String secondArg = null;
             if (pos+1<shortcutOrFile.length()) secondArg = shortcutOrFile.substring(pos + 1).trim();
-            BaseConfiguration config = new BaseConfiguration();
+            BaseConfiguration config = ConfigurationUtil.createBaseConfiguration();
             ModifiableConfiguration writeConfig = new ModifiableConfiguration(ROOT_NS,new CommonsConfiguration(config), BasicConfiguration.Restriction.NONE);
             writeConfig.set(STORAGE_BACKEND,backend);
             ConfigOption option = Backend.getOptionForShorthand(backend);
@@ -322,7 +338,7 @@ public class JanusGraphFactory {
      * Load a properties file containing a JanusGraph graph configuration.
      * <p>
      * <ol>
-     * <li>Load the file contents into a {@link org.apache.commons.configuration.PropertiesConfiguration}</li>
+     * <li>Load the file contents into a {@link org.apache.commons.configuration2.PropertiesConfiguration}</li>
      * <li>For each key that points to a configuration object that is either a directory
      * or local file, check
      * whether the associated value is a non-null, non-absolute path. If so,
@@ -343,7 +359,7 @@ public class JanusGraphFactory {
                 "Need to specify a readable configuration file, but was given: %s", file.toString());
 
         try {
-            PropertiesConfiguration configuration = new PropertiesConfiguration(file);
+            PropertiesConfiguration configuration = ConfigurationUtil.loadPropertiesConfig(file);
 
             final File tmpParent = file.getParentFile();
             final File configParent;
@@ -373,12 +389,11 @@ public class JanusGraphFactory {
                                   Pattern.quote(INDEX_CONF_FILE.getName()) +  ")"
             + ")");
 
-            final Iterator<String> keysToMangle = StreamSupport.stream(
+            final List<String> keysToMangle = StreamSupport.stream(
                 Spliterators.spliteratorUnknownSize(configuration.getKeys(), 0), false)
-                .filter(key -> null != key && p.matcher(key).matches()).iterator();
+                .filter(key -> null != key && p.matcher(key).matches()).collect(Collectors.toList());
 
-            while (keysToMangle.hasNext()) {
-                String k = keysToMangle.next();
+            for (String k : keysToMangle) {
                 Preconditions.checkNotNull(k);
                 final String s = configuration.getString(k);
                 Preconditions.checkArgument(StringUtils.isNotBlank(s),"Invalid Configuration: key %s has null empty value",k);

@@ -65,6 +65,41 @@ public interface KeyColumnValueStore {
     Map<StaticBuffer,EntryList> getSlice(List<StaticBuffer> keys, SliceQuery query, StoreTransaction txh) throws BackendException;
 
     /**
+     * Retrieves the list of entries (i.e. column-value pairs) for each provided {@link SliceQuery} for all respective given keys together.
+     * <br>
+     * The default implementation of this method is not optimized and instead uses blocking calls for each separate
+     * {@link SliceQuery} via {@link #getSlice(List, SliceQuery, StoreTransaction)}.
+     * <br>
+     * It is highly advisable to overwrite this implementation and use optimized implementation which requests all Slice queries in parallel
+     * by using asynchronous slice queries evaluation / grouped slice queries evaluation / parallel slice queries evaluation using a thread pool or any other
+     * optimized queries evaluation which can retrieve results for all requested queries ({@link SliceQuery}) in the
+     * shortest time possible.
+     * <br>
+     * Backend implementations which are not using blocking IO calls to the underlying storage backend (i.e. `in-memory` storage implementation)
+     * don't need to overwrite or optimized this method because both parallelized implementation and a sequential implementation
+     * will be performed the same for such storage implementations.
+     *
+     * @param multiKeysQueryGroups  List of Tuples where key is a List of {@link SliceQuery} queries which has
+     *                                       to be performed and a value is a list of keys for which all the queries have
+     *                                       to be performed.
+     * @param txh   Transaction
+     * @return The result of the query for each of the given {@link SliceQuery} and each of the given key.
+     * {@link EntryList} result should be provided for each of the {@link StaticBuffer} of each of the {@link SliceQuery}.
+     * @throws org.janusgraph.diskstorage.BackendException
+     */
+    default Map<SliceQuery, Map<StaticBuffer, EntryList>> getMultiSlices(MultiKeysQueryGroups<StaticBuffer, SliceQuery> multiKeysQueryGroups, StoreTransaction txh) throws BackendException{
+        Map<SliceQuery, Map<StaticBuffer, EntryList>> result = new java.util.HashMap<>();
+        for(KeysQueriesGroup<StaticBuffer, SliceQuery> queriesForKeysPair : multiKeysQueryGroups.getQueryGroups()){
+            List<StaticBuffer> keys = queriesForKeysPair.getKeysGroup();
+            for(SliceQuery query : queriesForKeysPair.getQueries()){
+                Map<StaticBuffer, EntryList> sliceResult = getSlice(keys, query, txh);
+                result.put(query, sliceResult);
+            }
+        }
+        return result;
+    }
+
+    /**
      * Verifies acquisition of locks {@code txh} from previous calls to
      * {@link #acquireLock(StaticBuffer, StaticBuffer, StaticBuffer, StoreTransaction)}
      * , then writes supplied {@code additions} and/or {@code deletions} to

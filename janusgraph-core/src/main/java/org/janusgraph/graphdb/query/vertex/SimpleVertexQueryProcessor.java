@@ -14,11 +14,11 @@
 
 package org.janusgraph.graphdb.query.vertex;
 
-import com.carrotsearch.hppc.LongArrayList;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.*;
-import org.janusgraph.core.*;
+import com.google.common.collect.Iterables;
+import org.janusgraph.core.JanusGraphRelation;
+import org.janusgraph.core.VertexList;
 import org.janusgraph.diskstorage.Entry;
 import org.janusgraph.diskstorage.EntryList;
 import org.janusgraph.diskstorage.keycolumnvalue.SliceQuery;
@@ -28,9 +28,12 @@ import org.janusgraph.graphdb.query.BackendQueryHolder;
 import org.janusgraph.graphdb.query.profile.QueryProfiler;
 import org.janusgraph.graphdb.transaction.RelationConstructor;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
+import org.janusgraph.util.IDUtils;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import javax.annotation.Nullable;
-import java.util.*;
 
 /**
  * This is an optimization of specifically for {@link VertexCentricQuery} that addresses the special but
@@ -95,20 +98,21 @@ public class SimpleVertexQueryProcessor implements Iterable<Entry> {
      * @return
      */
     public VertexList vertexIds() {
-        LongArrayList list = new LongArrayList();
-        long previousId = 0;
-        for (Long id : Iterables.transform(this,new Function<Entry, Long>() {
+        List<Object> list = new ArrayList<>();
+        boolean sorted = true;
+        for (Object id : Iterables.transform(this,new Function<Entry, Object>() {
             @Nullable
             @Override
-            public Long apply(@Nullable Entry entry) {
+            public Object apply(@Nullable Entry entry) {
                 return edgeSerializer.readRelation(entry,true,tx).getOtherVertexId();
             }
         })) {
+            if (!list.isEmpty() && IDUtils.compare(list.get(list.size() - 1), id) > 0) {
+                sorted = false;
+            }
             list.add(id);
-            if (id>=previousId && previousId>=0) previousId=id;
-            else previousId=-1;
         }
-        return new VertexLongList(tx,list,previousId>=0);
+        return new VertexIdList(tx,list,sorted);
     }
 
     /**
@@ -117,7 +121,7 @@ public class SimpleVertexQueryProcessor implements Iterable<Entry> {
      * @return
      */
     private Iterator<Entry> getBasicIterator() {
-        final EntryList result = vertex.loadRelations(sliceQuery, query -> QueryProfiler.profile(profiler, query, q -> tx.getGraph().edgeQuery(vertex.longId(), q, tx.getTxHandle())));
+        final EntryList result = vertex.loadRelations(sliceQuery, query -> QueryProfiler.profile(profiler, query, q -> tx.getGraph().edgeQuery(vertex.id(), q, tx.getTxHandle())));
         return result.iterator();
     }
 

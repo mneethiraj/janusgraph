@@ -33,9 +33,19 @@ public class CacheVertex extends StandardVertex {
     // is super low in a single transaction
     protected final Map<SliceQuery, EntryList> queryCache;
 
-    public CacheVertex(StandardJanusGraphTx tx, long id, byte lifecycle) {
+    public CacheVertex(StandardJanusGraphTx tx, Object id, byte lifecycle) {
         super(tx, id, lifecycle);
         queryCache = new HashMap<>(4);
+    }
+
+    public void refresh() {
+        synchronized (queryCache) {
+            queryCache.clear();
+        }
+    }
+
+    public EntryList getFromCache(final SliceQuery query) {
+        return queryCache.get(query);
     }
 
     protected void addToQueryCache(final SliceQuery query, final EntryList entries) {

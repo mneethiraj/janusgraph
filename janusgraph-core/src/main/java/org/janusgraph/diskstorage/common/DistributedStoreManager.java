@@ -15,17 +15,23 @@
 package org.janusgraph.diskstorage.common;
 
 import com.google.common.base.Preconditions;
-
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.PermanentBackendException;
-import org.janusgraph.diskstorage.util.time.TimestampProvider;
 import org.janusgraph.diskstorage.configuration.Configuration;
 import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
+import org.janusgraph.diskstorage.util.time.TimestampProvider;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Random;
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.*;
+
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.AUTH_PASSWORD;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.AUTH_USERNAME;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.CONNECTION_TIMEOUT;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.PAGE_SIZE;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_HOSTS;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_PORT;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.TIMESTAMP_PROVIDER;
 
 /**
  * Abstract class that handles configuration options shared by all distributed storage backends
@@ -135,7 +141,7 @@ public abstract class DistributedStoreManager extends AbstractStoreManager {
         return hn.substring(0, Math.min(hn.length(), 256)) + ":" + port;
     }
 
-    protected void sleepAfterWrite(StoreTransaction txh, MaskedTimestamp mustPass) throws BackendException {
+    protected void sleepAfterWrite(MaskedTimestamp mustPass) throws BackendException {
         assert mustPass.getDeletionTime(times) < mustPass.getAdditionTime(times);
         try {
             times.sleepPast(mustPass.getAdditionTimeInstant(times));

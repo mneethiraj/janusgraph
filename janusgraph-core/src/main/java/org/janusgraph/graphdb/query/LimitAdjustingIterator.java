@@ -67,10 +67,12 @@ public abstract class LimitAdjustingIterator<R> implements CloseableIterator<R> 
     @Override
     public boolean hasNext() {
         if (iterator ==null) iterator = getNewIterator(currentLimit);
-        if (count < currentLimit)
+        if (currentLimit == Query.NO_LIMIT || count < currentLimit)
             return iterator.hasNext();
         if (currentLimit>=maxLimit) return false;
 
+        //Close old iterator. This is needed otherwise it would not be timed properly by profiler.
+        CloseableIterator.closeIterator(iterator);
         //Get an iterator with an updated limit
         currentLimit = (int) Math.min(maxLimit, Math.round(currentLimit * 2.0));
         iterator = getNewIterator(currentLimit);

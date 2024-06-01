@@ -16,9 +16,8 @@ package org.janusgraph.pkgtest;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableMap;
-import org.janusgraph.util.system.IOUtils;
 import org.apache.commons.io.FileUtils;
-import org.junit.jupiter.api.Tag;
+import org.janusgraph.util.system.IOUtils;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +33,11 @@ public class GraphOfTheGodsCompatIT extends JanusGraphAssemblyBaseIT {
             LoggerFactory.getLogger(GraphOfTheGodsCompatIT.class);
 
     private static final String BDB_ES = "bdb-es";
+
+    @Override
+    protected String getGraphName() {
+        return "graph-of-the-gods";
+    }
 
     /**
      * Download and open databases created by previous versions of JanusGraph.

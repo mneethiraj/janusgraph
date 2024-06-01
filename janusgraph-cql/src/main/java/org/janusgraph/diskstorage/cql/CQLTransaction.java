@@ -14,13 +14,12 @@
 
 package org.janusgraph.diskstorage.cql;
 
-import org.janusgraph.diskstorage.BaseTransactionConfig;
-import org.janusgraph.diskstorage.common.AbstractStoreTransaction;
-import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
-
 import com.datastax.oss.driver.api.core.ConsistencyLevel;
 import com.datastax.oss.driver.api.core.DefaultConsistencyLevel;
 import com.google.common.base.Preconditions;
+import org.janusgraph.diskstorage.BaseTransactionConfig;
+import org.janusgraph.diskstorage.common.AbstractStoreTransaction;
+import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
 
 import static org.janusgraph.diskstorage.cql.CQLConfigOptions.READ_CONSISTENCY;
 import static org.janusgraph.diskstorage.cql.CQLConfigOptions.WRITE_CONSISTENCY;
@@ -39,15 +38,15 @@ public class CQLTransaction extends AbstractStoreTransaction {
         this.writeConsistencyLevel = DefaultConsistencyLevel.valueOf(getConfiguration().getCustomOption(WRITE_CONSISTENCY));
     }
 
-    ConsistencyLevel getReadConsistencyLevel() {
+    public ConsistencyLevel getReadConsistencyLevel() {
         return this.readConsistencyLevel;
     }
 
-    ConsistencyLevel getWriteConsistencyLevel() {
+    public ConsistencyLevel getWriteConsistencyLevel() {
         return this.writeConsistencyLevel;
     }
 
-    static CQLTransaction getTransaction(final StoreTransaction storeTransaction) {
+    public static CQLTransaction getTransaction(final StoreTransaction storeTransaction) {
         Preconditions.checkNotNull(storeTransaction);
         Preconditions.checkArgument(storeTransaction instanceof CQLTransaction, "Unexpected transaction type %s", storeTransaction.getClass().getName());
         return (CQLTransaction) storeTransaction;

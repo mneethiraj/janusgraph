@@ -3,7 +3,7 @@
     <parent>
         <groupId>org.janusgraph</groupId>
         <artifactId>janusgraph-examples</artifactId>
-        <version>0.6.0-SNAPSHOT</version>
+        <version>1.1.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>example-cql</artifactId>
@@ -36,7 +36,6 @@
     <properties>
         <example.main.class>org.janusgraph.example.JanusGraphApp</example.main.class>
         <example.config>${project.basedir}/conf/jgex-cql.properties</example.config>
-        <logback.config>${project.basedir}/conf/logback.xml</logback.config>
     </properties>
 
 </project>

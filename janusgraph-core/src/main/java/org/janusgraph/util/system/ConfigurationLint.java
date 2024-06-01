@@ -15,25 +15,26 @@
 package org.janusgraph.util.system;
 
 import com.google.common.base.Preconditions;
+import org.apache.commons.configuration2.PropertiesConfiguration;
+import org.apache.commons.configuration2.ex.ConfigurationException;
 import org.janusgraph.diskstorage.configuration.ConfigElement;
 import org.janusgraph.diskstorage.configuration.ConfigOption;
 import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
-import org.apache.commons.configuration.ConfigurationException;
-import org.apache.commons.configuration.PropertiesConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.*;
+import java.util.Iterator;
+import java.util.Properties;
 
 public class ConfigurationLint {
 
     private static final Logger log =
             LoggerFactory.getLogger(ConfigurationLint.class);
 
-    public static void main(String args[]) throws IOException {
+    public static void main(String[] args) throws IOException {
         if (1 != args.length) {
             System.err.println("Usage: ConfigurationLint janusgraph.properties");
             System.err.println("  Reads the supplied config file from disk and checks for unknown options.");
@@ -57,7 +58,7 @@ public class ConfigurationLint {
 
         final PropertiesConfiguration apc;
         try {
-            apc = new PropertiesConfiguration(filename);
+            apc = ConfigurationUtil.loadPropertiesConfig(filename);
         } catch (ConfigurationException e) {
             throw new IOException(e);
         }

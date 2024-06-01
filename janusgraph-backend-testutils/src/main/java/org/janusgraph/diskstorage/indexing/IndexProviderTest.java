@@ -15,36 +15,62 @@
 package org.janusgraph.diskstorage.indexing;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.*;
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableMultimap;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Sets;
 import io.github.artsok.RepeatedIfExceptionsTest;
 import org.janusgraph.core.Cardinality;
+import org.janusgraph.core.attribute.Cmp;
+import org.janusgraph.core.attribute.Geo;
+import org.janusgraph.core.attribute.Geoshape;
+import org.janusgraph.core.attribute.Text;
 import org.janusgraph.core.schema.Mapping;
-import org.janusgraph.graphdb.internal.Order;
 import org.janusgraph.core.schema.Parameter;
-import org.janusgraph.core.attribute.*;
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.BaseTransactionConfig;
 import org.janusgraph.diskstorage.EntryMetaData;
 import org.janusgraph.diskstorage.util.StandardBaseTransactionConfig;
-
 import org.janusgraph.diskstorage.util.time.TimestampProviders;
+import org.janusgraph.graphdb.internal.Order;
 import org.janusgraph.graphdb.query.JanusGraphPredicate;
-import org.janusgraph.graphdb.query.condition.*;
+import org.janusgraph.graphdb.query.condition.And;
+import org.janusgraph.graphdb.query.condition.Not;
+import org.janusgraph.graphdb.query.condition.Or;
+import org.janusgraph.graphdb.query.condition.PredicateCondition;
 import org.janusgraph.graphdb.types.ParameterType;
 import org.janusgraph.testutil.RandomGenerator;
-
+import org.junit.Assume;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mockito;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.hamcrest.Matchers.is;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -83,10 +109,16 @@ public abstract class IndexProviderTest {
             public KeyInformation.StoreRetriever get(String store) {
                 return mappings::get;
             }
+
+            @Override
+            public void invalidate(String store) {
+                mappings.remove(store);
+            }
         };
     }
 
-    public static Map<String,KeyInformation> getMapping(final IndexFeatures indexFeatures, final String englishAnalyzerName, final String keywordAnalyzerName) {
+    public static Map<String,KeyInformation> getMapping(final IndexFeatures indexFeatures, final String englishAnalyzerName, final String keywordAnalyzerName,
+                                                        Mapping fullGeoShapeMapping) {
         Preconditions.checkArgument(indexFeatures.supportsStringMapping(Mapping.TEXTSTRING) ||
                 (indexFeatures.supportsStringMapping(Mapping.TEXT) && indexFeatures.supportsStringMapping(Mapping.STRING)),
                 "Index must support string and text mapping");
@@ -98,7 +130,7 @@ public abstract class IndexProviderTest {
             put(TIME, new StandardKeyInformation(Long.class, Cardinality.SINGLE));
             put(WEIGHT, new StandardKeyInformation(Double.class, Cardinality.SINGLE, Mapping.DEFAULT.asParameter()));
             put(LOCATION, new StandardKeyInformation(Geoshape.class, Cardinality.SINGLE));
-            put(BOUNDARY, new StandardKeyInformation(Geoshape.class, Cardinality.SINGLE, Mapping.PREFIX_TREE.asParameter()));
+            put(BOUNDARY, new StandardKeyInformation(Geoshape.class, Cardinality.SINGLE, fullGeoShapeMapping.asParameter()));
             put(NAME, new StandardKeyInformation(String.class, Cardinality.SINGLE, stringParameter));
             if (indexFeatures.supportsCardinality(Cardinality.LIST)) {
                 put(PHONE_LIST, new StandardKeyInformation(String.class, Cardinality.LIST, stringParameter));
@@ -136,10 +168,12 @@ public abstract class IndexProviderTest {
         open();
     }
 
+    public abstract Mapping preferredGeoShapeMapping();
+
     public void open() throws BackendException {
         index = openIndex();
         indexFeatures = index.getFeatures();
-        allKeys = getMapping(indexFeatures, getEnglishAnalyzerName(), getKeywordAnalyzerName());
+        allKeys = getMapping(indexFeatures, getEnglishAnalyzerName(), getKeywordAnalyzerName(), preferredGeoShapeMapping());
         indexRetriever = getIndexRetriever(allKeys);
 
         newTx();
@@ -427,7 +461,7 @@ public abstract class IndexProviderTest {
             assertEquals(2, result.size());
             assertEquals(ImmutableSet.of("doc1","doc2"), ImmutableSet.copyOf(result));
 
-            if (index.supports(new StandardKeyInformation(Geoshape.class, Cardinality.SINGLE, Mapping.PREFIX_TREE.asParameter()), Geo.DISJOINT)) {
+            if (index.supports(new StandardKeyInformation(Geoshape.class, Cardinality.SINGLE, preferredGeoShapeMapping().asParameter()), Geo.DISJOINT)) {
                 result = tx.queryStream(new IndexQuery(store, PredicateCondition.of(BOUNDARY, Geo.DISJOINT, Geoshape.box(46.5, -0.5, 50.5, 10.5)))).collect(Collectors.toList());
                 assertEquals(0,result.size());
 
@@ -683,9 +717,9 @@ public abstract class IndexProviderTest {
         assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE)));
         assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE), Geo.WITHIN));
         assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE), Geo.INTERSECT));
-        assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE, new Parameter<>("mapping",Mapping.PREFIX_TREE)), Geo.WITHIN));
-        assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE, new Parameter<>("mapping",Mapping.PREFIX_TREE)), Geo.CONTAINS));
-        assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE, new Parameter<>("mapping",Mapping.PREFIX_TREE)), Geo.INTERSECT));
+        assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE, new Parameter<>("mapping",preferredGeoShapeMapping())), Geo.WITHIN));
+        assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE, new Parameter<>("mapping",preferredGeoShapeMapping())), Geo.CONTAINS));
+        assertTrue(index.supports(of(Geoshape.class, Cardinality.SINGLE, new Parameter<>("mapping",preferredGeoShapeMapping())), Geo.INTERSECT));
     }
 
     @Test
@@ -811,7 +845,8 @@ public abstract class IndexProviderTest {
         assertTrue(results.contains("restore-doc1"));
     }
 
-    @RepeatedIfExceptionsTest(repeats = 4, minSuccess = 2)
+    // flaky test: https://github.com/JanusGraph/janusgraph/issues/1091
+    @RepeatedIfExceptionsTest(repeats = 3)
     public void testTTL() throws Exception {
         if (!index.getFeatures().supportsDocumentTTL())
             return;
@@ -1066,21 +1101,21 @@ public abstract class IndexProviderTest {
             query = new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Text.CONTAINS_REGEX, "jer.*"));
             assertEquals(1, tx.queryStream(query).count(), query.toString());
 
-            assertEquals(1, tx.query(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.GREATER_THAN, "a"))).size());
-            assertEquals(0, tx.query(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.GREATER_THAN, "z"))).size());
-            assertEquals(1, tx.query(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.GREATER_THAN, "Tom and Jerry"))).size());
+            assertEquals(1, tx.queryStream(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.GREATER_THAN, "a"))).count());
+            assertEquals(0, tx.queryStream(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.GREATER_THAN, "z"))).count());
+            assertEquals(1, tx.queryStream(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.GREATER_THAN, "Tom and Jerry"))).count());
 
-            assertEquals(1, tx.query(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.GREATER_THAN_EQUAL, "a"))).size());
-            assertEquals(0, tx.query(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.GREATER_THAN_EQUAL, "z"))).size());
-            assertEquals(1, tx.query(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.GREATER_THAN_EQUAL, "Tom and Jerry"))).size());
+            assertEquals(1, tx.queryStream(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.GREATER_THAN_EQUAL, "a"))).count());
+            assertEquals(0, tx.queryStream(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.GREATER_THAN_EQUAL, "z"))).count());
+            assertEquals(1, tx.queryStream(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.GREATER_THAN_EQUAL, "Tom and Jerry"))).count());
 
-            assertEquals(0, tx.query(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.LESS_THAN, "a"))).size());
-            assertEquals(1, tx.query(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.LESS_THAN, "z"))).size());
-            assertEquals(0, tx.query(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.LESS_THAN, "Tom and Jerry"))).size());
+            assertEquals(0, tx.queryStream(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.LESS_THAN, "a"))).count());
+            assertEquals(1, tx.queryStream(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.LESS_THAN, "z"))).count());
+            assertEquals(0, tx.queryStream(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.LESS_THAN, "Tom and Jerry"))).count());
 
-            assertEquals(0, tx.query(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.LESS_THAN_EQUAL, "a"))).size());
-            assertEquals(1, tx.query(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.LESS_THAN_EQUAL, "z"))).size());
-            assertEquals(0, tx.query(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.LESS_THAN_EQUAL, "Tom and Jerry"))).size());
+            assertEquals(0, tx.queryStream(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.LESS_THAN_EQUAL, "a"))).count());
+            assertEquals(1, tx.queryStream(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.LESS_THAN_EQUAL, "z"))).count());
+            assertEquals(0, tx.queryStream(new IndexQuery(store, PredicateCondition.of(FULL_TEXT, Cmp.LESS_THAN_EQUAL, "Tom and Jerry"))).count());
         }
         query = new IndexQuery(store, PredicateCondition.of(KEYWORD, Text.CONTAINS_PREFIX, "Tom"));
         assertEquals(1, tx.queryStream(query).count(), query.toString());
@@ -1197,10 +1232,87 @@ public abstract class IndexProviderTest {
         assertFalse(index.exists());
     }
 
+    @ParameterizedTest
+    @MethodSource("org.janusgraph.core.attribute.TextArgument#text")
+    public void testTextPredicate(JanusGraphPredicate predicate, boolean expected, String value, String condition) throws BackendException {
+        assumeIndexSupportFor(Mapping.TEXT, predicate);
+        if (value != null)
+            initializeWithDoc("vertex", "test1", TEXT, value, true);
+        else
+            // if the value is null, replicate a missing field by indexing a different one
+            initializeWithDoc("vertex", "test1", BOOLEAN, true, true);
+        testPredicateByCount((expected) ? 1 : 0, predicate, TEXT, condition);
+    }
+
+    @ParameterizedTest
+    @MethodSource("org.janusgraph.core.attribute.TextArgument#string")
+    public void testStringPredicate(JanusGraphPredicate predicate, boolean expected, String value, String condition) throws BackendException {
+        assumeIndexSupportFor(Mapping.STRING, predicate);
+        if (value != null)
+            initializeWithDoc("vertex", "test1", NAME, value, true);
+        else
+            // if the value is null, replicate a missing field by indexing a different one
+            initializeWithDoc("vertex", "test1", BOOLEAN, true, true);
+        testPredicateByCount((expected) ? 1 : 0, predicate, NAME, condition);
+    }
+
     /* ==================================================================================
                             HELPER METHODS
      ==================================================================================*/
 
+    /**
+     * Initialize the store, and add a test document with the provided
+     * field/value pair.
+     *
+     * @param store
+     * @param docId
+     * @param field
+     * @param value
+     * @param isNew
+     * @throws BackendException
+     */
+    private void initializeWithDoc(String store, String docId, String field, Object value, boolean isNew) throws BackendException {
+        initialize(store);
+
+        Multimap<String, Object> doc = HashMultimap.create();
+        doc.put(field, value);
+
+        add(store, docId, doc, isNew);
+
+        clopen();
+    }
+
+    /**
+     * Tests the index to ensure it supports the provided mapping,
+     * and the provided predicate.
+     *
+     * @param mapping
+     * @param predicate
+     */
+    protected void assumeIndexSupportFor(Mapping mapping, JanusGraphPredicate predicate) {
+        Assume.assumeThat("Index supports mapping"+mapping, indexFeatures.supportsStringMapping(mapping), is(true));
+        Assume.assumeThat("Index supports predicate "+predicate+" for mapping "+mapping, supportsPredicateFor(mapping, predicate), is(true));
+    }
+
+    protected boolean supportsPredicateFor(Mapping mapping, Class<?> dataType, Cardinality cardinality, JanusGraphPredicate predicate) {
+        return index.supports(new StandardKeyInformation(dataType, cardinality, mapping.asParameter()), predicate);
+    }
+
+    protected boolean supportsPredicateFor(Mapping mapping, Class<?> dataType, JanusGraphPredicate predicate) {
+        return supportsPredicateFor(mapping, dataType, Cardinality.SINGLE, predicate);
+    }
+
+    protected boolean supportsPredicateFor(Mapping mapping, JanusGraphPredicate predicate) {
+        return supportsPredicateFor(mapping, String.class, Cardinality.SINGLE, predicate);
+    }
+
+    protected long getDocCountByPredicate(JanusGraphPredicate predicate, String field, String condition) throws BackendException {
+        return tx.queryStream(new IndexQuery("vertex", PredicateCondition.of(field, predicate, condition))).count();
+    }
+
+    private void testPredicateByCount(long expectation, JanusGraphPredicate predicate, String field, String condition) throws BackendException {
+        assertEquals(expectation, getDocCountByPredicate(predicate, field, condition));
+    }
 
     protected void initialize(String store) throws BackendException {
         for (final Map.Entry<String,KeyInformation> info : allKeys.entrySet()) {

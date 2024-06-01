@@ -20,7 +20,9 @@ import java.util.HashSet;
 import java.util.Random;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.janusgraph.util.encoding.LongEncoding.STRING_ENCODING_MARKER;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -48,6 +50,11 @@ public class LongEncodingTest {
         for (int i = 0; i < codesAmount; i++) {
             assertTrue(codes.add(LongEncoding.encode(i).toLowerCase()));
         }
+    }
+
+    @Test
+    public void testConflictWithStringMarker() {
+        assertEquals(-1, LongEncoding.BASE_SYMBOLS.indexOf(STRING_ENCODING_MARKER));
     }
 
 }

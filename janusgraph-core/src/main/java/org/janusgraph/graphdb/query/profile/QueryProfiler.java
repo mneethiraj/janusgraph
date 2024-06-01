@@ -14,10 +14,12 @@
 
 package org.janusgraph.graphdb.query.profile;
 
+import org.janusgraph.diskstorage.keycolumnvalue.MultiKeysQueryGroups;
 import org.janusgraph.graphdb.query.Query;
 import org.janusgraph.graphdb.query.graph.JointIndexQuery.Subquery;
 
 import java.util.Collection;
+import java.util.Map;
 import java.util.function.Function;
 
 /**
@@ -39,6 +41,10 @@ public interface QueryProfiler {
     String QUERY_ANNOTATION = "query";
     String FULLSCAN_ANNOTATION = "fullscan";
     String INDEX_ANNOTATION = "index";
+    String QUERIES_ANNOTATION = "queries";
+    String QUERIES_AMOUNT_ANNOTATION = "queriesAmount";
+    String MULTI_SLICES_ANNOTATION = "multiSlices";
+    String QUERY_LIMITS_ANNOTATION = "limitsPerQuery";
 
     /* ==================================================================================
                                        GROUP NAMES
@@ -51,10 +57,11 @@ public interface QueryProfiler {
     String CONSTRUCT_GRAPH_CENTRIC_QUERY = "constructGraphCentricQuery";
     // graph centric query execution phase
     String GRAPH_CENTRIC_QUERY = "GraphCentricQuery";
+    String MIXED_INEX_COUNT_QUERY = "MixedIndexCountQuery";
 
     QueryProfiler NO_OP = new QueryProfiler() {
         @Override
-        public QueryProfiler addNested(String groupName) {
+        public QueryProfiler addNested(String groupName, boolean hasSiblings) {
             return this;
         }
 
@@ -76,8 +83,11 @@ public interface QueryProfiler {
         }
     };
 
+    default QueryProfiler addNested(String groupName) {
+        return addNested(groupName, false);
+    }
 
-    QueryProfiler addNested(String groupName);
+    QueryProfiler addNested(String groupName, boolean hasSiblings);
 
     QueryProfiler setAnnotation(String key, Object value);
 
@@ -111,6 +121,38 @@ public interface QueryProfiler {
             }
         } else {
             resultSize = result.size();
+        }
+        sub.setResultSize(resultSize);
+        return result;
+    }
+
+    static<Q extends Query, R extends Collection> Map<Q, Map<Object, R>> profile(QueryProfiler profiler, MultiKeysQueryGroups<Object, Q> multiSliceQueries, boolean multiQuery, Function<MultiKeysQueryGroups<Object, Q>, Map<Q, Map<Object, R>>> queryExecutor) {
+        return profile(BACKEND_QUERY,profiler,multiSliceQueries,multiQuery,queryExecutor);
+    }
+
+    static<Q extends Query, R extends Collection> Map<Q, Map<Object, R>> profile(String groupName, QueryProfiler profiler, MultiKeysQueryGroups<Object, Q> multiSliceQueries, boolean multiQuery, Function<MultiKeysQueryGroups<Object, Q>, Map<Q, Map<Object, R>>> queryExecutor) {
+        final QueryProfiler sub = profiler.addNested(groupName);
+        QueryProfilerUtil.setMultiSliceQueryAnnotations(sub, multiSliceQueries);
+        sub.startTimer();
+        final Map<Q, Map<Object, R>> result = queryExecutor.apply(multiSliceQueries);
+        sub.stopTimer();
+        long resultSize = 0;
+        if (multiQuery && profiler!=QueryProfiler.NO_OP) {
+            //The result set is a collection of collections, but don't do this computation if profiling is disabled
+            for(Map<Object, R> resultsPerSlice : result.values()){
+                for (R resultsPerVertex : resultsPerSlice.values()) {
+                    for(Object r : resultsPerVertex){
+                        if (r instanceof Collection) resultSize+=((Collection)r).size();
+                        else resultSize++;
+                    }
+                }
+            }
+        } else {
+            for(Map<Object, R> resultsPerSlice : result.values()){
+                for (R resultsPerVertex : resultsPerSlice.values()) {
+                    resultSize += resultsPerVertex.size();
+                }
+            }
         }
         sub.setResultSize(resultSize);
         return result;

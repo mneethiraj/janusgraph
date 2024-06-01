@@ -61,6 +61,11 @@ public abstract class SolrJanusGraphIndexTest extends JanusGraphIndexTest {
         return propertyKey + "_s";
     }
 
+    @Override
+    public String getTextField(String propertyKey) {
+        return propertyKey + "_t";
+    }
+
     @Test
     public void testRawQueries() {
         clopen(option(SolrIndex.DYNAMIC_FIELDS,JanusGraphIndexTest.INDEX),false);
@@ -76,10 +81,15 @@ public abstract class SolrJanusGraphIndexTest extends JanusGraphIndexTest {
         super.testClearStorage();
     }
 
+    // flaky test: https://github.com/JanusGraph/janusgraph/issues/2271
     @Override
     @RepeatedIfExceptionsTest(repeats = 10, suspend = 1000L)
     public void testIndexReplay() throws Exception {
         super.testIndexReplay();
     }
 
+    @Override
+    public boolean supportsGeoShapePrefixTreeMapping() {
+        return true;
+    }
 }

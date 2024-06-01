@@ -14,20 +14,18 @@
 
 package org.janusgraph.core.schema;
 
-import org.janusgraph.core.EdgeLabel;
-import org.janusgraph.core.PropertyKey;
-import org.janusgraph.core.RelationType;
-import org.janusgraph.core.JanusGraphTransaction;
-import org.janusgraph.core.VertexLabel;
-import org.janusgraph.diskstorage.keycolumnvalue.scan.ScanMetrics;
 import org.apache.tinkerpop.gremlin.process.traversal.Order;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.Element;
+import org.janusgraph.core.EdgeLabel;
+import org.janusgraph.core.JanusGraphTransaction;
+import org.janusgraph.core.PropertyKey;
+import org.janusgraph.core.RelationType;
+import org.janusgraph.core.VertexLabel;
+import org.janusgraph.diskstorage.keycolumnvalue.scan.ScanJobFuture;
 
 import java.time.Duration;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
 
 /**
  * The JanusGraphManagement interface provides methods to define, update, and inspect the schema of a JanusGraph graph.
@@ -164,6 +162,14 @@ public interface JanusGraphManagement extends JanusGraphConfiguration, SchemaMan
     Iterable<JanusGraphIndex> getGraphIndexes(final Class<? extends Element> elementType);
 
     /**
+     * Returns the indexOnly constraint for the index with given name or null if such constraint does not exist
+     * @param indexName
+     * @return
+     * @throws IllegalArgumentException if there is no index with given name
+     */
+    JanusGraphSchemaType getIndexOnlyConstraint(final String indexName);
+
+    /**
      * Returns an {@link IndexBuilder} to add a graph index to this JanusGraph graph. The index to-be-created
      * has the provided name and indexes elements of the given type.
      *
@@ -234,32 +240,6 @@ public interface JanusGraphManagement extends JanusGraphConfiguration, SchemaMan
 
     }
 
-    interface IndexJobFuture extends Future<ScanMetrics> {
-
-        /**
-         * Returns a set of potentially incomplete and still-changing metrics
-         * for this job.  This is not guaranteed to be the same object as the
-         * one returned by {@link #get()}, nor will the metrics visible through
-         * the object returned by this method necessarily eventually converge
-         * on the same values in the object returned by {@link #get()}, though
-         * the implementation should attempt to provide both properties when
-         * practical.
-         * <p>
-         * The metrics visible through the object returned by this method may
-         * also change their values between reads.  In other words, this is not
-         * necessarily an immutable snapshot.
-         * <p>
-         * If the index job has failed and the implementation is capable of
-         * quickly detecting that, then the implementation should throw an
-         * {@code ExecutionException}.  Returning metrics in case of failure is
-         * acceptable, but throwing an exception is preferred.
-         *
-         * @return metrics for a potentially still-running job
-         * @throws ExecutionException if the index job threw an exception
-         */
-        ScanMetrics getIntermediateResult() throws ExecutionException;
-    }
-
     /*
     ##################### CONSISTENCY SETTING ##########################
      */
@@ -303,6 +283,21 @@ public interface JanusGraphManagement extends JanusGraphConfiguration, SchemaMan
     void setTTL(JanusGraphSchemaType type, Duration duration);
 
     /*
+    ##################### CONSISTENCY MANAGEMENT #################
+     */
+
+    /**
+     * Remove all ghost vertices (a.k.a. phantom vertices) from the graph
+     */
+    ScanJobFuture removeGhostVertices();
+
+    /**
+     * Remove all ghost vertices (a.k.a. phantom vertices) from the graph,
+     * with the given concurrency level
+     */
+    ScanJobFuture removeGhostVertices(int numOfThreads);
+
+    /*
     ##################### SCHEMA UPDATE ##########################
      */
 
@@ -316,23 +311,36 @@ public interface JanusGraphManagement extends JanusGraphConfiguration, SchemaMan
     void changeName(JanusGraphSchemaElement element, String newName);
 
     /**
-     * Updates the provided index according to the given {@link SchemaAction}
+     * Updates the provided index according to the given {@link SchemaAction}.
+     * If action is REINDEX or DISCARD_INDEX, then number of threads running the
+     * action will be the number of available processors running on current JVM.
      *
      * @param index
      * @param updateAction
      * @return a future that completes when the index action is done
      */
-    IndexJobFuture updateIndex(Index index, SchemaAction updateAction);
+    ScanJobFuture updateIndex(Index index, SchemaAction updateAction);
+
+    /**
+     * Updates the provided index according to the given {@link SchemaAction}, using
+     * given number of threads if applicable (REINDEX and DISCARD_INDEX).
+     *
+     * @param index
+     * @param updateAction
+     * @param numOfThreads
+     * @return
+     */
+    ScanJobFuture updateIndex(Index index, SchemaAction updateAction, int numOfThreads);
 
     /**
      * If an index update job was triggered through {@link #updateIndex(Index, SchemaAction)} with schema actions
-     * {@link org.janusgraph.core.schema.SchemaAction#REINDEX} or {@link org.janusgraph.core.schema.SchemaAction#REMOVE_INDEX}
+     * {@link org.janusgraph.core.schema.SchemaAction#REINDEX} or {@link org.janusgraph.core.schema.SchemaAction#DISCARD_INDEX}
      * then this method can be used to track the status of this asynchronous process.
      *
      * @param index
      * @return A message that reflects the status of the index job
      */
-    IndexJobFuture getIndexJobStatus(Index index);
+    ScanJobFuture getIndexJobStatus(Index index);
 
     /*
     ##################### CLUSTER MANAGEMENT ##########################
@@ -436,7 +444,7 @@ public interface JanusGraphManagement extends JanusGraphConfiguration, SchemaMan
     /**
      * Prints out schema information related to indexes
      *
-     * @return String with graph index information
+     * @return String with graph index and relation index information
      */
     String printIndexes();
 

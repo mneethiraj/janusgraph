@@ -18,11 +18,12 @@ site_name: JanusGraph
 repo_name: 'JanusGraph'
 repo_url: 'https://github.com/janusgraph/janusgraph'
 
-copyright: 'Copyright &copy; 2021 JanusGraph Authors. All rights reserved.<br> The Linux Foundation has registered trademarks and uses trademarks. For a list of<br> trademarks of The Linux Foundation, please see our <a href="https://www.linuxfoundation.org/trademark-usage">Trademark Usage</a> page.<br> Cassandra, Groovy, HBase, Hadoop, Lucene, Solr, and TinkerPop are trademarks of the Apache Software Foundation.<br> Berkeley DB and Berkeley DB Java Edition are trademarks of Oracle.'
+copyright: 'Copyright &copy; 2023 JanusGraph Authors. All rights reserved.<br> The Linux Foundation has registered trademarks and uses trademarks. For a list of<br> trademarks of The Linux Foundation, please see our <a href="https://www.linuxfoundation.org/trademark-usage">Trademark Usage</a> page.<br> Cassandra, Groovy, HBase, Hadoop, Lucene, Solr, and TinkerPop are trademarks of the Apache Software Foundation.<br> Berkeley DB and Berkeley DB Java Edition are trademarks of Oracle.'
 
 plugins:
   - search
-  - markdownextradata
+  - macros
+  - include-markdown
   - redirects:
       redirect_maps:
         basics/common-questions.md: common-questions.md
@@ -36,18 +37,23 @@ plugins:
         basics/deployment.md: operations/deployment.md
         basics/configured-graph-factory.md: operations/configured-graph-factory.md
         basics/multi-node.md: operations/dynamic-graphs.md
-        basics/transactions.md: interactions/transactions.md
+        interactions/transactions.md: basics/transactions.md
         basics/configuration-reference.md: configs/configuration-reference.md
         basics/example-config.md: configs/example-config.md
         index-management/index-performance.md: schema/index-management/index-performance.md
         index-management/index-lifecycle.md: schema/index-management/index-lifecycle.md
         index-management/index-reindexing.md: schema/index-management/index-reindexing.md
         index-management/index-removal.md: schema/index-management/index-removal.md
-        index-backend/search-predicates.md: interactions/search-predicates.md
-        connecting/index.md: interactions/connecting/index.md
-        connecting/java.md: interactions/connecting/java.md
-        connecting/python.md: interactions/connecting/python.md
-        connecting/dotnet.md: interactions/connecting/dotnet.md
+        index-backend/search-predicates.md: basics/search-predicates.md
+        connecting/index.md: basics/connecting/index.md
+        connecting/java.md: basics/connecting/java.md
+        connecting/python.md: basics/connecting/python.md
+        connecting/dotnet.md: basics/connecting/dotnet.md
+        interactions/search-predicates.md: basics/search-predicates.md
+        interactions/connecting/index.md: basics/connecting/index.md
+        interactions/connecting/java.md: basics/connecting/java.md
+        interactions/connecting/python.md: basics/connecting/python.md
+        interactions/connecting/dotnet.md: basics/connecting/dotnet.md
         advanced-topics/bulk-loading.md: operations/bulk-loading.md
         advanced-topics/advschema.md: schema/advschema.md
         advanced-topics/monitoring.md: operations/monitoring.md
@@ -59,8 +65,9 @@ plugins:
 theme:
   language: 'en'
   name: 'material'
-  feature:
-    tabs: false
+  features:
+    - navigation.footer
+    - navigation.sections
   palette:
     primary: 'green'
     accent: 'teal'
@@ -69,31 +76,40 @@ theme:
   favicon: 'favicon.ico'
 
 extra_css:
-  - 'theme/structor-menu.css'
   - 'theme/extra.css'
+extra_javascript:
+  - 'theme/js/structor-menu.js'
 
 extra:
   social:
-    - type: github-alt
+    - icon: fontawesome/brands/github
       link: https://github.com/janusgraph
-    - type: twitter
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/5n4fjv4QAf
+    - icon: fontawesome/brands/x-twitter
       link: https://twitter.com/janusgraph
-    - type: envelope
+    - icon: fontawesome/brands/linkedin
+      link: https://www.linkedin.com/company/janusgraph
+    - icon: fontawesome/solid/envelope
       link: https://lists.lfaidata.foundation/g/janusgraph-users
-    - type: envelope
+    - icon: fontawesome/solid/envelope
       link: https://lists.lfaidata.foundation/g/janusgraph-dev
+  latest_version: 1.0.0
+  snapshot_version: 1.1.0-SNAPSHOT
+  tinkerpop_version: 3.7.2
+  hadoop_version: 3.3.5
 
 markdown_extensions:
   - pymdownx.superfences
-  - pymdownx.tabbed
-  - pymdownx.snippets
-  - pymdownx.details
+  - pymdownx.blocks.details
+  - pymdownx.blocks.tab:
+      alternate_style: true
   - markdown.extensions.admonition
-  - markdown_include.include:
-      base_path: docs
   - markdown.extensions.codehilite:
       linenums: True
   - codehilite
+  - attr_list
+  - def_list
 
 nav:
   - Introduction: index.md
@@ -102,14 +118,14 @@ nav:
     - Basic Usage: getting-started/basic-usage.md
     - Gremlin Query Language: getting-started/gremlin.md
     - Architectural Overview: getting-started/architecture.md
-  - Interactions with JanusGraph:
-    - Transactions: interactions/transactions.md
-    - Search Predicates and Mixed Index Data Types: interactions/search-predicates.md
+  - JanusGraph Basics:
+    - Transactions: basics/transactions.md
+    - Search Predicates and Mixed Index Data Types: basics/search-predicates.md
     - Connecting to JanusGraph:
-      - Introduction: interactions/connecting/index.md
-      - Using Java: interactions/connecting/java.md
-      - Using Python: interactions/connecting/python.md
-      - Using .Net: interactions/connecting/dotnet.md
+      - Introduction: basics/connecting/index.md
+      - Using Java: basics/connecting/java.md
+      - Using Python: basics/connecting/python.md
+      - Using .NET: basics/connecting/dotnet.md
   - Configuration:
     - Introduction: configs/index.md
     - Configuration Reference: configs/configuration-reference.md
@@ -125,8 +141,10 @@ nav:
   - Operations:
     - JanusGraph Server: operations/server.md
     - Deployment Scenarios: operations/deployment.md
+    - JanusGraph Container: operations/container.md
     - ConfiguredGraphFactory: operations/configured-graph-factory.md
     - Dynamic Graphs: operations/dynamic-graphs.md
+    - Batch Processing: operations/batch-processing.md
     - Bulk Loading: operations/bulk-loading.md
     - JanusGraph Cache: operations/cache.md
     - Monitoring: operations/monitoring.md
@@ -139,6 +157,7 @@ nav:
     - Apache Cassandra: storage-backend/cassandra.md
     - Apache HBase: storage-backend/hbase.md
     - Google Cloud Bigtable: storage-backend/bigtable.md
+    - ScyllaDB: storage-backend/scylladb.md
     - Oracle Berkeley DB Java Edition: storage-backend/bdb.md
     - InMemory Storage Backend: storage-backend/inmemorybackend.md
   - Mixed Index Backends:
@@ -151,20 +170,17 @@ nav:
     - Apache Lucene: index-backend/lucene.md
   - Advanced Topics:
     - Eventually-Consistent Storage Backends: advanced-topics/eventual-consistency.md
+    - Custom Vertex ID: advanced-topics/custom-vertex-id.md
     - Graph Partitioning: advanced-topics/partitioning.md
     - Datatype and Attribute Serializer Configuration: advanced-topics/serializer.md
     - JanusGraph with TinkerPop’s Hadoop-Gremlin: advanced-topics/hadoop.md
     - Transaction Log: advanced-topics/transaction-log.md
     - JanusGraph Data model: advanced-topics/data-model.md
     - JanusGraph Bus: advanced-topics/janusgraph-bus.md
+    - ExecutorService: advanced-topics/executor-service.md
+    - Permanent stale index inconsistency: advanced-topics/stale-index.md
     - Technical Limitations: advanced-topics/technical-limitations.md
+    - Snapshot Releases: advanced-topics/commit-releases.md
   - Common Questions: common-questions.md
   - Development: development.md
   - Changelog: changelog.md
-
-extra:
-  latest_version: 0.6.0
-  snapshot_version: 0.6.0-SNAPSHOT
-  tinkerpop_version: 3.4.10
-  hadoop2_version: 2.7.7
-  jamm_version: 0.3.0

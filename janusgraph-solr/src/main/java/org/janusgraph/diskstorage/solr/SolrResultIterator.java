@@ -14,18 +14,18 @@
 
 package org.janusgraph.diskstorage.solr;
 
+import org.apache.solr.client.solrj.SolrClient;
+import org.apache.solr.client.solrj.SolrQuery;
+import org.apache.solr.client.solrj.SolrServerException;
+import org.apache.solr.client.solrj.StreamingResponseCallback;
+import org.apache.solr.common.SolrDocument;
+
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Iterator;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.function.Function;
-
-import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.SolrQuery;
-import org.apache.solr.client.solrj.SolrServerException;
-import org.apache.solr.client.solrj.StreamingResponseCallback;
-import org.apache.solr.common.SolrDocument;
 
 /**
  * @author David Clement (david.clement90@laposte.net)
@@ -87,7 +87,7 @@ class SolrResultIterator<E> implements Iterator<E> {
         }
     }
 
-    private class SolrCallbackHandler<E> extends StreamingResponseCallback {
+    private static class SolrCallbackHandler<E> extends StreamingResponseCallback {
 
         private final SolrResultIterator<E> iterator;
         private final Function<SolrDocument, E> function;

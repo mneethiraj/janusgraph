@@ -14,24 +14,14 @@
 
 package org.janusgraph.diskstorage.es.rest;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
-
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import javax.net.ssl.SSLContext;
-
-import org.apache.commons.configuration.BaseConfiguration;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.Credentials;
 import org.apache.http.client.CredentialsProvider;
+import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.config.RequestConfig.Builder;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.nio.client.HttpAsyncClientBuilder;
@@ -48,6 +38,7 @@ import org.janusgraph.diskstorage.es.rest.util.HttpAuthTypes;
 import org.janusgraph.diskstorage.es.rest.util.RestClientAuthenticator;
 import org.janusgraph.diskstorage.es.rest.util.SSLConfigurationCallback;
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
+import org.janusgraph.util.system.ConfigurationUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -57,8 +48,36 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import javax.net.ssl.SSLContext;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyBoolean;
+import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.same;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 public class RestClientSetupTest {
@@ -78,6 +97,12 @@ public class RestClientSetupTest {
 
     private static final Integer RETRY_ON_CONFLICT = ElasticSearchIndex.RETRY_ON_CONFLICT.getDefaultValue();
 
+    private static final Integer RETRY_LIMIT = ElasticSearchIndex.RETRY_LIMIT.getDefaultValue();
+
+    private static final Long RETRY_INITIAL_WAIT = ElasticSearchIndex.RETRY_INITIAL_WAIT.getDefaultValue();
+
+    private static final Long RETRY_MAX_WAIT = ElasticSearchIndex.RETRY_MAX_WAIT.getDefaultValue();
+
     private static final AtomicInteger instanceCount = new AtomicInteger();
 
     @Captor
@@ -85,6 +110,18 @@ public class RestClientSetupTest {
 
     @Captor
     ArgumentCaptor<Integer> scrollKACaptor;
+
+    @Captor
+    ArgumentCaptor<Integer> retryAttemptLimitCaptor;
+
+    @Captor
+    ArgumentCaptor<Long> retryInitialWaitCaptor;
+
+    @Captor
+    ArgumentCaptor<Long> retryMaxWaitCaptor;
+
+    @Captor
+    ArgumentCaptor<Set<Integer>> retryErrorCodesCaptor;
 
     @Spy
     private RestClientSetup restClientSetup = new RestClientSetup();
@@ -107,7 +144,7 @@ public class RestClientSetupTest {
     }
 
     private ElasticSearchClient baseConfigTest(Map<String, String> extraConfigValues) throws Exception {
-        final CommonsConfiguration cc = new CommonsConfiguration(new BaseConfiguration());
+        final CommonsConfiguration cc = new CommonsConfiguration(ConfigurationUtil.createBaseConfiguration());
         cc.set("index." + INDEX_NAME + ".backend", "elasticsearch");
         cc.set("index." + INDEX_NAME + ".elasticsearch.interface", "REST_CLIENT");
         for(Map.Entry<String, String> me: extraConfigValues.entrySet()) {
@@ -120,7 +157,8 @@ public class RestClientSetupTest {
         doReturn(restClientBuilderMock).
             when(restClientSetup).getRestClientBuilder(any());
         doReturn(restElasticSearchClientMock).when(restClientSetup).
-            getElasticSearchClient(any(RestClient.class), anyInt(), anyBoolean());
+            getElasticSearchClient(any(RestClient.class), anyInt(), anyBoolean(),
+                anyInt(), anySet(), anyLong(), anyLong());
 
         return restClientSetup.connect(config.restrictTo(INDEX_NAME));
     }
@@ -151,7 +189,8 @@ public class RestClientSetupTest {
         assertEquals(SCHEME_HTTP, host0.getSchemeName());
         assertEquals(ElasticSearchIndex.HOST_PORT_DEFAULT, host0.getPort());
 
-        verify(restClientSetup).getElasticSearchClient(same(restClientMock), scrollKACaptor.capture(), anyBoolean());
+        verify(restClientSetup).getElasticSearchClient(same(restClientMock), scrollKACaptor.capture(), anyBoolean(),
+            anyInt(), anySet(), anyLong(), anyLong());
         assertEquals(ElasticSearchIndex.ES_SCROLL_KEEP_ALIVE.getDefaultValue().intValue(),
                 scrollKACaptor.getValue().intValue());
 
@@ -177,7 +216,9 @@ public class RestClientSetupTest {
         assertEquals(SCHEME_HTTP, host1.getSchemeName());
         assertEquals(ElasticSearchIndex.HOST_PORT_DEFAULT, host1.getPort());
 
-        verify(restClientSetup).getElasticSearchClient(same(restClientMock), scrollKACaptor.capture(), anyBoolean());
+        verify(restClientSetup).getElasticSearchClient(same(restClientMock), scrollKACaptor.capture(), anyBoolean(),
+            retryAttemptLimitCaptor.capture(), retryErrorCodesCaptor.capture(), retryInitialWaitCaptor.capture(),
+            retryMaxWaitCaptor.capture());
         assertEquals(ElasticSearchIndex.ES_SCROLL_KEEP_ALIVE.getDefaultValue().intValue(),
                 scrollKACaptor.getValue().intValue());
 
@@ -193,6 +234,10 @@ public class RestClientSetupTest {
                 put("index." + INDEX_NAME + ".elasticsearch.scroll-keep-alive", String.valueOf(ES_SCROLL_KA)).
                 put("index." + INDEX_NAME + ".elasticsearch.bulk-refresh", ES_BULK_REFRESH).
                 put("index." + INDEX_NAME + ".elasticsearch.retry_on_conflict", String.valueOf(RETRY_ON_CONFLICT)).
+                put("index." + INDEX_NAME + ".elasticsearch.retry-limit", String.valueOf(RETRY_LIMIT)).
+                put("index." + INDEX_NAME + ".elasticsearch.retry-initial-wait", String.valueOf(RETRY_INITIAL_WAIT)).
+                put("index." + INDEX_NAME + ".elasticsearch.retry-max-wait", String.valueOf(RETRY_MAX_WAIT)).
+                put("index." + INDEX_NAME + ".elasticsearch.retry-error-codes", "408,429").
                 build());
 
         assertNotNull(hostsConfigured);
@@ -203,13 +248,22 @@ public class RestClientSetupTest {
         assertEquals(SCHEME_HTTP, host0.getSchemeName());
         assertEquals(ES_PORT, host0.getPort());
 
-        verify(restClientSetup).getElasticSearchClient(same(restClientMock), scrollKACaptor.capture(), anyBoolean());
+        verify(restClientSetup).getElasticSearchClient(same(restClientMock), scrollKACaptor.capture(), anyBoolean(),
+            retryAttemptLimitCaptor.capture(), retryErrorCodesCaptor.capture(), retryInitialWaitCaptor.capture(),
+            retryMaxWaitCaptor.capture());
         assertEquals(ES_SCROLL_KA,
                 scrollKACaptor.getValue().intValue());
+        assertEquals(RETRY_LIMIT,
+            retryAttemptLimitCaptor.getValue().intValue());
+        assertEquals(Stream.of(408, 429).collect(Collectors.toSet()),
+            retryErrorCodesCaptor.getValue());
+        assertEquals(RETRY_INITIAL_WAIT,
+            retryInitialWaitCaptor.getValue().longValue());
+        assertEquals(RETRY_MAX_WAIT,
+            retryMaxWaitCaptor.getValue().longValue());
 
         verify(restElasticSearchClientMock).setBulkRefresh(eq(ES_BULK_REFRESH));
         verify(restElasticSearchClientMock).setRetryOnConflict(eq(RETRY_ON_CONFLICT));
-
     }
 
     @Test
@@ -228,7 +282,8 @@ public class RestClientSetupTest {
         assertEquals(SCHEME_HTTPS, host0.getSchemeName());
         assertEquals(ElasticSearchIndex.HOST_PORT_DEFAULT, host0.getPort());
 
-        verify(restClientSetup).getElasticSearchClient(same(restClientMock), scrollKACaptor.capture(), anyBoolean());
+        verify(restClientSetup).getElasticSearchClient(same(restClientMock), scrollKACaptor.capture(), anyBoolean(),
+            anyInt(), anySet(), anyLong(), anyLong());
         assertEquals(ElasticSearchIndex.ES_SCROLL_KEEP_ALIVE.getDefaultValue().intValue(),
                 scrollKACaptor.getValue().intValue());
 
@@ -256,6 +311,27 @@ public class RestClientSetupTest {
         return hccc;
     }
 
+    private RestClientBuilder.RequestConfigCallback configCallbackTestBase(Map<String, String> extraConfigValues) throws Exception {
+
+        baseConfigTest(ImmutableMap.<String, String>builder().
+            put("index." + INDEX_NAME + ".backend", "elasticsearch").
+            put("index." + INDEX_NAME + ".hostname", ES_HOST_01).
+            putAll(extraConfigValues).
+            build()
+        );
+
+        final ArgumentCaptor<RestClientBuilder.RequestConfigCallback> rccCaptor =
+            ArgumentCaptor.forClass(RestClientBuilder.RequestConfigCallback.class);
+
+        // callback is passed to the client builder
+        verify(restClientBuilderMock).setRequestConfigCallback(rccCaptor.capture());
+
+        final RestClientBuilder.RequestConfigCallback rcc = rccCaptor.getValue();
+        assertNotNull(rcc);
+
+        return rcc;
+    }
+
     private CredentialsProvider basicAuthTestBase(final Map<String, String> extraConfigValues, final String realm,
             final String username, final String password) throws Exception {
         final HttpClientConfigCallback hccc = authTestBase(
@@ -270,7 +346,7 @@ public class RestClientSetupTest {
                 );
 
         final HttpAsyncClientBuilder hacb = mock(HttpAsyncClientBuilder.class);
-        doReturn(hacb).when(hacb).setDefaultCredentialsProvider(anyObject());
+        doReturn(hacb).when(hacb).setDefaultCredentialsProvider(any());
         hccc.customizeHttpClient(hacb);
 
         final ArgumentCaptor<BasicCredentialsProvider> cpCaptor = ArgumentCaptor.forClass(BasicCredentialsProvider.class);
@@ -298,6 +374,32 @@ public class RestClientSetupTest {
         assertEquals(testUser, credentials.getUserPrincipal().getName());
         assertEquals(testPassword, credentials.getPassword());
     }
+
+    @Test
+    public void testConnectAndSocketTimeout() throws Exception {
+        final RestClientBuilder.RequestConfigCallback rcc = configCallbackTestBase(
+            ImmutableMap.<String, String>builder().
+                put("index." + INDEX_NAME + ".elasticsearch.connect-timeout", "5000").
+                put("index." + INDEX_NAME + ".elasticsearch.socket-timeout", "60000").
+                build()
+        );
+
+        // verifying that the custom callback is in the chain
+        final RequestConfig.Builder rccb = mock(RequestConfig.Builder.class);
+        when(rccb.setConnectTimeout(any(Integer.class))).thenReturn(rccb);
+        ArgumentCaptor<Integer> connectArgumentCaptor = ArgumentCaptor.forClass(Integer.class);
+        ArgumentCaptor<Integer> socketArgumentCaptor = ArgumentCaptor.forClass(Integer.class);
+        rcc.customizeRequestConfig(rccb);
+
+
+        verify(rccb).setConnectTimeout(connectArgumentCaptor.capture());
+        verify(rccb).setSocketTimeout(socketArgumentCaptor.capture());
+
+
+        assertEquals(5000, connectArgumentCaptor.getValue());
+        assertEquals(60000, socketArgumentCaptor.getValue());
+    }
+
 
     @Test
     public void testCustomAuthenticator() throws Exception {
@@ -563,10 +665,10 @@ public class RestClientSetupTest {
 
         private static final Map<String, TestCustomAuthenticator> instanceMap = new HashMap<>();
 
-        final private String[] args;
+        private final String[] args;
 
-        final private List<Builder> customizeRequestConfigHistory = new LinkedList<>();
-        final private List<HttpAsyncClientBuilder> customizeHttpClientHistory = new LinkedList<>();
+        private final List<Builder> customizeRequestConfigHistory = new LinkedList<>();
+        private final List<HttpAsyncClientBuilder> customizeHttpClientHistory = new LinkedList<>();
         private int numInitCalls = 0;
 
         public TestCustomAuthenticator(String[] args) {

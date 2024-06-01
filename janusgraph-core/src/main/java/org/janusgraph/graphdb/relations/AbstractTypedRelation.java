@@ -14,6 +14,11 @@
 
 package org.janusgraph.graphdb.relations;
 
+import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.apache.tinkerpop.gremlin.structure.Property;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.apache.tinkerpop.gremlin.structure.VertexProperty;
+import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
 import org.janusgraph.core.InvalidElementException;
 import org.janusgraph.core.JanusGraphVertexProperty;
 import org.janusgraph.core.PropertyKey;
@@ -24,10 +29,6 @@ import org.janusgraph.graphdb.internal.InternalRelationType;
 import org.janusgraph.graphdb.internal.InternalVertex;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
 import org.janusgraph.graphdb.types.system.ImplicitKey;
-import org.apache.tinkerpop.gremlin.structure.Direction;
-import org.apache.tinkerpop.gremlin.structure.Property;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
-import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
 
 import java.util.Iterator;
 import java.util.stream.Stream;
@@ -47,8 +48,9 @@ public abstract class AbstractTypedRelation extends AbstractElement implements I
         if (isLoadedInThisTx()) {
             return this;
         }
-
-        InternalRelation next = (InternalRelation) RelationIdentifierUtils.findRelation(RelationIdentifierUtils.get(this), tx());
+        StandardJanusGraphTx tx = tx();
+        InternalRelation next = (InternalRelation) RelationIdentifierUtils.findRelation(
+            RelationIdentifierUtils.get(this, longId()), tx);
         if (next == null) {
             throw InvalidElementException.removedException(this);
         }
@@ -113,8 +115,13 @@ public abstract class AbstractTypedRelation extends AbstractElement implements I
     }
 
     @Override
+    public long longId() {
+        return ((Number) super.id()).longValue();
+    }
+
+    @Override
     public RelationIdentifier id() {
-        return RelationIdentifierUtils.get(this);
+        return RelationIdentifierUtils.get(this, longId());
     }
 
     /* ---------------------------------------------------------------
@@ -130,6 +137,17 @@ public abstract class AbstractTypedRelation extends AbstractElement implements I
         if (propertyKey == null) {
             return JanusGraphVertexProperty.empty();
         }
+        if (value == null) {
+            VertexProperty.Cardinality cardinality = propertyKey.cardinality().convert();
+            if (cardinality.equals(VertexProperty.Cardinality.single)) {
+                // putting null value with SINGLE cardinality is equivalent to removing existing value
+                properties(key).forEachRemaining(Property::remove);
+            } else {
+                // simply ignore this mutation
+                assert cardinality.equals(VertexProperty.Cardinality.list) || cardinality.equals(VertexProperty.Cardinality.set);
+            }
+            return JanusGraphVertexProperty.empty();
+        }
         Object normalizedValue = tx().verifyAttribute(propertyKey,value);
         it().setPropertyDirect(propertyKey,normalizedValue);
         return new SimpleJanusGraphProperty<>(this, propertyKey, value);
@@ -142,6 +160,11 @@ public abstract class AbstractTypedRelation extends AbstractElement implements I
             return ((ImplicitKey) key).computeProperty(this);
         }
         return it().getValueDirect(key);
+    }
+
+    @Override
+    public Object getCompareId() {
+        return longId();
     }
 
     @Override
@@ -170,44 +193,13 @@ public abstract class AbstractTypedRelation extends AbstractElement implements I
         if (keyNames == null || keyNames.length == 0) {
             keys = IteratorUtils.stream(it().getPropertyKeysDirect().iterator());
         } else {
-            keys = Stream.of(keyNames)
-                         .map(s -> tx().getPropertyKey(s)).filter(rt -> rt != null && getValueDirect(rt) != null);
+            keys =
+                Stream.of(keyNames)
+                    .filter(s -> s != null)
+                    .map(s -> tx().getPropertyKey(s))
+                    .filter(rt -> rt != null && getValueDirect(rt) != null);
         }
         return keys.map(rt -> (Property<V>) new SimpleJanusGraphProperty<V>(this, rt, valueInternal(rt))).iterator();
     }
-
-    /* ---------------------------------------------------------------
-     * Blueprints Iterators
-     * ---------------------------------------------------------------
-     */
-
-//    @Override
-//    public Iterator<Vertex> vertexIterator(Direction direction) {
-//        verifyAccess();
-//
-//        List<Vertex> vertices;
-//        if (direction==Direction.BOTH) {
-//            vertices = ImmutableList.of((Vertex)getVertex(0),getVertex(1));
-//        } else {
-//            vertices = ImmutableList.of((Vertex)getVertex(EdgeDirection.position(direction)));
-//        }
-//        return vertices.iterator();
-//    }
-//
-//    @Override
-//    public <V> Iterator<Property<V>> propertyIterator(String... keyNames) {
-//        verifyAccess();
-//
-//        Stream<RelationType> keys;
-//
-//        if (keyNames==null || keyNames.length==0) {
-//            keys = IteratorUtils.stream(it().getPropertyKeysDirect());
-//        } else {
-//            keys = Stream.of(keyNames)
-//                    .map(s -> tx().getRelationType(s)).filter(rt -> rt != null && getValueDirect(rt)!=null);
-//        }
-//        return keys.map( rt -> (Property<V>)new SimpleJanusGraphProperty<V>(this,rt,valueInternal(rt))).iterator();
-//    }
-
 
 }

@@ -44,7 +44,7 @@ public interface InternalElement extends JanusGraphElement {
         return tx();
     }
 
-    void setId(long id);
+    void setId(Object id);
 
     /**
      * @see ElementLifeCycle
@@ -58,4 +58,5 @@ public interface InternalElement extends JanusGraphElement {
      */
     boolean isInvisible();
 
+    Object getCompareId();
 }

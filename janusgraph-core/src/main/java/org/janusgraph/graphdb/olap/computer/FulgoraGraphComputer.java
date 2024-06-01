@@ -17,18 +17,6 @@ package org.janusgraph.graphdb.olap.computer;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
-import org.janusgraph.core.JanusGraphException;
-import org.janusgraph.core.JanusGraphComputer;
-import org.janusgraph.core.JanusGraphTransaction;
-import org.janusgraph.core.schema.JanusGraphManagement;
-import org.janusgraph.diskstorage.BackendException;
-import org.janusgraph.diskstorage.configuration.Configuration;
-import org.janusgraph.diskstorage.keycolumnvalue.scan.ScanMetrics;
-import org.janusgraph.diskstorage.keycolumnvalue.scan.StandardScanner;
-import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
-import org.janusgraph.graphdb.database.StandardJanusGraph;
-import org.janusgraph.graphdb.util.WorkerPool;
-
 import org.apache.tinkerpop.gremlin.process.computer.ComputerResult;
 import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
 import org.apache.tinkerpop.gremlin.process.computer.GraphFilter;
@@ -48,11 +36,22 @@ import org.apache.tinkerpop.gremlin.process.traversal.strategy.decoration.Halted
 import org.apache.tinkerpop.gremlin.process.traversal.traverser.util.TraverserSet;
 import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Graph;
+import org.apache.tinkerpop.gremlin.structure.Property;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 import org.apache.tinkerpop.gremlin.structure.util.StringFactory;
 import org.apache.tinkerpop.gremlin.structure.util.empty.EmptyGraph;
-
+import org.janusgraph.core.JanusGraphComputer;
+import org.janusgraph.core.JanusGraphException;
+import org.janusgraph.core.JanusGraphTransaction;
+import org.janusgraph.core.schema.JanusGraphManagement;
+import org.janusgraph.diskstorage.BackendException;
+import org.janusgraph.diskstorage.configuration.Configuration;
+import org.janusgraph.diskstorage.keycolumnvalue.scan.ScanMetrics;
+import org.janusgraph.diskstorage.keycolumnvalue.scan.StandardScanner;
+import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
+import org.janusgraph.graphdb.database.StandardJanusGraph;
+import org.janusgraph.graphdb.util.WorkerPool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -85,7 +84,7 @@ public class FulgoraGraphComputer implements JanusGraphComputer {
     private FulgoraVertexMemory vertexMemory;
     private boolean executed = false;
 
-    private int numThreads = 1;//Math.max(1,Runtime.getRuntime().availableProcessors());
+    private int numThreads = Runtime.getRuntime().availableProcessors();
     private final int readBatchSize;
     private final int writeBatchSize;
 
@@ -114,6 +113,11 @@ public class FulgoraGraphComputer implements JanusGraphComputer {
     @Override
     public GraphComputer edges(final Traversal<Vertex, Edge> edgeFilter) {
         this.graphFilter.setEdgeFilter(edgeFilter);
+        return this;
+    }
+
+    public GraphComputer vertexProperties(final Traversal<Vertex, ? extends Property<?>> vertexPropertyFilter) {
+        this.graphFilter.setVertexPropertyFilter(vertexPropertyFilter);
         return this;
     }
 
@@ -158,7 +162,7 @@ public class FulgoraGraphComputer implements JanusGraphComputer {
 
         initializeMemory();
 
-        return CompletableFuture.supplyAsync(() -> submitAsync());
+        return CompletableFuture.supplyAsync(this::submitAsync);
     }
 
     private void guardAgainstDuplicateSubmission() {

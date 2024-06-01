@@ -42,7 +42,14 @@ import org.locationtech.spatial4j.shape.ShapeFactory.LineStringBuilder;
 import org.locationtech.spatial4j.shape.ShapeFactory.MultiShapeBuilder;
 import org.locationtech.spatial4j.shape.SpatialRelation;
 
-import java.io.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.StringReader;
 import java.text.ParseException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -206,6 +213,14 @@ public class Geoshape {
         Preconditions.checkArgument(getType()==Type.CIRCLE,"This shape is not a circle");
         double radiusInDeg = ((Circle) shape).getRadius();
         return DistanceUtils.degrees2Dist(radiusInDeg, DistanceUtils.EARTH_MEAN_RADIUS_KM);
+    }
+
+    /**
+     * Returns the radius in meters of this circle. Only applicable to circle shapes.
+     * @return
+     */
+    public double getRadiusMeters() {
+        return getRadius() * 1000;
     }
 
     private SpatialRelation getSpatialRelation(Geoshape other) {

@@ -16,17 +16,16 @@ package org.janusgraph.pkgtest;
 
 import com.google.common.collect.ImmutableMap;
 import org.apache.tinkerpop.gremlin.driver.Cluster;
-import org.apache.tinkerpop.gremlin.driver.MessageSerializer;
+import org.apache.tinkerpop.gremlin.util.MessageSerializer;
 import org.apache.tinkerpop.gremlin.driver.remote.DriverRemoteConnection;
-import org.apache.tinkerpop.gremlin.driver.ser.GraphBinaryMessageSerializerV1;
-import org.apache.tinkerpop.gremlin.driver.ser.GraphSONMessageSerializerV3d0;
-import org.apache.tinkerpop.gremlin.driver.ser.GryoMessageSerializerV3d0;
+import org.apache.tinkerpop.gremlin.util.ser.GraphBinaryMessageSerializerV1;
+import org.apache.tinkerpop.gremlin.util.ser.GraphSONMessageSerializerV3;
 import org.apache.tinkerpop.gremlin.process.traversal.AnonymousTraversalSource;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONMapper;
-import org.apache.tinkerpop.gremlin.structure.io.gryo.GryoMapper;
 import org.janusgraph.graphdb.tinkerpop.JanusGraphIoRegistry;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.net.Socket;
@@ -36,7 +35,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.apache.tinkerpop.gremlin.driver.ser.AbstractMessageSerializer.TOKEN_IO_REGISTRIES;
+import static org.apache.tinkerpop.gremlin.util.ser.AbstractMessageSerializer.TOKEN_IO_REGISTRIES;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTimeout;
 
@@ -44,9 +43,19 @@ public abstract class AbstractJanusGraphAssemblyIT extends JanusGraphAssemblyBas
 
     protected abstract String getConfigPath();
 
+    /**
+     * Get the path to the configuration for local Spark
+     * @return path
+     */
+    protected String getLocalSparkGraphConfigPath() {
+        return null;
+    }
+
     protected abstract String getServerConfigPath();
 
-    protected abstract String getGraphName();
+    protected Duration getDefaultTimeout()  {
+        return Duration.ofSeconds(30);
+    }
 
     @Test
     public void testSingleVertexInteractionAgainstGremlinSh() throws Exception {
@@ -54,6 +63,7 @@ public abstract class AbstractJanusGraphAssemblyIT extends JanusGraphAssemblyBas
     }
 
     @Test
+    @Tag(TestCategory.FULL_TESTS)
     public void testSingleVertexInteractionAgainstGremlinShFull() throws Exception {
         unzipAndRunExpect("single-vertex.expect.vm", getConfigPath(), getGraphName(), true, false);
     }
@@ -64,6 +74,7 @@ public abstract class AbstractJanusGraphAssemblyIT extends JanusGraphAssemblyBas
     }
 
     @Test
+    @Tag(TestCategory.FULL_TESTS)
     public void testGettingStartedAgainstGremlinShFull() throws Exception {
         unzipAndRunExpect("getting-started.expect.vm", getConfigPath(), getGraphName(), true, false);
     }
@@ -74,16 +85,18 @@ public abstract class AbstractJanusGraphAssemblyIT extends JanusGraphAssemblyBas
     }
 
     @Test
+    public void testSparkGraphComputerTraversalLocal() throws Exception {
+        unzipAndRunExpect("spark-graph-computer.expect.vm", getConfigPath(), getLocalSparkGraphConfigPath(), getGraphName(), false, false);
+    }
+
+    @Test
+    @Tag(TestCategory.FULL_TESTS)
     public void testJanusGraphServerGremlinFull() throws Exception {
         testJanusGraphServer(true);
     }
 
-    protected MessageSerializer createGryoMessageSerializer() {
-        return new GryoMessageSerializerV3d0(GryoMapper.build().addRegistry(JanusGraphIoRegistry.instance()));
-    }
-
     protected MessageSerializer createGraphSONMessageSerializer() {
-        return new GraphSONMessageSerializerV3d0(GraphSONMapper.build().addRegistry(JanusGraphIoRegistry.instance()));
+        return new GraphSONMessageSerializerV3(GraphSONMapper.build().addRegistry(JanusGraphIoRegistry.instance()));
     }
 
     protected MessageSerializer createGraphBinaryMessageSerializerV1() {
@@ -116,7 +129,8 @@ public abstract class AbstractJanusGraphAssemblyIT extends JanusGraphAssemblyBas
         assertNotEquals(0, vertices.size());
     }
 
-    protected void runTraversalAgainstServer(MessageSerializer serializer) {
+    protected void runTraversalAgainstServer(MessageSerializer serializer) throws Exception {
+        // test use Cluster class in Java
         Cluster cluster = Cluster.build("localhost")
             .port(8182)
             .serializer(serializer)
@@ -132,7 +146,7 @@ public abstract class AbstractJanusGraphAssemblyIT extends JanusGraphAssemblyBas
         final boolean debug = false;
         ImmutableMap<String, String> contextVars = ImmutableMap.of("janusgraphServerConfig", getServerConfigPath());
         unzipAndRunExpect("janusgraph-server-sh.before.expect.vm", contextVars, full, debug);
-        assertTimeout(Duration.ofSeconds(30), () -> {
+        assertTimeout(getDefaultTimeout(), () -> {
             while (!serverListening("localhost", 8182)) {
                 Thread.sleep(1000);
             }
@@ -140,7 +154,9 @@ public abstract class AbstractJanusGraphAssemblyIT extends JanusGraphAssemblyBas
 
         runTraversalAgainstServer(createGraphSONMessageSerializer());
         runTraversalAgainstServer(createGraphBinaryMessageSerializerV1());
-        runTraversalAgainstServer(createGryoMessageSerializer());
+
+        // test use Gremlin console
+        parseTemplateAndRunExpect("remote-console.expect.vm", Collections.emptyMap(), full, debug);
 
         parseTemplateAndRunExpect("janusgraph-server-sh.after.expect.vm", contextVars, full, debug);
     }

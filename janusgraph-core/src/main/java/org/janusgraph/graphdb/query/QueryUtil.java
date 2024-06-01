@@ -15,15 +15,34 @@
 package org.janusgraph.graphdb.query;
 
 import com.google.common.base.Preconditions;
-import org.janusgraph.core.*;
+import org.janusgraph.core.EdgeLabel;
+import org.janusgraph.core.JanusGraphEdge;
+import org.janusgraph.core.JanusGraphElement;
+import org.janusgraph.core.JanusGraphException;
+import org.janusgraph.core.JanusGraphRelation;
+import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.core.PropertyKey;
+import org.janusgraph.core.RelationType;
 import org.janusgraph.core.attribute.Cmp;
 import org.janusgraph.core.attribute.Contain;
 import org.janusgraph.graphdb.internal.InternalRelationType;
 import org.janusgraph.graphdb.predicate.AndJanusPredicate;
 import org.janusgraph.graphdb.predicate.OrJanusPredicate;
-import org.janusgraph.graphdb.query.condition.*;
+import org.janusgraph.graphdb.query.condition.And;
+import org.janusgraph.graphdb.query.condition.Condition;
+import org.janusgraph.graphdb.query.condition.MultiCondition;
+import org.janusgraph.graphdb.query.condition.Not;
+import org.janusgraph.graphdb.query.condition.Or;
+import org.janusgraph.graphdb.query.condition.PredicateCondition;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
-import java.util.*;
+
+import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Utility methods used in query optimization and processing.
@@ -33,12 +52,13 @@ import java.util.*;
 public class QueryUtil {
 
     public static int adjustLimitForTxModifications(StandardJanusGraphTx tx, int uncoveredAndConditions, int limit) {
-        assert limit > 0 && limit <= 1000000000; //To make sure limit computation does not overflow
+        assert limit > 0;
         assert uncoveredAndConditions >= 0;
 
         if (uncoveredAndConditions > 0) {
             final int maxMultiplier = Integer.MAX_VALUE / limit;
-            limit = limit * Math.min(maxMultiplier, (int) Math.pow(2, uncoveredAndConditions)); //(limit*3)/2+1;
+            final int estimatedMultiplier = (int) Math.pow(2, uncoveredAndConditions);
+            limit = estimatedMultiplier < maxMultiplier ? limit * estimatedMultiplier : Integer.MAX_VALUE;
         }
 
         if (tx.hasModifications())
@@ -130,10 +150,9 @@ public class QueryUtil {
         return condition.getType() == Condition.Type.LITERAL && (!(condition instanceof PredicateCondition) || ((PredicateCondition) condition).getPredicate().isQNF());
     }
 
-    public static <E extends JanusGraphElement> Condition<E> simplifyQNF(Condition<E> condition) {
-        Preconditions.checkArgument(isQueryNormalForm(condition));
+    public static <E extends JanusGraphElement> Condition<E> simplifyAnd(And<E> condition) {
         if (condition.numChildren() == 1) {
-            final Condition<E> child = ((And<E>) condition).get(0);
+            final Condition<E> child = condition.get(0);
             if (child.getType() == Condition.Type.LITERAL) return child;
         }
         return condition;
@@ -156,7 +175,12 @@ public class QueryUtil {
     public static <E extends JanusGraphElement> And<E> constraints2QNF(StandardJanusGraphTx tx, List<PredicateCondition<String, E>> constraints) {
         final And<E> conditions = new And<>(constraints.size() + 4);
         for (final PredicateCondition<String, E> atom : constraints) {
-            final RelationType type = getType(tx, atom.getKey());
+            final String atomKey = atom.getKey();
+            if (atomKey == null) {
+                return null; // cannot be satisfied
+            }
+
+            final RelationType type = getType(tx, atomKey);
 
             if (type == null) {
                 if (atom.getPredicate() == Cmp.EQUAL && atom.getValue() == null)
@@ -204,6 +228,7 @@ public class QueryUtil {
                 }
             } else if (predicate instanceof OrJanusPredicate) {
                 final List<Object> values = (List<Object>) (value);
+                // FIXME: this might generate a non QNF-compliant form, e.g. nested = PredicateCondition OR (PredicateCondition AND PredicateCondition)
                 final Or<E> nested = addConstraint(type, (OrJanusPredicate) predicate, values, new Or<>(values.size()), tx);
                 if (nested == null) {
                     return null;
@@ -378,6 +403,13 @@ public class QueryUtil {
         return results;
     }
 
+    public static long applyQueryLimitAfterCount(long count, Query query){
+        return Math.max(0L, (query.hasLimit()) ? Math.min(count, query.getLimit()) : count);
+    }
+
+    public static long applyOffsetWithQueryLimitAfterCount(long count, int offset, Query query){
+        return applyQueryLimitAfterCount((offset > 0) ? count - offset : count, query);
+    }
 
     public interface IndexCall<R> {
 

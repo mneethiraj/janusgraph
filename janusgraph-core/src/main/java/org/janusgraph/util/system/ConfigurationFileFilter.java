@@ -15,15 +15,19 @@
 package org.janusgraph.util.system;
 
 import com.google.common.base.Preconditions;
+import org.apache.commons.text.WordUtils;
 import org.janusgraph.diskstorage.configuration.ConfigElement;
 import org.janusgraph.diskstorage.configuration.ConfigOption;
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
-import org.apache.commons.lang.WordUtils;
 import org.janusgraph.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.PrintStream;
 import java.util.LinkedList;
 import java.util.Queue;
 import java.util.regex.Matcher;
@@ -38,7 +42,7 @@ public class ConfigurationFileFilter {
 
     private static final int WRAP_COLUMNS = 72;
 
-    public static void main(String args[]) throws IOException {
+    public static void main(String[] args) throws IOException {
         int errors = filter(args[0], args[1]);
         System.exit(Math.min(errors, 127));
     }

@@ -15,20 +15,31 @@
 package org.janusgraph.graphdb.vertices;
 
 import io.github.artsok.RepeatedIfExceptionsTest;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.janusgraph.core.JanusGraphFactory;
+import org.janusgraph.graphdb.database.StandardJanusGraph;
 import org.janusgraph.graphdb.internal.ElementLifeCycle;
 import org.janusgraph.graphdb.internal.InternalRelation;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.concurrent.*;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 public class StandardVertexTest {
@@ -48,7 +59,9 @@ public class StandardVertexTest {
         standardVertex = spy(new StandardVertex(tx, 1, (byte) 1));
     }
 
-    @RepeatedIfExceptionsTest(repeats = 3, minSuccess = 1)
+    // This test is flaky simply because it tests a possible deadlock
+    // https://github.com/JanusGraph/janusgraph/pull/1486
+    @RepeatedIfExceptionsTest(repeats = 3)
     public void shouldNotStuckInDeadlockWhenTheVerticeAndItsRelationIsDeletedInParallel()
         throws InterruptedException, TimeoutException, ExecutionException {
 
@@ -105,5 +118,30 @@ public class StandardVertexTest {
         });
 
         future.get(defaultTimeoutMilliseconds, TimeUnit.MILLISECONDS);
+    }
+
+    @Test
+    public void modifiedVertexShouldNotEvictedFromCache() {
+        for (int i = 0; i < 50; i++) {
+            try (StandardJanusGraph g =
+                (StandardJanusGraph) JanusGraphFactory.build()
+                                                      .set("storage.backend", "inmemory")
+                                                      .set("cache.tx-cache-size", 0)
+                                                      .open()) {
+                Vertex v1 = g.traversal().addV().next();
+                Vertex v2 = g.traversal().addV().next();
+                v1.addEdge("E", v2);
+                g.tx().commit();
+                g.tx().close();
+                for (int k = 0; k < 120; k++) {
+                    g.traversal().addV().next();
+                }
+                g.tx().commit();
+                g.tx().close();
+
+                g.traversal().E().drop().iterate();
+                g.traversal().E().drop().iterate();
+            }
+        }
     }
 }

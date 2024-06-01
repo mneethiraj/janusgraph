@@ -14,16 +14,7 @@
 
 package org.janusgraph.example;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
-
-import org.apache.commons.configuration.ConfigurationException;
+import org.apache.commons.configuration2.ex.ConfigurationException;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.janusgraph.core.Cardinality;
 import org.janusgraph.core.EdgeLabel;
@@ -35,27 +26,37 @@ import org.janusgraph.core.PropertyKey;
 import org.janusgraph.core.attribute.Geoshape;
 import org.janusgraph.core.schema.JanusGraphIndex;
 import org.janusgraph.core.schema.JanusGraphManagement;
+import org.janusgraph.util.datastructures.IterablesUtil;
 import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class JanusGraphAppTest {
     protected static final String CONF_FILE = "conf/jgex-inmemory.properties";
 
     @Test
-    public void createSchema() throws ConfigurationException {
+    public void createSchema() throws ConfigurationException, IOException {
         final JanusGraphApp app = new JanusGraphApp(CONF_FILE);
         final GraphTraversalSource g = app.openGraph();
         app.createSchema();
         final JanusGraph janusGraph = (JanusGraph) g.getGraph();
         final JanusGraphManagement management = janusGraph.openManagement();
 
-        final List<String> vertexLabels = StreamSupport.stream(management.getVertexLabels().spliterator(), false)
+        final List<String> vertexLabels = IterablesUtil.stream(management.getVertexLabels())
                 .map(Namifiable::name).collect(Collectors.toList());
         final List<String> expectedVertexLabels = Stream.of("titan", "location", "god", "demigod", "human", "monster")
                 .collect(Collectors.toList());
         assertTrue(vertexLabels.containsAll(expectedVertexLabels));
 
-        final List<String> edgeLabels = StreamSupport
-                .stream(management.getRelationTypes(EdgeLabel.class).spliterator(), false).map(Namifiable::name)
+        final List<String> edgeLabels = IterablesUtil
+                .stream(management.getRelationTypes(EdgeLabel.class)).map(Namifiable::name)
                 .collect(Collectors.toList());
         final List<String> expectedEdgeLabels = Stream.of("father", "mother", "brother", "pet", "lives", "battled")
                 .collect(Collectors.toList());
@@ -66,8 +67,8 @@ public class JanusGraphAppTest {
         assertFalse(father.isUnidirected());
         assertEquals(Multiplicity.MANY2ONE, father.multiplicity());
 
-        final List<String> propertyKeys = StreamSupport
-                .stream(management.getRelationTypes(PropertyKey.class).spliterator(), false).map(Namifiable::name)
+        final List<String> propertyKeys = IterablesUtil
+                .stream(management.getRelationTypes(PropertyKey.class)).map(Namifiable::name)
                 .collect(Collectors.toList());
         final List<String> expectedPropertyKeys = Stream.of("name", "age", "time", "place", "reason")
                 .collect(Collectors.toList());

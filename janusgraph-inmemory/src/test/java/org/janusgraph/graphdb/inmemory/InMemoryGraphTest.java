@@ -58,6 +58,21 @@ public class InMemoryGraphTest extends JanusGraphTest {
     public void testLocalGraphConfiguration() {}
 
     @Override @Test @Disabled
+    public void testLimitBatchSizeForMultiQueryRepeatStep() {}
+
+    @Override @Test @Disabled
+    public void testLimitBatchSizeForMultiQueryMultiCardinalityProperties() {}
+
+    @Override @Test @Disabled
+    public void testLimitBatchSizeForMultiQuery() {}
+
+    @Override @Test @Disabled
+    public void testMultiQueryPropertiesWithLimit() {}
+
+    @Override @Test @Disabled
+    public void testMultiSliceDBCachedRequests(){}
+
+    @Override @Test @Disabled
     public void testMaskableGraphConfig() {}
 
     @Override @Test @Disabled
@@ -88,10 +103,10 @@ public class InMemoryGraphTest extends JanusGraphTest {
     public void testDisableDefaultSchemaMaker () {}
 
     @Override @Test @Disabled
-    public void simpleLogTest() {}
+    public void simpleLogTest(boolean useStringId) {}
 
     @Override @Test @Disabled
-    public void simpleLogTestWithFailure() {}
+    public void simpleLogTestWithFailure(boolean useStringId) {}
 
     @Override @Test @Disabled
     public void testIndexUpdatesWithReindexAndRemove() {}

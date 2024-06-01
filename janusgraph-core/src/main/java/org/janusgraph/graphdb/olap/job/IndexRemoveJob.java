@@ -15,11 +15,13 @@
 package org.janusgraph.graphdb.olap.job;
 
 import com.google.common.base.Preconditions;
-import org.janusgraph.core.JanusGraphException;
+import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
 import org.janusgraph.core.JanusGraph;
+import org.janusgraph.core.JanusGraphException;
+import org.janusgraph.core.schema.JanusGraphIndex;
 import org.janusgraph.core.schema.RelationTypeIndex;
 import org.janusgraph.core.schema.SchemaStatus;
-import org.janusgraph.core.schema.JanusGraphIndex;
 import org.janusgraph.diskstorage.BackendTransaction;
 import org.janusgraph.diskstorage.Entry;
 import org.janusgraph.diskstorage.EntryList;
@@ -34,13 +36,11 @@ import org.janusgraph.graphdb.database.IndexSerializer;
 import org.janusgraph.graphdb.database.management.RelationTypeIndexWrapper;
 import org.janusgraph.graphdb.idmanagement.IDManager;
 import org.janusgraph.graphdb.internal.InternalRelationType;
+import org.janusgraph.graphdb.olap.GraphProvider;
 import org.janusgraph.graphdb.olap.QueryContainer;
-import org.janusgraph.graphdb.olap.VertexJobConverter;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
 import org.janusgraph.graphdb.types.CompositeIndexType;
 import org.janusgraph.graphdb.types.vertices.JanusGraphSchemaVertex;
-import org.apache.tinkerpop.gremlin.structure.Direction;
-import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -53,7 +53,7 @@ import java.util.function.Predicate;
  */
 public class IndexRemoveJob extends IndexUpdateJob implements ScanJob {
 
-    private final VertexJobConverter.GraphProvider graph = new VertexJobConverter.GraphProvider();
+    private final GraphProvider graph = new GraphProvider();
 
     public static final String DELETED_RECORDS_COUNT = "deletes";
 
@@ -105,13 +105,15 @@ public class IndexRemoveJob extends IndexUpdateJob implements ScanJob {
                 throw new UnsupportedOperationException("Cannot remove mixed indexes through JanusGraph. This can " +
                         "only be accomplished in the indexing system directly.");
             CompositeIndexType indexType = (CompositeIndexType) managementSystem.getSchemaVertex(index).asIndexType();
-            graphIndexId = indexType.getID();
+            graphIndexId = indexType.longId();
         }
 
         //Must be a relation type index or a composite graph index
         JanusGraphSchemaVertex schemaVertex = managementSystem.getSchemaVertex(index);
         SchemaStatus actualStatus = schemaVertex.getStatus();
-        Preconditions.checkArgument(actualStatus==SchemaStatus.DISABLED,"The index [%s] must be disabled before it can be removed",indexName);
+        Preconditions.checkArgument(
+            actualStatus == SchemaStatus.REGISTERED || actualStatus == SchemaStatus.DISABLED || actualStatus == SchemaStatus.DISCARDED,
+            "The index [%s] must be disabled before it can be removed, but is currently [%s].", indexName, actualStatus);
     }
 
     @Override
@@ -123,7 +125,7 @@ public class IndexRemoveJob extends IndexUpdateJob implements ScanJob {
             if (entries.size()==1) {
                 deletions = entries.values().iterator().next();
             } else {
-                final int size = IteratorUtils.stream(entries.values().iterator()).map(List::size).reduce(0, (x,y) -> x+y);
+                final int size = IteratorUtils.stream(entries.values().iterator()).map(List::size).reduce(0, Integer::sum);
                 deletions = new ArrayList<>(size);
                 entries.values().forEach(deletions::addAll);
             }

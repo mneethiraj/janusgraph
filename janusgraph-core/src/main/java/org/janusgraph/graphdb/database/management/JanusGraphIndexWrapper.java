@@ -15,16 +15,17 @@
 package org.janusgraph.graphdb.database.management;
 
 import com.google.common.base.Preconditions;
+import org.apache.tinkerpop.gremlin.structure.Element;
 import org.janusgraph.core.Cardinality;
-import org.janusgraph.core.schema.Parameter;
 import org.janusgraph.core.PropertyKey;
-import org.janusgraph.core.schema.SchemaStatus;
 import org.janusgraph.core.schema.JanusGraphIndex;
+import org.janusgraph.core.schema.JanusGraphSchemaType;
+import org.janusgraph.core.schema.Parameter;
+import org.janusgraph.core.schema.SchemaStatus;
 import org.janusgraph.graphdb.types.CompositeIndexType;
-import org.janusgraph.graphdb.types.MixedIndexType;
 import org.janusgraph.graphdb.types.IndexField;
 import org.janusgraph.graphdb.types.IndexType;
-import org.apache.tinkerpop.gremlin.structure.Element;
+import org.janusgraph.graphdb.types.MixedIndexType;
 
 import java.util.Objects;
 
@@ -41,6 +42,16 @@ public class JanusGraphIndexWrapper implements JanusGraphIndex {
 
     IndexType getBaseIndex() {
         return index;
+    }
+
+    @Override
+    public Object id() {
+        return index.id();
+    }
+
+    @Override
+    public long longId() {
+        return index.longId();
     }
 
     @Override
@@ -94,6 +105,11 @@ public class JanusGraphIndexWrapper implements JanusGraphIndex {
     @Override
     public boolean isMixedIndex() {
         return index.isMixedIndex();
+    }
+
+    @Override
+    public JanusGraphSchemaType getSchemaTypeConstraint() {
+        return index.getSchemaTypeConstraint();
     }
 
     @Override

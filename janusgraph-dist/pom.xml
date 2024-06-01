@@ -3,7 +3,7 @@
     <parent>
         <groupId>org.janusgraph</groupId>
         <artifactId>janusgraph</artifactId>
-        <version>0.6.0-SNAPSHOT</version>
+        <version>1.1.0-SNAPSHOT</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <packaging>pom</packaging>
@@ -21,25 +21,26 @@
         <assembly.descriptor.dir>${project.basedir}/src/assembly/descriptor</assembly.descriptor.dir>
         <assembly.static.dir>${project.basedir}/src/assembly/static</assembly.static.dir>
         <assembly.resources.dir>${project.basedir}/src/assembly/resources</assembly.resources.dir>
-        <assembly.es.dir>${project.build.directory}/elasticsearch-${elasticsearch.version}</assembly.es.dir>
-        <assembly.cassandra.dir>${project.build.directory}/apache-cassandra-${cassandra.version}</assembly.cassandra.dir>
+        <assembly.es.dir>${project.build.directory}/elasticsearch-7.17.8</assembly.es.dir>
+        <assembly.cassandra.dir>${project.build.directory}/apache-cassandra-${cassandra-dist.version}</assembly.cassandra.dir>
 
         <packname.standard>janusgraph-${project.version}</packname.standard>
         <packname.full>janusgraph-full-${project.version}</packname.full>
+        <docker.baseimage>eclipse-temurin:11-jre</docker.baseimage>
+        <docker.tag-suffix></docker.tag-suffix>
 
         <!-- Variables for integration testing on release-candidate archive files -->
         <test.expect.dir>${project.build.directory}/test-classes</test.expect.dir>
         <test.zipfile.path>${project.build.directory}/${packname.standard}.zip</test.zipfile.path>
         <test.zipfile-full.path>${project.build.directory}/${packname.full}.zip</test.zipfile-full.path>
         <build.full>package</build.full>
-
-        <!-- RPM/DEB packaging -->
-        <pkg.release>1</pkg.release>
-        <pkgtools.dir>${project.basedir}/..</pkgtools.dir>
-
+        <test.excluded.groups></test.excluded.groups>
         <skipDefaultDistroIT>${it.skip}</skipDefaultDistroIT>
-        <docker.maven.version>0.4.13</docker.maven.version>
+
         <doc.dir>${project.parent.basedir}/docs</doc.dir>
+
+        <cql-module>janusgraph-cql</cql-module>
+        <cql-hadoop-module>cassandra-hadoop-util</cql-hadoop-module>
     </properties>
 
     <dependencies>
@@ -47,7 +48,32 @@
             <groupId>${project.groupId}</groupId>
             <artifactId>janusgraph-all</artifactId>
             <version>${project.version}</version>
+            <exclusions>
+                <exclusion>
+                    <artifactId>janusgraph-cql</artifactId>
+                    <groupId>${project.groupId}</groupId>
+                </exclusion>
+                <exclusion>
+                    <artifactId>cassandra-hadoop-util</artifactId>
+                    <groupId>${project.groupId}</groupId>
+                </exclusion>
+            </exclusions>
         </dependency>
+
+        <!-- Either "janusgraph-cql" or "janusgraph-scylla" -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>${cql-module}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Either "cassandra-hadoop-util" or "scylla-hadoop-util" -->
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>${cql-hadoop-module}</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>net.java.dev.jna</groupId>
             <artifactId>jna</artifactId>
@@ -60,30 +86,10 @@
         <dependency>
             <groupId>org.apache.tinkerpop</groupId>
             <artifactId>hadoop-gremlin</artifactId>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.apache.commons</groupId>
-                    <artifactId>commons-compress</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.tinkerpop</groupId>
             <artifactId>spark-gremlin</artifactId>
-            <exclusions>
-                <exclusion>
-                    <groupId>javax.annotation</groupId>
-                    <artifactId>javax.annotation-api</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>org.apache.commons</groupId>
-                    <artifactId>commons-compress</artifactId>
-                </exclusion>
-                <exclusion>
-                    <groupId>com.github.spotbugs</groupId>
-                    <artifactId>spotbugs-annotations</artifactId>
-                </exclusion>
-            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.tinkerpop</groupId>
@@ -109,7 +115,7 @@
             <artifactId>jamm</artifactId>
             <version>${jamm.version}</version>
         </dependency>
-        
+
         <!-- Test dependencies -->
         <dependency>
             <groupId>${project.groupId}</groupId>
@@ -119,7 +125,7 @@
         </dependency>
         <dependency>
             <groupId>${project.groupId}</groupId>
-            <artifactId>janusgraph-hbase-core</artifactId>
+            <artifactId>janusgraph-hbase</artifactId>
             <version>${project.version}</version>
             <classifier>tests</classifier>
             <scope>test</scope>
@@ -140,8 +146,8 @@
         </dependency>
         <dependency>
             <groupId>org.apache.velocity</groupId>
-            <artifactId>velocity</artifactId>
-            <version>1.7</version>
+            <artifactId>velocity-engine-core</artifactId>
+            <version>2.3</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -164,18 +170,19 @@
             <artifactId>elasticsearch</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- Logging backends.
-             Enforce a classpath ordering constraint to ensure slf4j-log4j12
-             binding appears on the classpath before logback-classic.
-             See comments in janusgraph-cassandra/pom.xml for more information. -->
+        <!-- Logging backends. -->
+        <!-- Enforce a classpath ordering constraint to ensure log4j is used for logging. -->
         <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-log4j12</artifactId>
+            <groupId>org.apache.logging.log4j</groupId>
+            <artifactId>log4j-slf4j-impl</artifactId>
+            <scope>runtime</scope>
             <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
+            <scope>runtime</scope>
+            <optional>true</optional>
         </dependency>
         <!-- End logging backends. -->
     </dependencies>
@@ -185,7 +192,7 @@
             <plugin>
                 <groupId>com.googlecode.maven-download-plugin</groupId>
                 <artifactId>download-maven-plugin</artifactId>
-                <version>1.6.1</version>
+                <version>1.9.0</version>
                 <executions>
                     <execution>
                         <id>get-elasticsearch</id>
@@ -194,9 +201,18 @@
                             <goal>wget</goal>
                         </goals>
                         <configuration>
-                            <url>https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-${elasticsearch.version}-linux-x86_64.tar.gz</url>
-                            <outputFileName>elasticsearch.tar.gz</outputFileName>
-                            <outputDirectory>${project.build.directory}</outputDirectory>
+                            <!-- ElasticSearch Server 8 doesn't support Java 8 and Java 11.
+                            Thus, we use here the latest ElasticSearch Server which supports both Java 8 and Java 11 (which is 7.17.8 as for now).
+                            We should probably re-think dist tests and re-develop them using docker containers instead of
+                            relying on the JanusGraph running environment.
+                            -->
+                            <url>https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-7.17.8-linux-x86_64.tar.gz</url>
+                            <outputFileName>elasticsearch-7.17.8-linux-x86_64.tar.gz</outputFileName>
+                            <outputDirectory>${project.build.directory}/</outputDirectory>
+                            <unpack>true</unpack>
+                            <!-- https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-7.17.8-linux-x86_64.tar.gz.sha512 -->
+                            <sha512>cd02b40e8b32e78f17bac12245326e10482214ab452b2e5d1745ddc7944e60a5b07c01c949c68625d78640bdd46806aeece4e8d620788133993055732d388443</sha512>
+                            <readTimeOut>1800000</readTimeOut>
                         </configuration>
                     </execution>
                     <execution>
@@ -206,49 +222,12 @@
                             <goal>wget</goal>
                         </goals>
                         <configuration>
-                            <url>http://ftp.halifax.rwth-aachen.de/apache/cassandra/${cassandra.version}/apache-cassandra-${cassandra.version}-bin.tar.gz</url>
-                            <outputFileName>apache-cassandra.tar.gz</outputFileName>
-                            <outputDirectory>${project.build.directory}</outputDirectory>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>extract-elasticsearch</id>
-                        <phase>generate-test-resources</phase>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                        <configuration>
-                            <target>
-                                <exec executable="tar">
-                                    <arg value="-xzf"/>
-                                    <arg value="${project.build.directory}/elasticsearch.tar.gz"/>
-                                    <arg value="-C"/>
-                                    <arg value="${project.build.directory}"/>
-                                </exec>
-                            </target>
-                        </configuration>
-                    </execution>
-                    <execution>
-                        <id>extract-cassandra</id>
-                        <phase>generate-test-resources</phase>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                        <configuration>
-                            <target>
-                                <exec executable="tar">
-                                    <arg value="-xzf"/>
-                                    <arg value="${project.build.directory}/apache-cassandra.tar.gz"/>
-                                    <arg value="-C"/>
-                                    <arg value="${project.build.directory}"/>
-                                </exec>
-                            </target>
+                            <url>https://archive.apache.org/dist/cassandra/${cassandra-dist.version}/apache-cassandra-${cassandra-dist.version}-bin.tar.gz</url>
+                            <outputFileName>apache-cassandra-${cassandra-dist.version}-bin.tar.gz</outputFileName>
+                            <outputDirectory>${project.build.directory}/</outputDirectory>
+                            <unpack>true</unpack>
+                            <sha256>${cassandra-dist.version.sha256}</sha256>
+                            <readTimeOut>1800000</readTimeOut>
                         </configuration>
                     </execution>
                 </executions>
@@ -303,7 +282,7 @@
                             <arguments>
                                 <!-- Classpath -->
                                 <argument>-classpath</argument>
-                                <classpath />
+                                <classpath/>
                                 <!-- Main Classname -->
                                 <mainClass>org.janusgraph.util.system.ConfigurationFileFilter</mainClass>
                                 <!-- Input directory (processed recursively) -->
@@ -369,113 +348,23 @@
 
     <profiles>
         <profile>
-            <id>pkg-tools</id>
-
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>build-helper-maven-plugin</artifactId>
-                        <version>3.2.0</version>
-                        <inherited>false</inherited>
-                        <executions>
-                            <execution>
-                                <id>set-version-properties</id>
-                                <phase>generate-resources</phase>
-                                <goals>
-                                    <goal>parse-version</goal>
-                                </goals>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <plugin>
-                        <artifactId>maven-assembly-plugin</artifactId>
-                        <inherited>false</inherited>
-                        <executions>
-                            <execution>
-                                <id>assemble-package-tools</id>
-                                <phase>install</phase>
-                                <goals>
-                                    <goal>single</goal>
-                                </goals>
-                                <configuration>
-                                    <attach>false</attach>
-                                    <outputDirectory>${pkgtools.dir}/</outputDirectory>
-                                    <finalName>/</finalName>
-                                    <appendAssemblyId>false</appendAssemblyId>
-                                    <descriptors>
-                                        <descriptor>${assembly.descriptor.dir}/pkgtools.xml</descriptor>
-                                    </descriptors>
-                                </configuration>
-                            </execution>
-                            <execution>
-                                <id>assemble-distribution-archive</id>
-                                <phase>none</phase>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <plugin>
-                        <artifactId>maven-clean-plugin</artifactId>
-                        <inherited>false</inherited>
-                        <executions>
-                            <execution>
-                                <id>clean-package-tools</id>
-                                <phase>clean</phase>
-                                <goals>
-                                    <goal>clean</goal>
-                                </goals>
-                                <configuration>
-                                    <excludeDefaultDirectories>true</excludeDefaultDirectories>
-                                    <filesets>
-                                        <fileset>
-                                            <directory>${pkgtools.dir}/debian/</directory>
-                                        </fileset>
-                                        <fileset>
-                                            <directory>${pkgtools.dir}/pkgcommon/</directory>
-                                        </fileset>
-                                        <fileset>
-                                            <directory>${pkgtools.dir}/redhat/</directory>
-                                        </fileset>
-                                    </filesets>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
+            <id>java-11</id>
+            <properties>
+                <packname.standard>janusgraph-java-11-${project.version}</packname.standard>
+                <packname.full>janusgraph-java-11-full-${project.version}</packname.full>
+                <docker.baseimage>eclipse-temurin:11-jre</docker.baseimage>
+                <docker.tag-suffix>-java-11</docker.tag-suffix>
+            </properties>
         </profile>
-
         <profile>
-            <id>janusgraph-docker</id>
-            <build>
-                <pluginManagement>
-                    <plugins>
-                        <plugin>
-                            <groupId>com.spotify</groupId>
-                            <artifactId>docker-maven-plugin</artifactId>
-                            <version>${docker.maven.version}</version>
-                            <configuration>
-                                <dockerDirectory>${project.basedir}</dockerDirectory>
-                                <buildArgs>
-                                    <server_zip>target/janusgraph-${project.version}.zip</server_zip>
-                                    <http_proxy>${env.http_proxy}</http_proxy>
-                                    <https_proxy>${env.https_proxy}</https_proxy>
-                                </buildArgs>
-                                <forceTags>true</forceTags>
-                                <imageName>janusgraph/server</imageName>
-                                <imageTags>
-                                    <imageTag>${project.version}</imageTag>
-                                </imageTags>
-                            </configuration>
-                        </plugin>
-                    </plugins>
-                </pluginManagement>
-            </build>
+            <id>use-scylla</id>
+            <properties>
+                <cql-module>janusgraph-scylla</cql-module>
+                <cql-hadoop-module>scylla-hadoop-util</cql-hadoop-module>
+            </properties>
         </profile>
-
         <profile>
             <id>janusgraph-release</id>
-
             <dependencies>
                 <dependency>
                     <groupId>${project.groupId}</groupId>
@@ -484,38 +373,37 @@
                     <classifier>javadoc</classifier>
                 </dependency>
             </dependencies>
-
             <build>
                 <plugins>
-                        <plugin>
-                            <artifactId>maven-jar-plugin</artifactId>
-                            <executions>
-                                <execution>
-                                    <id>pack-test-jar</id>
-                                    <phase>package</phase>
-                                    <goals>
-                                        <goal>test-jar</goal>
-                                    </goals>
-                                </execution>
-                            </executions>
-                        </plugin>
+                    <plugin>
+                        <artifactId>maven-jar-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>pack-test-jar</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>test-jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
 
-                        <plugin>
-                            <artifactId>maven-compiler-plugin</artifactId>
-                            <executions>
-                                <execution>
-                                    <id>compile-tests</id>
-                                    <phase>test-compile</phase>
-                                    <goals>
-                                        <goal>testCompile</goal>
-                                    </goals>
-                                </execution>
-                            </executions>
-                        </plugin>
+                    <plugin>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>compile-tests</id>
+                                <phase>test-compile</phase>
+                                <goals>
+                                    <goal>testCompile</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
 
-                        <plugin>
-                            <artifactId>maven-resources-plugin</artifactId>
-                            <executions>
+                    <plugin>
+                        <artifactId>maven-resources-plugin</artifactId>
+                        <executions>
                             <execution>
                                 <id>filter-release-resources</id>
                                 <phase>process-resources</phase>
@@ -536,54 +424,54 @@
                                     </resources>
                                 </configuration>
                             </execution>
-                                <execution>
-                                    <id>filter-expect-scripts</id>
-                                    <phase>process-test-resources</phase>
-                                    <goals>
-                                        <goal>copy-resources</goal>
-                                    </goals>
-                                    <configuration>
-                                        <resources>
-                                            <resource>
-                                                <directory>${top.level.basedir}/janusgraph-dist/src/test/expect</directory>
-                                                <filtering>true</filtering>
-                                            </resource>
-                                        </resources>
-                                        <outputDirectory>${project.build.directory}/test-classes</outputDirectory>
-                                    </configuration>
-                                </execution>
-                                <execution>
-                                    <id>filter-test-resources</id>
-                                    <phase>process-test-resources</phase>
-                                    <goals>
-                                        <goal>copy-resources</goal>
-                                    </goals>
-                                    <configuration>
-                                        <resources>
-                                            <resource>
-                                                <directory>${top.level.basedir}/janusgraph-dist/src/test/resources</directory>
-                                                <filtering>true</filtering>
-                                            </resource>
-                                        </resources>
-                                        <outputDirectory>${project.build.testOutputDirectory}</outputDirectory>
-                                    </configuration>
-                                </execution>
-                                <execution>
-                                    <id>copy-test-cfiles</id>
-                                    <phase>process-test-resources</phase>
-                                    <goals>
-                                        <goal>copy-resources</goal>
-                                    </goals>
-                                    <configuration>
-                                        <resources>
-                                            <resource>
-                                                <directory>${assembly.cfilter.out.dir}</directory>
-                                                <filtering>false</filtering>
-                                            </resource>
-                                        </resources>
-                                        <outputDirectory>${project.build.directory}</outputDirectory>
-                                    </configuration>
-                                </execution>
+                            <execution>
+                                <id>filter-expect-scripts</id>
+                                <phase>process-test-resources</phase>
+                                <goals>
+                                    <goal>copy-resources</goal>
+                                </goals>
+                                <configuration>
+                                    <resources>
+                                        <resource>
+                                            <directory>${top.level.basedir}/janusgraph-dist/src/test/expect</directory>
+                                            <filtering>true</filtering>
+                                        </resource>
+                                    </resources>
+                                    <outputDirectory>${project.build.directory}/test-classes</outputDirectory>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>filter-test-resources</id>
+                                <phase>process-test-resources</phase>
+                                <goals>
+                                    <goal>copy-resources</goal>
+                                </goals>
+                                <configuration>
+                                    <resources>
+                                        <resource>
+                                            <directory>${top.level.basedir}/janusgraph-dist/src/test/resources</directory>
+                                            <filtering>true</filtering>
+                                        </resource>
+                                    </resources>
+                                    <outputDirectory>${project.build.testOutputDirectory}</outputDirectory>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>copy-test-cfiles</id>
+                                <phase>process-test-resources</phase>
+                                <goals>
+                                    <goal>copy-resources</goal>
+                                </goals>
+                                <configuration>
+                                    <resources>
+                                        <resource>
+                                            <directory>${assembly.cfilter.out.dir}</directory>
+                                            <filtering>false</filtering>
+                                        </resource>
+                                    </resources>
+                                    <outputDirectory>${project.build.directory}</outputDirectory>
+                                </configuration>
+                            </execution>
                             <execution>
                                 <id>copy-compat-test-config</id>
                                 <phase>process-resources</phase>
@@ -603,76 +491,62 @@
                                     </resources>
                                 </configuration>
                             </execution>
-                            </executions>
-                        </plugin>
+                        </executions>
+                    </plugin>
 
-                        <plugin>
-                            <artifactId>maven-failsafe-plugin</artifactId>
-                            <configuration>
-                                <forkCount>1</forkCount>
-                                <reuseForks>false</reuseForks>
-                                <testClassesDirectory>${top.level.basedir}/janusgraph-dist/target/test-classes</testClassesDirectory>
-                            </configuration>
-                            <executions>
-                                <execution>
-                                    <id>integration-test</id>
-                                    <phase>integration-test</phase>
-                                    <goals>
-                                        <goal>integration-test</goal>
-                                    </goals>
-                                    <configuration>
-                                        <skip>${skipDefaultDistroIT}</skip>
-                                        <failIfNoTests>false</failIfNoTests>
-                                        <excludes>
-                                            <exclude>**/*HBase*IT.java</exclude>
-                                            <exclude>**/*CompatIT.java</exclude>
-                                        </excludes>
-                                    </configuration>
-                                </execution>
-                                <execution>
-                                    <id>hbase-integration-test</id>
-                                    <phase>integration-test</phase>
-                                    <goals>
-                                        <goal>integration-test</goal>
-                                    </goals>
-                                    <configuration>
-                                        <argLine>-Dtest.hbase.parentdir=${top.level.basedir}/janusgraph-hbase-parent/</argLine>
-                                        <reportNameSuffix>hbase</reportNameSuffix>
-                                        <failIfNoTests>false</failIfNoTests>
-                                        <includes>
-                                            <include>**/*HBase*IT.java</include>
-                                        </includes>
-                                    </configuration>
-                                </execution>
-                                <!-- Commented until the first 0.9/1.0 release
-                                <execution>
-                                    <id>version-compat-integration-test</id>
-                                    <phase>integration-test</phase>
-                                    <goals>
-                                        <goal>integration-test</goal>
-                                    </goals>
-                                    <configuration>
-                                        <reportNameSuffix>compat</reportNameSuffix>
-                                        <failIfNoTests>false</failIfNoTests>
-                                        <skip>${skipCompatITs}</skip>
-                                        <includes>
-                                            <include>**/*CompatIT.java</include>
-                                        </includes>
-                                    </configuration>
-                                </execution>
-                                -->
-                                <execution>
-                                    <id>verify</id>
-                                    <phase>verify</phase>
-                                    <goals>
-                                        <goal>verify</goal>
-                                    </goals>
-                                    <configuration>
-                                        <failIfNoTests>true</failIfNoTests>
-                                    </configuration>
-                                </execution>
-                            </executions>
-                        </plugin>
+                    <plugin>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <forkCount>1</forkCount>
+                            <reuseForks>false</reuseForks>
+                            <testClassesDirectory>${top.level.basedir}/janusgraph-dist/target/test-classes</testClassesDirectory>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>integration-test</id>
+                                <phase>integration-test</phase>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                </goals>
+                                <configuration>
+                                    <skip>${skipDefaultDistroIT}</skip>
+                                    <failIfNoTests>false</failIfNoTests>
+                                    <excludedGroups>${test.excluded.groups}</excludedGroups>
+                                    <excludes>
+                                        <exclude>**/*CompatIT.java</exclude>
+                                    </excludes>
+                                </configuration>
+                            </execution>
+                            <!-- Commented until the first 0.9/1.0 release
+                            <execution>
+                                <id>version-compat-integration-test</id>
+                                <phase>integration-test</phase>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                </goals>
+                                <configuration>
+                                    <reportNameSuffix>compat</reportNameSuffix>
+                                    <failIfNoTests>false</failIfNoTests>
+                                    <skip>${skipCompatITs}</skip>
+                                    <includes>
+                                        <include>**/*CompatIT.java</include>
+                                    </includes>
+                                </configuration>
+                            </execution>
+                            -->
+                            <execution>
+                                <id>verify</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>verify</goal>
+                                </goals>
+                                <configuration>
+                                    <failIfNoTests>true</failIfNoTests>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
                     <plugin>
                         <artifactId>maven-assembly-plugin</artifactId>
                         <executions>
@@ -750,6 +624,64 @@
                         </executions>
                     </plugin>
 
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.2.0</version>
+                        <executions>
+                            <execution>
+                                <id>docker-build</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>./docker/build-and-push-image.sh</executable>
+                                    <workingDirectory>${project.basedir}</workingDirectory>
+                                    <arguments>
+                                        <argument>${project.version}</argument>
+                                        <argument>${docker.baseimage}</argument>
+                                        <argument>${packname.standard}</argument>
+                                        <argument>no-push</argument>
+                                        <argument>${docker.tag-suffix}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>docker-test</id>
+                                <phase>integration-test</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <skip>${skipTests}</skip>
+                                    <executable>./docker/test-image.sh</executable>
+                                    <workingDirectory>${project.basedir}</workingDirectory>
+                                    <arguments>
+                                        <argument>docker.io/janusgraph/janusgraph:${project.version}${docker.tag-suffix}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>docker-deploy</id>
+                                <phase>deploy</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>./docker/build-and-push-image.sh</executable>
+                                    <workingDirectory>${project.basedir}</workingDirectory>
+                                    <arguments>
+                                        <argument>${project.version}</argument>
+                                        <argument>${docker.baseimage}</argument>
+                                        <argument>${packname.standard}</argument>
+                                        <argument>push</argument>
+                                        <argument>${docker.tag-suffix}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
 
                     <!-- gpg must follow assembly.
                          Both plugins run in the package phase, so only <plugin> ordering

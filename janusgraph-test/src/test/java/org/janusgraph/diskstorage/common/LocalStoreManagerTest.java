@@ -16,27 +16,27 @@ package org.janusgraph.diskstorage.common;
 
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.BaseTransactionConfig;
-import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
+import org.janusgraph.diskstorage.configuration.ConfigOption;
 import org.janusgraph.diskstorage.configuration.Configuration;
 import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
-import org.janusgraph.diskstorage.configuration.ConfigOption;
+import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
 import org.janusgraph.diskstorage.keycolumnvalue.KeyRange;
 import org.janusgraph.diskstorage.keycolumnvalue.StoreFeatures;
 import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
-
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_BACKEND;
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_ROOT;
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_DIRECTORY;
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.GRAPH_NAME;
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.ROOT_NS;
-import static org.janusgraph.diskstorage.configuration.BasicConfiguration.Restriction.NONE;
-
-import java.util.Map;
-import java.util.HashMap;
-import java.util.List;
-import org.apache.commons.configuration.BaseConfiguration;
+import org.janusgraph.util.system.ConfigurationUtil;
 import org.junit.jupiter.api.Test;
 
+import java.io.File;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import static org.janusgraph.diskstorage.configuration.BasicConfiguration.Restriction.NONE;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.GRAPH_NAME;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.ROOT_NS;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_BACKEND;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_DIRECTORY;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_ROOT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -89,7 +89,7 @@ public class LocalStoreManagerTest {
     }
 
     public LocalStoreManager getStoreManager(Map<ConfigOption, String> map) throws BackendException {
-        final ModifiableConfiguration mc = new ModifiableConfiguration(ROOT_NS, new CommonsConfiguration(new BaseConfiguration()), NONE);
+        final ModifiableConfiguration mc = new ModifiableConfiguration(ROOT_NS, new CommonsConfiguration(ConfigurationUtil.createBaseConfiguration()), NONE);
         map.forEach(mc::set);
         return new LocalStoreManagerSampleImplementation(mc);
     }
@@ -99,7 +99,8 @@ public class LocalStoreManagerTest {
         final Map<ConfigOption, String> map = getBaseConfigurationMap();
         map.put(STORAGE_DIRECTORY, "specific/absolute/directory");
         final LocalStoreManager mgr = getStoreManager(map);
-        assertEquals("specific/absolute/directory", mgr.directory.getPath());
+        File expectedDirectory = new File("specific/absolute/directory");
+        assertEquals(expectedDirectory.getPath(), mgr.directory.getPath());
     }
 
     @Test
@@ -108,7 +109,8 @@ public class LocalStoreManagerTest {
         map.put(STORAGE_ROOT, "temp/root");
         map.put(GRAPH_NAME, "randomGraphName");
         final LocalStoreManager mgr = getStoreManager(map);
-        assertEquals("temp/root/randomGraphName", mgr.directory.getPath());
+        File expectedFile = new File("temp/root/randomGraphName");
+        assertEquals(expectedFile.getPath(), mgr.directory.getPath());
     }
 
     @Test

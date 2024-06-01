@@ -14,17 +14,23 @@
 
 package org.janusgraph.graphdb.transaction.addedrelations;
 
+import com.google.common.base.Predicate;
+import com.google.common.collect.Iterables;
 import org.janusgraph.graphdb.internal.InternalRelation;
 
-import com.google.common.base.Predicate;
-
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
  */
 
 public class ConcurrentAddedRelations extends SimpleAddedRelations {
+
+    public ConcurrentAddedRelations(Boolean groupPropertiesByKey) {
+        super(groupPropertiesByKey);
+    }
 
     @Override
     public synchronized boolean add(final InternalRelation relation) {
@@ -38,11 +44,37 @@ public class ConcurrentAddedRelations extends SimpleAddedRelations {
 
     @Override
     public synchronized Iterable<InternalRelation> getView(final Predicate<InternalRelation> filter) {
-        return super.getView(filter);
+        return copyView(super.getView(filter));
     }
 
     @Override
-    public synchronized Collection<InternalRelation> getAll() {
-        return super.getAll();
+    public synchronized Iterable<InternalRelation> getViewOfProperties(Predicate<InternalRelation> filter) {
+        return copyView(super.getViewOfProperties(filter));
+    }
+
+    @Override
+    public synchronized List<InternalRelation> getViewOfProperties(String... keys){
+        return super.getViewOfProperties(keys);
+    }
+
+    @Override
+    public synchronized List<InternalRelation> getViewOfProperties(String key, Object value){
+        return super.getViewOfProperties(key,value);
+    }
+
+    @Override
+    public synchronized Iterable<InternalRelation> getViewOfPreviousRelations(long id) {
+        return copyView(super.getViewOfPreviousRelations(id));
+    }
+
+    @Override
+    public synchronized Collection<InternalRelation> getAllUnsafe() {
+        return super.getAllUnsafe();
+    }
+
+    private Iterable<InternalRelation> copyView(Iterable<InternalRelation> currentView) {
+        ArrayList<InternalRelation> view = new ArrayList<>();
+        Iterables.addAll(view, currentView);
+        return view;
     }
 }

@@ -15,14 +15,13 @@
 package org.janusgraph.diskstorage.configuration.backend;
 
 import com.google.common.base.Preconditions;
-import org.janusgraph.diskstorage.util.time.Durations;
-
+import org.apache.commons.configuration2.BaseConfiguration;
+import org.apache.commons.configuration2.Configuration;
+import org.apache.commons.lang3.StringUtils;
 import org.janusgraph.diskstorage.configuration.ReadConfiguration;
 import org.janusgraph.diskstorage.configuration.WriteConfiguration;
-
-import org.apache.commons.configuration.BaseConfiguration;
-import org.apache.commons.configuration.Configuration;
-import org.apache.commons.lang.StringUtils;
+import org.janusgraph.diskstorage.util.time.Durations;
+import org.janusgraph.util.system.ConfigurationUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -30,7 +29,9 @@ import java.lang.reflect.Constructor;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalUnit;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 
 /**
  * {@link ReadConfiguration} wrapper for Apache Configuration
@@ -45,7 +46,8 @@ public class CommonsConfiguration implements WriteConfiguration {
             LoggerFactory.getLogger(CommonsConfiguration.class);
 
     public CommonsConfiguration() {
-        this(new BaseConfiguration());
+        BaseConfiguration baseConfiguration = ConfigurationUtil.createBaseConfiguration();
+        this.config = baseConfiguration;
     }
 
     public CommonsConfiguration(Configuration config) {
@@ -108,9 +110,9 @@ public class CommonsConfiguration implements WriteConfiguration {
                         unit = Durations.parse(comps[1]);
                         break;
                     default:
-                        throw new IllegalArgumentException("Cannot parse time duration from: " + o.toString());
+                        throw new IllegalArgumentException("Cannot parse time duration from: " + o);
                 }
-                return (O) Duration.of(Long.valueOf(comps[0]), unit);
+                return (O) Duration.of(Long.parseLong(comps[0]), unit);
             }
         // Lists are deliberately not supported.  List's generic parameter
         // is subject to erasure and can't be checked at runtime.  Someone
@@ -174,7 +176,7 @@ public class CommonsConfiguration implements WriteConfiguration {
 
     @Override
     public WriteConfiguration copy() {
-        BaseConfiguration copy = new BaseConfiguration();
+        BaseConfiguration copy = ConfigurationUtil.createBaseConfiguration();
         copy.copy(config);
         return new CommonsConfiguration(copy);
     }

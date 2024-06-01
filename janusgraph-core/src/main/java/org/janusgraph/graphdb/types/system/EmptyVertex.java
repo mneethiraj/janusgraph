@@ -15,8 +15,16 @@
 package org.janusgraph.graphdb.types.system;
 
 import com.google.common.base.Predicate;
-
-import org.janusgraph.core.*;
+import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.apache.tinkerpop.gremlin.structure.Edge;
+import org.apache.tinkerpop.gremlin.structure.Property;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.apache.tinkerpop.gremlin.structure.VertexProperty;
+import org.janusgraph.core.JanusGraphEdge;
+import org.janusgraph.core.JanusGraphRelation;
+import org.janusgraph.core.JanusGraphVertexProperty;
+import org.janusgraph.core.PropertyKey;
+import org.janusgraph.core.VertexLabel;
 import org.janusgraph.diskstorage.EntryList;
 import org.janusgraph.diskstorage.keycolumnvalue.SliceQuery;
 import org.janusgraph.graphdb.internal.ElementLifeCycle;
@@ -25,7 +33,6 @@ import org.janusgraph.graphdb.internal.InternalVertex;
 import org.janusgraph.graphdb.query.vertex.VertexCentricQueryBuilder;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
 import org.janusgraph.util.datastructures.Retriever;
-import org.apache.tinkerpop.gremlin.structure.*;
 
 import java.util.Collections;
 import java.util.Iterator;
@@ -46,6 +53,16 @@ public class EmptyVertex implements InternalVertex {
 
     @Override
     public Iterable<InternalRelation> getAddedRelations(Predicate<InternalRelation> query) {
+        throw new UnsupportedOperationException(errorName + " do not support incident edges");
+    }
+
+    @Override
+    public Iterable<InternalRelation> findAddedProperty(Predicate<InternalRelation> query) {
+        throw new UnsupportedOperationException(errorName + " do not support incident edges");
+    }
+
+    @Override
+    public Iterable<InternalRelation> findPreviousRelation(long id) {
         throw new UnsupportedOperationException(errorName + " do not support incident edges");
     }
 
@@ -141,13 +158,8 @@ public class EmptyVertex implements InternalVertex {
 	 */
 
     @Override
-    public long longId() {
-        throw new UnsupportedOperationException(errorName + " don't have an ID");
-    }
-
-    @Override
     public Object id() {
-        return hasId() ? longId() : null;
+        return null;
     }
 
     @Override
@@ -161,12 +173,17 @@ public class EmptyVertex implements InternalVertex {
     }
 
     @Override
+    public void remove(Iterable<JanusGraphRelation> loadedRelations) {
+        throw new UnsupportedOperationException(errorName + " cannot be removed");
+    }
+
+    @Override
     public <V> Iterator<VertexProperty<V>> properties(String... propertyKeys) {
         return Collections.emptyIterator();
     }
 
     @Override
-    public void setId(long id) {
+    public void setId(Object id) {
         throw new UnsupportedOperationException(errorName + " don't have an id");
     }
 
@@ -178,6 +195,11 @@ public class EmptyVertex implements InternalVertex {
     @Override
     public boolean isInvisible() {
         return false;
+    }
+
+    @Override
+    public Object getCompareId() {
+        return id();
     }
 
     @Override

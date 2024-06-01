@@ -15,8 +15,8 @@
 package org.janusgraph.graphdb.internal;
 
 import com.google.common.base.Preconditions;
-import org.janusgraph.core.PropertyKey;
 import org.janusgraph.core.JanusGraphElement;
+import org.janusgraph.core.PropertyKey;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -33,7 +33,7 @@ public class OrderList implements Comparator<JanusGraphElement>, Iterable<OrderL
         makeImmutable();
     }};
 
-    final private List<OrderEntry> list = new ArrayList<>(3);
+    private final List<OrderEntry> list = new ArrayList<>(3);
     private boolean immutable = false;
 
     public void add(PropertyKey key, Order order) {

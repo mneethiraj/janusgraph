@@ -18,7 +18,7 @@ import com.carrotsearch.hppc.LongObjectHashMap;
 import com.carrotsearch.hppc.cursors.LongObjectCursor;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 
-import java.util.*;
+import java.util.Iterator;
 
 /**
  * Immutable map from long key ids to objects.
@@ -67,8 +67,8 @@ public class RelationCache implements Iterable<LongObjectCursor<Object>> {
         return other;
     }
 
-    public Long getOtherVertexId() {
-        return (Long) other;
+    public Object getOtherVertexId() {
+        return other;
     }
 
     public Iterator<LongObjectCursor<Object>> propertyIterator() {

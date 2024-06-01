@@ -15,7 +15,9 @@
 package org.janusgraph.graphdb.internal;
 
 import com.google.common.base.Predicate;
+import org.janusgraph.core.JanusGraphRelation;
 import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.core.PropertyKey;
 import org.janusgraph.diskstorage.EntryList;
 import org.janusgraph.diskstorage.keycolumnvalue.SliceQuery;
 import org.janusgraph.graphdb.query.vertex.VertexCentricQueryBuilder;
@@ -44,6 +46,12 @@ public interface InternalVertex extends JanusGraphVertex, InternalElement {
     void removeRelation(InternalRelation e);
 
     /**
+     * Remove a vertex with pre-loaded relations.
+     * @param loadedRelations pre-loaded relations.
+     */
+    void remove(Iterable<JanusGraphRelation> loadedRelations);
+
+    /**
      * Add a new relation to the vertex
      * @param e
      * @return
@@ -56,6 +64,14 @@ public interface InternalVertex extends JanusGraphVertex, InternalElement {
      * @return
      */
     Iterable<InternalRelation> getAddedRelations(Predicate<InternalRelation> query);
+
+    Iterable<InternalRelation> findPreviousRelation(long id);
+
+    Iterable<InternalRelation> findAddedProperty(Predicate<InternalRelation> query);
+
+    default Iterable<InternalRelation> getDuplicatedAddedRelation(PropertyKey key, Object value) {
+        return this.getAddedRelations(p -> p.getType().equals(key));
+    }
 
     /**
      * Returns all relations that match the given query. If these matching relations are not currently

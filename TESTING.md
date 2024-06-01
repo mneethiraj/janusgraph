@@ -24,7 +24,7 @@ All of JanusGraph's tests are written for JUnit.  JanusGraph's JUnit tests are a
 | Category Name | Maven Property | Default | Comment |
 | ------------- | ------------------- |:------------:| ------- |
 | MEMORY_TESTS | test.skip.mem | true (disabled) | Tests intended to exert memory pressure |
-| PERFORMANCE_TESTS | test.skip.perf | true (disabled) | Tests written as simple speed tests using JUnitBenchmarks|
+| PERFORMANCE_TESTS | test.skip.perf | true (disabled) | Tests written as simple speed tests|
 | (No&nbsp;tag) | test.skip.default | false (enabled) | Tests without any Tag annotations |
 
 **Tag Name** above is a Java interface defined in the package [org.janusgraph.testcategory](janusgraph-backend-testutils/src/main/java/org/janusgraph/TestCategory.java).  These interfaces appear as arguments to the JUnit `@Tag(...)` annotation, e.g. `@Tag(TestCategory.MEMORY_TESTS)`.
@@ -35,10 +35,14 @@ All of JanusGraph's tests are written for JUnit.  JanusGraph's JUnit tests are a
 
 ### Marking tests as flaky
 
-If a test should be marked as flaky add following annotation to the test and open an issue.
+If a test should be marked as flaky, then first [open an issue](https://github.com/JanusGraph/janusgraph/issues/new?assignees=&labels=testing%2Fflaky&projects=&template=flaky-test.md)
+where you can add information about the flaky test that could be helpful later to others to understand why the test is
+marked as flaky and hopefully for fixing it.
+Afterwards, add the annotation to the test and link to the issue you just created:
 
 ```java
-@RepeatedIfExceptionsTest(repeats = 4, minSuccess = 2)
+// flaky test: https://github.com/JanusGraph/janusgraph/issues/[ISSUE_NUMBER]
+@RepeatedIfExceptionsTest(repeats = 3)
 public void testFlakyFailsSometimes(){}
 ```
 
@@ -87,17 +91,16 @@ mvn clean install -pl janusgraph-solr
 ```
 
 Additional Maven profiles are defined for testing against default versions of other supported major Solr releases.
-(Currently, only Solr 7 and Solr 8 are supported.)
+(Currently, only Solr 8 are supported.)
 
 ```bash
-mvn clean install -pl janusgraph-solr -Psolr7
 mvn clean install -pl janusgraph-solr -Psolr8
 ```
 
 Finally the `solr.docker.version` property can be used to test against arbitrary Solr versions.
 
 ```bash
-mvn clean install -pl janusgraph-solr -Dsolr.docker.version=7.0.0
+mvn clean install -pl janusgraph-solr -Dsolr.docker.version=8.0.0
 ```
 
 ## Running Elasticsearch Tests
@@ -128,7 +131,7 @@ mvn clean install -pl janusgraph-es -Delasticsearch.docker.version=6.0.0 -Delast
 
 **Note** Running CQL tests require Docker.
 
-CQL tests are executed using [testcontainers-java](https://www.testcontainers.org/). 
+CQL tests are executed using [testcontainers-java](https://www.testcontainers.org/).
 CQL tests can be executed against a Cassandra 3 using the profile `cassandra3`, or a Scylla 3 using the profile `scylladb`.
 
 ```bash
@@ -140,13 +143,13 @@ mvn clean install -pl janusgraph-cql -Pscylladb
 
 System properties to configure CQL test executions:
 
-| Property | Description | Default value |
-| -------- | ----------- | ------------- |
-| `cassandra.docker.image` | Docker image to pull and run. | `cassandra` |
-| `cassandra.docker.version` | Docker image tag to pull and run  | `3.11.9` |
-| `cassandra.docker.partitioner` | Set the cassandra partitioner. Supported partitioner are `murmur`, or `byteordered`| `murmur` |
-| `cassandra.docker.useSSL` | Activate SSL **Note: This property currently only works with the partitioner set to `murmur`.** | `false` |
-| `cassandra.docker.useDefaultConfigFromImage` | If set to `false` default configs of the image are used. **Note: `cassandra.docker.partitioner` and `cassandra.docker.useSSL` are ignored.** | `false` |
+| Property                                     | Description                                                                                                                                 | Default value |
+|----------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|---------------|
+| `cassandra.docker.image`                     | Docker image to pull and run.                                                                                                               | `cassandra`   |
+| `cassandra.docker.version`                   | Docker image tag to pull and run                                                                                                            | `3.11.10`     |
+| `cassandra.docker.partitioner`               | Set the cassandra partitioner. Supported partitioner are `murmur`, or `byteordered`                                                         | `murmur`      |
+| `cassandra.docker.useSSL`                    | Activate SSL **Note: This property currently only works with the partitioner set to `murmur`.**                                             | `false`       |
+| `cassandra.docker.useDefaultConfigFromImage` | If set to `true` default configs of the image are used. **Note: `cassandra.docker.partitioner` and `cassandra.docker.useSSL` are ignored.** | `false`       |
 
 The following examples show possible configuration combinations.
 
@@ -158,10 +161,10 @@ mvn clean install -pl janusgraph-cql -Dcassandra.docker.image=cassandra -Dcassan
 
 ### TinkerPop tests
 
-The CQL backend is tested with TinkerPop tests using following command. 
+The CQL backend is tested with TinkerPop tests using following command.
 
-**Note: Profiles are not supported during running TinkerPop tests. 
-If you do not want to use the default config, you can set `cassandra.docker.image`, 
+**Note: Profiles are not supported during running TinkerPop tests.
+If you do not want to use the default config, you can set `cassandra.docker.image`,
 `cassandra.docker.version`, or `cassandra.docker.partitioner`.**
 
 ```bash
@@ -171,6 +174,20 @@ mvn clean install -Dtest.skip.tp=false -DskipTests=true -pl janusgraph-cql \
 
 ### Create new configuration files for new Versions of Cassandra
 
-The file `janusgraph-cql/src/test/resources/docker/docker-compose.yml` can be used to generate new configuration files. 
-Therefore, you have to start a Cassandra instance using `docker-compose up`. 
+The file `janusgraph-cql/src/test/resources/docker/docker-compose.yml` can be used to generate new configuration files.
+Therefore, you have to start a Cassandra instance using `docker-compose up`.
 Afterward, you can extract the configuration which is located in the following file `/etc/cassandra/cassandra.yaml`.
+
+## Running hbase tests
+
+**Note** Running HBase tests require Docker.
+
+### Special versions of HBase
+
+System properties to configure HBase test executions:
+
+| Property | Description | Default value |
+| -------- | ----------- | ------------- |
+| `hbase.docker.version` | HBase version to be used in the docker image. | `2.5.0` |
+| `hbase.docker.uid` | Uid used to run inside HBase of the container | 1000 |
+| `hbase.docker.gid` | Gid used to run inside HBase of the container | 1000 |

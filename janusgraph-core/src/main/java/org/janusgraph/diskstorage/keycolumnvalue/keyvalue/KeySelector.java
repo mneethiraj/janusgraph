@@ -18,6 +18,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
 import org.janusgraph.diskstorage.StaticBuffer;
+import org.janusgraph.graphdb.query.Query;
 
 /**
  * A {@link KeySelector} utility that can be generated out of a given {@link KVQuery}
@@ -31,7 +32,7 @@ public class KeySelector {
     private int count;
 
     public KeySelector(Predicate<StaticBuffer> keyFilter, int limit) {
-        Preconditions.checkArgument(limit > 0, "The count limit needs to be positive. Given: " + limit);
+        Preconditions.checkArgument(limit > 0, "The count limit needs to be positive. Given: %d", limit);
         Preconditions.checkArgument(keyFilter!=null);
         this.keyFilter = keyFilter;
         this.limit = limit;
@@ -50,7 +51,7 @@ public class KeySelector {
     }
 
     public boolean reachedLimit() {
-        return count >= limit;
+        return Query.NO_LIMIT != limit && count >= limit;
     }
 
 }

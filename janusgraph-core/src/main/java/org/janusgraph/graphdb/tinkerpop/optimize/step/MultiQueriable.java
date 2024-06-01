@@ -15,6 +15,7 @@
 package org.janusgraph.graphdb.tinkerpop.optimize.step;
 
 import org.apache.tinkerpop.gremlin.process.traversal.Step;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -22,5 +23,43 @@ import org.apache.tinkerpop.gremlin.process.traversal.Step;
 public interface MultiQueriable<S,E> extends Step<S,E> {
 
     void setUseMultiQuery(boolean useMultiQuery);
+
+    void setBatchSize(int batchSize);
+
+    /**
+     * Registers a vertex which will pass this step at some point in the future.
+     * The vertex is typically known because a traverser at that vertex location
+     * has passed a previous step earlier.
+     * Using that information, a step can know in advance a set of vertices which
+     * it will have to handle in the future but on the next first loop of the traverser.
+     * @param futureVertex The vertex which will reach the step in the future.
+     * @param futureVertexTraverserLoop In case traverser of the vertex supports loop then it should be provided
+     *                                  via this parameter. Otherwise, `0` should be provided.
+     */
+    void registerFirstNewLoopFutureVertexForPrefetching(Vertex futureVertex, int futureVertexTraverserLoop);
+
+    /**
+     * Registers a vertex which will pass this step at some point in the future.
+     * The vertex is typically known because a traverser at that vertex location
+     * has passed a previous step earlier.
+     * Using that information, a step can know in advance a set of vertices which
+     * it will have to handle in the future but on the same traverser loop.
+     * @param futureVertex The vertex which will reach the step in the future.
+     * @param futureVertexTraverserLoop In case traverser of the vertex supports loop then it should be provided
+     *                                  via this parameter. Otherwise, `0` should be provided.
+     */
+    void registerSameLoopFutureVertexForPrefetching(Vertex futureVertex, int futureVertexTraverserLoop);
+
+    /**
+     * Registers a vertex which will pass this step at some point in the future.
+     * The vertex is typically known because a traverser at that vertex location
+     * has passed a previous step earlier.
+     * Using that information, a step can know in advance a set of vertices which
+     * it will have to handle in the future but on the next traverser loop.
+     * @param futureVertex The vertex which will reach the step in the future.
+     * @param futureVertexTraverserLoop In case traverser of the vertex supports loop then it should be provided
+     *      *                           via this parameter. Otherwise, `0` should be provided.
+     */
+    void registerNextLoopFutureVertexForPrefetching(Vertex futureVertex, int futureVertexTraverserLoop);
 
 }

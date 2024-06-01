@@ -16,16 +16,19 @@ package org.janusgraph.graphdb.types;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
-import org.janusgraph.core.*;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.apache.tinkerpop.gremlin.structure.Element;
+import org.apache.tinkerpop.gremlin.structure.Property;
+import org.janusgraph.core.Cardinality;
+import org.janusgraph.core.JanusGraphRelation;
+import org.janusgraph.core.JanusGraphVertexProperty;
+import org.janusgraph.core.PropertyKey;
 import org.janusgraph.core.schema.ConsistencyModifier;
 import org.janusgraph.graphdb.database.management.ModifierType;
 import org.janusgraph.graphdb.internal.ElementCategory;
 import org.janusgraph.graphdb.internal.InternalRelationType;
 import org.janusgraph.graphdb.internal.JanusGraphSchemaCategory;
-import org.apache.tinkerpop.gremlin.structure.Direction;
-import org.apache.tinkerpop.gremlin.structure.Element;
-import org.apache.tinkerpop.gremlin.structure.Property;
-import org.apache.commons.lang.StringUtils;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -69,11 +72,6 @@ public class TypeUtil {
         for (IndexType index : type.getKeyIndexes()) {
             if (index.getElement()== ElementCategory.VERTEX && index.isCompositeIndex()) {
                 if (index.indexesKey(key)) return true;
-//                InternalIndexType iIndex = (InternalIndexType)index;
-//                if (iIndex.getFieldKeys().length==1) {
-//                    assert iIndex.getFieldKeys()[0].getFieldKey().equals(key);
-//                    return true;
-//                }
             }
         }
         return false;

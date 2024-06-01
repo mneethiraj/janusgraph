@@ -14,8 +14,17 @@
 
 package org.janusgraph.pkgtest;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.FileVisitOption;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Comparator;
 
 public class BerkeleyAssemblyIT extends AbstractJanusGraphAssemblyIT {
     @Override
@@ -33,6 +42,22 @@ public class BerkeleyAssemblyIT extends AbstractJanusGraphAssemblyIT {
         return "berkeleyje";
     }
 
+    @AfterEach
+    public void cleanupData() throws IOException {
+        Path db = Paths.get(BUILD_DIR, "db");
+        if (Files.exists(db)){
+            try {
+                Files.walk(db, FileVisitOption.FOLLOW_LINKS)
+                    .sorted(Comparator.reverseOrder())
+                    .map(Path::toFile)
+                    .peek(System.out::println)
+                    .forEach(File::delete);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
     @Test
     @Disabled
     @Override
@@ -42,4 +67,10 @@ public class BerkeleyAssemblyIT extends AbstractJanusGraphAssemblyIT {
     @Disabled
     @Override
     public void testGettingStartedAgainstGremlinShFull() {}
+
+    @Test
+    @Disabled
+    @Override
+    public void testSparkGraphComputerTraversalLocal() {
+    }
 }

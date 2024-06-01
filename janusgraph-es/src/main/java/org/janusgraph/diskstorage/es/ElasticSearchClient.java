@@ -14,13 +14,13 @@
 
 package org.janusgraph.diskstorage.es;
 
+import org.janusgraph.diskstorage.es.mapping.IndexMapping;
+import org.janusgraph.diskstorage.es.script.ESScriptResponse;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-
-import org.janusgraph.diskstorage.es.mapping.IndexMapping;
-import org.janusgraph.diskstorage.es.script.ESScriptResponse;
 
 public interface ElasticSearchClient extends Closeable {
 
@@ -52,9 +52,19 @@ public interface ElasticSearchClient extends Closeable {
 
     void deleteIndex(String indexName) throws IOException;
 
+    void clearStore(String indexName, String storeName) throws IOException;
+
     void bulkRequest(List<ElasticSearchMutation> requests, String ingestPipeline) throws IOException;
 
     long countTotal(String indexName, Map<String,Object> requestData) throws IOException;
+
+    Number min(String indexName, Map<String,Object> requestData, String fieldName, Class<? extends Number> expectedType) throws IOException;
+
+    Number max(String indexName, Map<String,Object> requestData, String fieldName, Class<? extends Number> expectedType) throws IOException;
+
+    double avg(String indexName, Map<String,Object> requestData, String fieldName) throws IOException;
+
+    Number sum(String indexName, Map<String,Object> requestData, String fieldName, Class<? extends Number> expectedType) throws IOException;
 
     ElasticSearchResponse search(String indexName, Map<String,Object> request, boolean useScroll) throws IOException;
 

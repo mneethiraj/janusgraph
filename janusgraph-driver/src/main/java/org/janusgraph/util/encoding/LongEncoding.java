@@ -25,7 +25,11 @@ import com.google.common.base.Preconditions;
  */
 public class LongEncoding {
 
-    private static final String BASE_SYMBOLS = "0123456789abcdefghijklmnopqrstuvwxyz";
+    public static final String BASE_SYMBOLS = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+    // this does not appear in BASE_SYMBOLS, so as long as we see this marker,
+    // we know the id must be of string type rather than a string-encoded long type
+    public static final char STRING_ENCODING_MARKER = 'S';
 
     public static long decode(String s) {
         return decode(s,BASE_SYMBOLS);
@@ -48,7 +52,7 @@ public class LongEncoding {
     }
 
     public static String encode(long num, String symbols) {
-        Preconditions.checkArgument(num>=0,"Expected non-negative number: " + num);
+        Preconditions.checkArgument(num>=0,"Expected non-negative number: %d", num);
         final int B = symbols.length();
         StringBuilder sb = new StringBuilder();
         while (num != 0) {

@@ -218,8 +218,11 @@ the addition of an edge, vertex or the setting of a property. The
 types.
 
 By default, implicitly created edge labels have multiplicity MULTI and
-implicitly created property keys have cardinality SINGLE and data type
-`Object.class`. Users can control automatic schema element creation by
+implicitly created property keys have cardinality SINGLE. Data types of
+implicitly created property keys are inferred as long as they are natively
+supported by JanusGraph. `Object.class` is used if and only if the given value
+is not any of the `Native JanusGraph Data Types`.
+Users can control automatic schema element creation by
 implementing and registering their own `DefaultSchemaMaker`.
 
 When defining a cardinality for a vertex property which differs from SINGLE, 
@@ -272,6 +275,32 @@ one. However, note that this would not affect vertices, edges, or
 properties previously written with the existing type. Redefining
 existing graph elements is not supported online and must be accomplished
 through a batch graph transformation.
+
+Be careful that if you change a property name that is part of some
+mixed index, you shall not reuse that property name in the same index.
+For example, the following code will fail.
+
+```java
+name = mgmt.makePropertyKey("name").dataType(String.class).make()
+mgmt.buildIndex("nameIndex", Vertex.class).addKey(name).buildMixedIndex("search")
+mgmt.commit()
+
+mgmt = graph.openManagement()
+mgmt.changeName(mgmt.getPropertyKey("name"), "oldName");
+name = mgmt.makePropertyKey("name").dataType(String.class).make()
+mgmt.addIndexKey(mgmt.getGraphIndex("nameIndex"), name)
+mgmt.commit()
+
+// the following query will throw an exception
+graph.traversal().V().has("name", textContains("value")).hasNext()
+```
+
+The reason is, JanusGraph does not attempt to alter the field name stored
+in the mixed index backend when you call `mgmt.changeName`. Instead, JanusGraph
+maintains a dual mapping between property name and index field name. If you
+create a new index using the old name and add it to the same index, conflicts
+will occur because JanusGraph cannot figure out which property should the index
+field map to.
 
 ## Schema Constraints
 

@@ -23,10 +23,15 @@ import org.janusgraph.graphdb.database.serialize.OrderPreservingSerializer;
 import org.janusgraph.graphdb.database.serialize.SupportsNullSerializer;
 import org.janusgraph.util.encoding.StringEncoding;
 
-import java.io.*;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
+
+import static org.janusgraph.graphdb.database.idhandling.IDHandler.STOP_MASK;
 
 /**
  * Serializes Strings by trying to find the most efficient serialization format:
@@ -175,7 +180,7 @@ public class StringSerializer implements OrderPreservingSerializer<String>, Supp
                     int c = attribute.charAt(i);
                     assert c <= 127;
                     byte b = (byte)c;
-                    if (i+1==attribute.length()) b |= 0x80; //End marker
+                    if (i+1==attribute.length()) b |= STOP_MASK; //End marker
                     buffer.putByte(b);
                 }
             } else {

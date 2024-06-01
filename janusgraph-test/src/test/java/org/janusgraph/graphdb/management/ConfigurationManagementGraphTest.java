@@ -14,29 +14,29 @@
 
 package org.janusgraph.graphdb.management;
 
-import org.janusgraph.core.JanusGraphTransaction;
-import org.janusgraph.graphdb.configuration.builder.GraphDatabaseConfigurationBuilder;
-import org.janusgraph.core.schema.JanusGraphManagement;
-import static org.janusgraph.core.schema.SchemaStatus.ENABLED;
-import org.janusgraph.core.schema.JanusGraphIndex;
+import org.apache.commons.configuration2.MapConfiguration;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.janusgraph.core.JanusGraphFactory;
+import org.janusgraph.core.JanusGraphTransaction;
 import org.janusgraph.core.PropertyKey;
-
+import org.janusgraph.core.schema.JanusGraphIndex;
+import org.janusgraph.core.schema.JanusGraphManagement;
 import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
+import org.janusgraph.graphdb.configuration.builder.GraphDatabaseConfigurationBuilder;
 import org.janusgraph.graphdb.database.StandardJanusGraph;
 import org.janusgraph.graphdb.management.utils.ConfigurationManagementGraphNotEnabledException;
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_BACKEND;
-import static org.janusgraph.graphdb.management.ConfigurationManagementGraph.PROPERTY_GRAPH_NAME;
-
-import org.apache.tinkerpop.gremlin.structure.Vertex;
-import org.apache.commons.configuration.MapConfiguration;
-
-import java.util.Map;
-import java.util.HashMap;
-
+import org.janusgraph.util.system.ConfigurationUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import static org.junit.jupiter.api.Assertions.*;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import static org.janusgraph.core.schema.SchemaStatus.ENABLED;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_BACKEND;
+import static org.janusgraph.graphdb.management.ConfigurationManagementGraph.PROPERTY_GRAPH_NAME;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 public class ConfigurationManagementGraphTest {
 
@@ -50,7 +50,7 @@ public class ConfigurationManagementGraphTest {
     public void shouldReindexIfPropertyKeyExists() {
         final Map<String, Object> map = new HashMap<>();
         map.put(STORAGE_BACKEND.toStringWithoutRoot(), "inmemory");
-        final MapConfiguration config = new MapConfiguration(map);
+        final MapConfiguration config = ConfigurationUtil.loadMapConfiguration(map);
         final StandardJanusGraph graph = new StandardJanusGraph(new GraphDatabaseConfigurationBuilder().build(new CommonsConfiguration(config)));
 
         final String propertyKeyName = "Created_Using_Template";
@@ -98,7 +98,7 @@ public class ConfigurationManagementGraphTest {
         // Create a configuration
         final Map<String, Object> map = new HashMap<>();
         map.put(PROPERTY_GRAPH_NAME, "tx_test_graph");
-        configurationManagementGraph.createConfiguration(new MapConfiguration(map));
+        configurationManagementGraph.createConfiguration(ConfigurationUtil.loadMapConfiguration(map));
 
         // Get the vertex id from the new configuration
         long vertexId = (Long) graph.traversal().V().limit(1).next().id();

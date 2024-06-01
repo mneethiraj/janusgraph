@@ -15,17 +15,16 @@
 package org.janusgraph.graphdb.query.vertex;
 
 import com.google.common.base.Preconditions;
+import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.janusgraph.core.JanusGraphRelation;
 import org.janusgraph.diskstorage.keycolumnvalue.SliceQuery;
 import org.janusgraph.graphdb.internal.OrderList;
 import org.janusgraph.graphdb.query.BackendQueryHolder;
 import org.janusgraph.graphdb.query.BaseQuery;
-import org.janusgraph.graphdb.query.QueryUtil;
 import org.janusgraph.graphdb.query.condition.Condition;
 import org.janusgraph.graphdb.query.condition.FixedCondition;
 import org.janusgraph.graphdb.query.profile.ProfileObservable;
 import org.janusgraph.graphdb.query.profile.QueryProfiler;
-import org.apache.tinkerpop.gremlin.structure.Direction;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -43,7 +42,7 @@ import java.util.List;
 public class BaseVertexCentricQuery extends BaseQuery implements ProfileObservable {
 
     /**
-     * The condition of this query in QNF
+     * The condition of this query
      */
     protected final Condition<JanusGraphRelation> condition;
     /**
@@ -60,12 +59,13 @@ public class BaseVertexCentricQuery extends BaseQuery implements ProfileObservab
      */
     protected final Direction direction;
 
+    private QueryProfiler profiler = QueryProfiler.NO_OP;
+
     public BaseVertexCentricQuery(Condition<JanusGraphRelation> condition, Direction direction,
                                   List<BackendQueryHolder<SliceQuery>> queries, OrderList orders,
                                   int limit) {
         super(limit);
         Preconditions.checkArgument(condition != null && queries != null && direction != null);
-        Preconditions.checkArgument(QueryUtil.isQueryNormalForm(condition) && limit>=0);
         this.condition = condition;
         this.queries = queries;
         this.orders = orders;
@@ -136,10 +136,17 @@ public class BaseVertexCentricQuery extends BaseQuery implements ProfileObservab
     }
 
     @Override
-    public void observeWith(QueryProfiler profiler) {
+    public void observeWith(QueryProfiler profiler, boolean hasSiblings) {
+        this.profiler = profiler;
         profiler.setAnnotation(QueryProfiler.CONDITION_ANNOTATION,condition);
         profiler.setAnnotation(QueryProfiler.ORDERS_ANNOTATION,orders);
         if (hasLimit()) profiler.setAnnotation(QueryProfiler.LIMIT_ANNOTATION,getLimit());
-        queries.forEach(bqh -> bqh.observeWith(profiler));
+        boolean consistsOfMultipleQueries = queries.size() > 1;
+        queries.forEach(bqh -> bqh.observeWith(profiler, consistsOfMultipleQueries));
+    }
+
+    @Override
+    public QueryProfiler getProfiler() {
+        return profiler;
     }
 }

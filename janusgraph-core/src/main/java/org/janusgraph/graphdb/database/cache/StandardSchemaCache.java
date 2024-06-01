@@ -14,9 +14,11 @@
 
 package org.janusgraph.graphdb.database.cache;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.google.common.base.Preconditions;
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
+import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.jctools.maps.NonBlockingHashMapLong;
 import org.janusgraph.diskstorage.EntryList;
 import org.janusgraph.graphdb.idmanagement.IDManager;
 import org.janusgraph.graphdb.relations.EdgeDirection;
@@ -24,8 +26,6 @@ import org.janusgraph.graphdb.types.system.BaseKey;
 import org.janusgraph.graphdb.types.system.BaseLabel;
 import org.janusgraph.graphdb.types.system.BaseRelationType;
 import org.janusgraph.graphdb.types.system.SystemRelationType;
-import org.apache.tinkerpop.gremlin.structure.Direction;
-import org.cliffc.high_scale_lib.NonBlockingHashMapLong;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -72,13 +72,13 @@ public class StandardSchemaCache implements SchemaCache {
         maxCachedRelations = maxCachedTypes *CACHE_RELATION_MULTIPLIER;
         this.retriever=retriever;
 
-        typeNamesBackup = CacheBuilder.newBuilder()
-                .concurrencyLevel(CONCURRENCY_LEVEL).initialCapacity(INITIAL_CACHE_SIZE)
+        typeNamesBackup = Caffeine.newBuilder()
+                .initialCapacity(INITIAL_CACHE_SIZE)
                 .maximumSize(maxCachedTypes).build();
         typeNames = new ConcurrentHashMap<>(INITIAL_CAPACITY, 0.75f, CONCURRENCY_LEVEL);
 
-        schemaRelationsBackup = CacheBuilder.newBuilder()
-                .concurrencyLevel(CONCURRENCY_LEVEL).initialCapacity(INITIAL_CACHE_SIZE *CACHE_RELATION_MULTIPLIER)
+        schemaRelationsBackup = Caffeine.newBuilder()
+                .initialCapacity(INITIAL_CACHE_SIZE *CACHE_RELATION_MULTIPLIER)
                 .maximumSize(maxCachedRelations).build();
 //        typeRelations = new ConcurrentHashMap<Long, EntryList>(INITIAL_CAPACITY*CACHE_RELATION_MULTIPLIER,0.75f,CONCURRENCY_LEVEL);
         schemaRelations = new NonBlockingHashMapLong<>(INITIAL_CAPACITY * CACHE_RELATION_MULTIPLIER); //TODO: Is this data structure safe or should we go with ConcurrentHashMap (line above)?
@@ -137,7 +137,7 @@ public class StandardSchemaCache implements SchemaCache {
 
     @Override
     public EntryList getSchemaRelations(final long schemaId, final BaseRelationType type, final Direction dir) {
-        assert IDManager.isSystemRelationTypeId(type.longId()) && type.longId()>0;
+        assert IDManager.isSystemRelationTypeId(type.id()) && type.longId() > 0;
         Preconditions.checkArgument(IDManager.VertexIDType.Schema.is(schemaId));
         Preconditions.checkArgument((Long.MAX_VALUE>>>(SCHEMAID_TOTALFORW_SHIFT-SCHEMAID_BACK_SHIFT))>= schemaId);
 
@@ -174,13 +174,6 @@ public class StandardSchemaCache implements SchemaCache {
         assert entries!=null;
         return entries;
     }
-
-//    @Override
-//    public void expireSchemaName(final String name) {
-//        ConcurrentMap<String,Long> types = typeNames;
-//        if (types!=null) types.remove(name);
-//        typeNamesBackup.invalidate(name);
-//    }
 
     @Override
     public void expireSchemaElement(final long schemaId) {

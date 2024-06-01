@@ -18,7 +18,12 @@ import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.Entry;
 import org.janusgraph.diskstorage.EntryList;
 import org.janusgraph.diskstorage.StaticBuffer;
-import org.janusgraph.diskstorage.keycolumnvalue.*;
+import org.janusgraph.diskstorage.keycolumnvalue.KCVSProxy;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStore;
+import org.janusgraph.diskstorage.keycolumnvalue.KeySliceQuery;
+import org.janusgraph.diskstorage.keycolumnvalue.MultiKeysQueryGroups;
+import org.janusgraph.diskstorage.keycolumnvalue.SliceQuery;
+import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
 import org.janusgraph.diskstorage.util.CacheMetricsAction;
 import org.janusgraph.util.stats.MetricManager;
 
@@ -53,7 +58,9 @@ public abstract class KCVSCache extends KCVSProxy {
 
     public abstract void clearCache();
 
-    protected abstract void invalidate(StaticBuffer key, List<CachableStaticBuffer> entries);
+    public abstract void invalidate(StaticBuffer key, List<CachableStaticBuffer> entries);
+
+    public abstract void forceClearExpiredCache();
 
     @Override
     public void mutate(StaticBuffer key, List<Entry> additions, List<StaticBuffer> deletions, StoreTransaction txh) throws BackendException {
@@ -79,4 +86,7 @@ public abstract class KCVSCache extends KCVSProxy {
         return store.getSlice(keys,query,unwrapTx(txh));
     }
 
+    public Map<SliceQuery, Map<StaticBuffer, EntryList>> getMultiSlicesNoCache(MultiKeysQueryGroups<StaticBuffer, SliceQuery> multiSliceQueriesWithKeys, StoreTransaction txh) throws BackendException {
+        return store.getMultiSlices(multiSliceQueriesWithKeys, unwrapTx(txh));
+    }
 }

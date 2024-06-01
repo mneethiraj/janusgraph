@@ -16,14 +16,18 @@ package org.janusgraph.diskstorage.es;
 
 import com.github.dockerjava.api.command.InspectContainerResponse;
 import org.apache.http.HttpHost;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpHead;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
+import org.janusgraph.util.system.IOUtils;
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
 
 import java.io.IOException;
+import java.net.InetAddress;
 
 import static org.janusgraph.diskstorage.es.ElasticSearchIndex.BULK_REFRESH;
 import static org.janusgraph.diskstorage.es.ElasticSearchIndex.INTERFACE;
@@ -33,14 +37,14 @@ import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.IN
 public class JanusGraphElasticsearchContainer extends ElasticsearchContainer {
 
     private static final Integer ELASTIC_PORT = 9200;
-    private static final String DEFAULT_VERSION = "7.10.1";
+    private static final String DEFAULT_VERSION = "8.10.4";
     private static final String DEFAULT_IMAGE = "docker.elastic.co/elasticsearch/elasticsearch";
 
     public static ElasticMajorVersion getEsMajorVersion() {
         return ElasticMajorVersion.parse(getVersion());
     }
 
-    private static String getVersion() {
+    public static String getVersion() {
         String property = System.getProperty("elasticsearch.docker.version");
         if (property != null)
             return property;
@@ -62,6 +66,10 @@ public class JanusGraphElasticsearchContainer extends ElasticsearchContainer {
         super(getElasticImage() + ":" + getVersion());
         withEnv("transport.host", "0.0.0.0");
         withEnv("xpack.security.enabled", "false");
+        withEnv("action.destructive_requires_name", "false");
+        if (getEsMajorVersion().value > 6) {
+            withEnv("ingest.geoip.downloader.enabled", "false");
+        }
         withEnv("ES_JAVA_OPTS", "-Xms512m -Xmx512m");
         if (getEsMajorVersion().value == 5) {
             withEnv("script.max_compilations_per_minute", "30");
@@ -103,5 +111,14 @@ public class JanusGraphElasticsearchContainer extends ElasticsearchContainer {
             config.set(BULK_REFRESH, "wait_for", indexBackend);
         }
         return config;
+    }
+
+    public boolean indexExists(String name) throws IOException {
+        CloseableHttpClient httpClient = HttpClients.createDefault();
+        HttpHost host = new HttpHost(InetAddress.getByName(getHostname()), getPort());
+        final CloseableHttpResponse response = httpClient.execute(host, new HttpHead(name));
+        final boolean exists = response.getStatusLine().getStatusCode() == 200;
+        IOUtils.closeQuietly(response);
+        return exists;
     }
 }

@@ -14,8 +14,9 @@
 
 package org.janusgraph.core;
 
-import org.janusgraph.core.schema.SchemaManager;
 import org.apache.tinkerpop.gremlin.structure.Graph;
+import org.janusgraph.core.schema.SchemaManager;
+import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
 
 import java.util.Collection;
 
@@ -63,6 +64,12 @@ public interface Transaction extends Graph, SchemaManager {
      * @see JanusGraph#query()
      */
     JanusGraphQuery<? extends JanusGraphQuery> query();
+
+    /**
+     * @return a mixed index aggregation query which leverages mixed index for aggregation
+     * @see StandardJanusGraphTx#mixedIndexAggQuery()
+     */
+    MixedIndexAggQuery mixedIndexAggQuery();
 
     /**
      * Returns a {@link org.janusgraph.core.JanusGraphIndexQuery} to query for vertices or edges against the specified indexing backend using

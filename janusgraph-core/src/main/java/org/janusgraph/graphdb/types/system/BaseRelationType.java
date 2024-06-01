@@ -15,11 +15,11 @@
 package org.janusgraph.graphdb.types.system;
 
 import com.google.common.base.Preconditions;
+import org.apache.commons.lang3.StringUtils;
 import org.janusgraph.core.schema.ConsistencyModifier;
 import org.janusgraph.graphdb.idmanagement.IDManager;
 import org.janusgraph.graphdb.internal.JanusGraphSchemaCategory;
 import org.janusgraph.graphdb.internal.Token;
-import org.apache.commons.lang.StringUtils;
 
 public abstract class BaseRelationType extends EmptyRelationType implements SystemRelationType {
 
@@ -39,7 +39,7 @@ public abstract class BaseRelationType extends EmptyRelationType implements Syst
     }
 
     @Override
-    public long longId() {
+    public Object id() {
         return id;
     }
 
@@ -49,7 +49,7 @@ public abstract class BaseRelationType extends EmptyRelationType implements Syst
     }
 
     @Override
-    public void setId(long id) {
+    public void setId(Object id) {
         throw new IllegalStateException("SystemType has already been assigned an id");
     }
 

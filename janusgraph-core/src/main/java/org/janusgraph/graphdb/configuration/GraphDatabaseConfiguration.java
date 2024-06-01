@@ -14,57 +14,74 @@
 
 package org.janusgraph.graphdb.configuration;
 
-import org.janusgraph.core.*;
+import com.google.common.base.Preconditions;
+import com.google.common.base.Predicate;
+import org.apache.commons.lang3.ClassUtils;
+import org.apache.tinkerpop.gremlin.groovy.jsr223.GremlinGroovyScriptEngine;
+import org.apache.tinkerpop.gremlin.jsr223.GremlinLangScriptEngine;
+import org.apache.tinkerpop.gremlin.jsr223.GremlinScriptEngine;
+import org.apache.tinkerpop.gremlin.process.traversal.strategy.optimization.LazyBarrierStrategy;
+import org.apache.tinkerpop.gremlin.structure.Graph;
+import org.janusgraph.core.JanusGraphConfigurationException;
+import org.janusgraph.core.JanusGraphFactory;
 import org.janusgraph.core.schema.DefaultSchemaMaker;
-import org.janusgraph.diskstorage.configuration.Configuration;
+import org.janusgraph.core.schema.DisableDefaultSchemaMaker;
+import org.janusgraph.core.schema.IgnorePropertySchemaMaker;
+import org.janusgraph.core.schema.JanusGraphDefaultSchemaMaker;
+import org.janusgraph.core.schema.Tp3DefaultSchemaMaker;
+import org.janusgraph.diskstorage.Backend;
 import org.janusgraph.diskstorage.StandardIndexProvider;
 import org.janusgraph.diskstorage.StandardStoreManager;
+import org.janusgraph.diskstorage.configuration.BasicConfiguration;
+import org.janusgraph.diskstorage.configuration.ConfigNamespace;
+import org.janusgraph.diskstorage.configuration.ConfigOption;
+import org.janusgraph.diskstorage.configuration.Configuration;
+import org.janusgraph.diskstorage.configuration.ExecutorServiceBuilder;
+import org.janusgraph.diskstorage.configuration.ExecutorServiceConfiguration;
+import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
+import org.janusgraph.diskstorage.configuration.ReadConfiguration;
+import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
 import org.janusgraph.diskstorage.configuration.converter.ReadConfigurationConverter;
+import org.janusgraph.diskstorage.idmanagement.ConflictAvoidanceMode;
+import org.janusgraph.diskstorage.idmanagement.ConsistentKeyIDAuthority;
+import org.janusgraph.diskstorage.keycolumnvalue.StoreFeatures;
+import org.janusgraph.diskstorage.util.time.TimestampProvider;
+import org.janusgraph.diskstorage.util.time.TimestampProviders;
 import org.janusgraph.graphdb.configuration.converter.RegisteredAttributeClassesConverter;
+import org.janusgraph.graphdb.database.cache.MetricInstrumentedSchemaCache;
+import org.janusgraph.graphdb.database.cache.SchemaCache;
+import org.janusgraph.graphdb.database.cache.StandardSchemaCache;
+import org.janusgraph.graphdb.database.idassigner.VertexIDAssigner;
+import org.janusgraph.graphdb.database.serialize.Serializer;
+import org.janusgraph.graphdb.database.serialize.StandardSerializer;
 import org.janusgraph.graphdb.query.index.ApproximateIndexSelectionStrategy;
 import org.janusgraph.graphdb.query.index.BruteForceIndexSelectionStrategy;
 import org.janusgraph.graphdb.query.index.IndexSelectionStrategy;
 import org.janusgraph.graphdb.query.index.ThresholdBasedIndexSelectionStrategy;
-import org.janusgraph.core.schema.JanusGraphDefaultSchemaMaker;
-import org.janusgraph.core.schema.Tp3DefaultSchemaMaker;
-import org.janusgraph.core.schema.DisableDefaultSchemaMaker;
-import org.janusgraph.core.schema.IgnorePropertySchemaMaker;
+import org.janusgraph.graphdb.tinkerpop.optimize.strategy.MultiQueryLabelStepStrategyMode;
+import org.janusgraph.graphdb.tinkerpop.optimize.strategy.MultiQueryPropertiesStrategyMode;
+import org.janusgraph.graphdb.tinkerpop.optimize.strategy.MultiQueryStrategyRepeatStepMode;
+import org.janusgraph.graphdb.tinkerpop.optimize.strategy.MultiQueryHasStepStrategyMode;
+import org.janusgraph.graphdb.transaction.StandardTransactionBuilder;
+import org.janusgraph.graphdb.types.system.ImplicitKey;
 import org.janusgraph.util.StringUtils;
+import org.janusgraph.util.stats.MetricManager;
 import org.janusgraph.util.stats.NumberUtil;
-import org.janusgraph.diskstorage.util.time.*;
-import org.janusgraph.diskstorage.configuration.*;
-import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
-import org.janusgraph.diskstorage.idmanagement.ConflictAvoidanceMode;
-import org.janusgraph.diskstorage.idmanagement.ConsistentKeyIDAuthority;
-import org.janusgraph.diskstorage.keycolumnvalue.StoreFeatures;
-import org.janusgraph.graphdb.database.cache.MetricInstrumentedSchemaCache;
-import org.janusgraph.graphdb.database.cache.StandardSchemaCache;
-import org.janusgraph.graphdb.database.cache.SchemaCache;
-import org.janusgraph.graphdb.database.serialize.StandardSerializer;
 import org.janusgraph.util.system.ConfigurationUtil;
 import org.janusgraph.util.system.NetworkUtil;
-
-import org.apache.tinkerpop.gremlin.structure.Graph;
-
-import java.time.Duration;
-import java.time.Instant;
-import java.util.*;
-
-import javax.annotation.Nullable;
-import javax.management.MBeanServerFactory;
-
-import org.apache.commons.configuration.*;
-import org.apache.commons.lang3.ClassUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
-import org.janusgraph.diskstorage.Backend;
-import org.janusgraph.graphdb.database.idassigner.VertexIDAssigner;
-import org.janusgraph.graphdb.database.serialize.Serializer;
-import org.janusgraph.graphdb.transaction.StandardTransactionBuilder;
-import org.janusgraph.util.stats.MetricManager;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import javax.annotation.Nullable;
+import javax.management.MBeanServerFactory;
 
 /**
  * Provides functionality to configure a {@link org.janusgraph.core.JanusGraph} INSTANCE.
@@ -91,10 +108,19 @@ public class GraphDatabaseConfiguration {
             "General configuration options");
 
     public static final ConfigOption<Boolean> ALLOW_SETTING_VERTEX_ID = new ConfigOption<>(GRAPH_NS,"set-vertex-id",
-            "Whether user provided vertex ids should be enabled and JanusGraph's automatic id allocation be disabled. " +
+            "Whether user provided vertex ids should be enabled and JanusGraph's automatic vertex id allocation be disabled. " +
             "Useful when operating JanusGraph in concert with another storage system that assigns long ids but disables some " +
-            "of JanusGraph's advanced features which can lead to inconsistent data. EXPERT FEATURE - USE WITH GREAT CARE.",
-            ConfigOption.Type.FIXED, false);
+            "of JanusGraph's advanced features which can lead to inconsistent data. For example, users must ensure the vertex ids " +
+            "are unique to avoid duplication. Must use `graph.getIDManager().toVertexId(long)` to convert your id first. Once " +
+            "this is enabled, you have to provide vertex id when creating new vertices. EXPERT FEATURE - USE WITH GREAT CARE.",
+            ConfigOption.Type.GLOBAL_OFFLINE, false);
+
+    public static final ConfigOption<Boolean> ALLOW_CUSTOM_VERTEX_ID_TYPES = new ConfigOption<>(GRAPH_NS, "allow-custom-vid-types",
+            "Whether non long-type vertex ids are allowed. " + ALLOW_SETTING_VERTEX_ID.getName() +
+            " must be enabled in order to use this functionality. Currently, only string-type is supported. This does not " +
+            "prevent users from using custom ids with long type. If your storage backend does not support unordered " +
+            "scan, then some scan operations will be disabled. You cannot use this feature with Berkeley DB. EXPERT FEATURE - USE WITH GREAT CARE.",
+            ConfigOption.Type.GLOBAL_OFFLINE, false);
 
     public static final ConfigOption<String> GRAPH_NAME = new ConfigOption<>(GRAPH_NS, "graphname",
             "This config option is an optional configuration setting that you may supply when opening a graph. " +
@@ -111,22 +137,6 @@ public class GraphDatabaseConfiguration {
             "default is used and the general default associated with this setting is ignored.  An explicit " +
             "declaration of this setting overrides both the general and backend-specific defaults.",
             ConfigOption.Type.FIXED, TimestampProviders.class, TimestampProviders.MICRO);
-
-//    public static final ConfigOption<KryoInstanceCacheImpl> KRYO_INSTANCE_CACHE = new ConfigOption<>(GRAPH_NS, "kryo-instance-cache",
-//            "Controls how Kryo instances are created and cached.  Kryo instances are not " +
-//            "safe for concurrent access.  JanusGraph is responsible guaranteeing that concurrent threads use separate " +
-//            "Kryo instances.  JanusGraph defaults to a Kryo caching approach based on ThreadLocal, as recommended by the " +
-//            "Kryo documentation (https://github.com/EsotericSoftware/kryo#threading).  " +
-//            "However, these ThreadLocals are not necessarily removed when JanusGraph shuts down.  When JanusGraph runs on an " +
-//            "externally-controlled thread pool that reuses threads indefinitely, such as that provided by Tomcat, " +
-//            "these unremoved ThreadLocals can potentially cause unintended reference retention for as long as the " +
-//            "affected threads remain alive.  In that type of execution environment, consider setting this to " +
-//            "CONCURRENT_HASH_MAP.  The CHM implementation releases all references when JanusGraph is shutdown, but it " +
-//            "also subject to some synchronization-related performance overhead that the ThreadLocal-based default " +
-//            "implementation avoids.  Recent versions of Kryo include a class called KryoPool that offers another way " +
-//            "to solve this problem.  However, KryoPool is not supported in older deployments because the version of Kryo " +
-//            "used by older deployments predates KryoPool's introduction.",
-//            ConfigOption.Type.MASKABLE, KryoInstanceCacheImpl.class, KryoInstanceCacheImpl.THREAD_LOCAL);
 
     public static final ConfigOption<String> UNIQUE_INSTANCE_ID = new ConfigOption<>(GRAPH_NS,"unique-instance-id",
             "Unique identifier for this JanusGraph instance.  This must be unique among all instances " +
@@ -155,14 +165,14 @@ public class GraphDatabaseConfiguration {
             "Setting this to true will allow certain fixed values to be updated such as storage-version. This should only be used for upgrading.",
             ConfigOption.Type.MASKABLE, Boolean.class, false);
 
-    public static final ConfigOption<Boolean> UNIQUE_INSTANCE_ID_HOSTNAME = new ConfigOption<Boolean>(GRAPH_NS,"use-hostname-for-unique-instance-id",
+    public static final ConfigOption<Boolean> UNIQUE_INSTANCE_ID_HOSTNAME = new ConfigOption<>(GRAPH_NS, "use-hostname-for-unique-instance-id",
             "When this is set, this JanusGraph's unique instance identifier is set to the hostname. If " + UNIQUE_INSTANCE_ID_SUFFIX.getName() +
             " is also set, then the identifier is set to <hostname><suffix>.",
             ConfigOption.Type.LOCAL, Boolean.class, false);
 
-    public static final ConfigOption<Boolean> REPLACE_INSTANCE_IF_EXISTS = new ConfigOption<Boolean>(GRAPH_NS,"replace-instance-if-exists",
+    public static final ConfigOption<Boolean> REPLACE_INSTANCE_IF_EXISTS = new ConfigOption<>(GRAPH_NS, "replace-instance-if-exists",
             "If a JanusGraph instance with the same instance identifier already exists, the usage of this " +
-            "configuration option results in the opening of this graph anwyay.",
+            "configuration option results in the opening of this graph anyway.",
             ConfigOption.Type.LOCAL, Boolean.class, false);
 
     public static final ConfigOption<String> TITAN_COMPATIBLE_VERSIONS = new ConfigOption<>(GRAPH_NS,"titan-version",
@@ -244,27 +254,35 @@ public class GraphDatabaseConfiguration {
 
 
     public static final ConfigOption<Boolean> FORCE_INDEX_USAGE = new ConfigOption<>(QUERY_NS,"force-index",
-            "Whether JanusGraph should throw an exception if a graph query cannot be answered using an index. Doing so" +
+            "Whether JanusGraph should throw an exception if a graph query cannot be answered using an index. Doing so " +
                     "limits the functionality of JanusGraph's graph queries but ensures that slow graph queries are avoided " +
                     "on large graphs. Recommended for production use of JanusGraph.",
             ConfigOption.Type.MASKABLE, false);
 
-
     public static final ConfigOption<Boolean> PROPERTY_PREFETCHING = new ConfigOption<>(QUERY_NS,"fast-property",
-            "Whether to pre-fetch all properties on first singular vertex property access. This can eliminate backend calls on subsequent" +
+            "Whether to pre-fetch all properties on first singular vertex property access. This can eliminate backend calls on subsequent " +
                     "property access for the same vertex at the expense of retrieving all properties at once. This can be " +
-                    "expensive for vertices with many properties",
+                    "expensive for vertices with many properties. <br>" +
+                    "This setting is applicable to direct vertex properties access " +
+                    "(like `vertex.properties(\"foo\")` but not to `vertex.properties(\"foo\",\"bar\")` because the latter case " +
+                    "is not a singular property access). <br>" +
+                    "This setting is not applicable to the next Gremlin steps: `valueMap`, `propertyMap`, `elementMap`, `properties`, `values` " +
+                    "(configuration option `query.batch.properties-mode` should be used to configure their behavior).<br>" +
+                    "When `true` this setting overwrites `query.batch.has-step-mode` to `"+MultiQueryHasStepStrategyMode.ALL_PROPERTIES.getConfigName()+"` unless `"+
+                    MultiQueryHasStepStrategyMode.NONE.getConfigName()+"` mode is used.",
             ConfigOption.Type.MASKABLE, true);
 
     public static final ConfigOption<Boolean> ADJUST_LIMIT = new ConfigOption<>(QUERY_NS,"smart-limit",
             "Whether the query optimizer should try to guess a smart limit for the query to ensure responsiveness in " +
                     "light of possibly large result sets. Those will be loaded incrementally if this option is enabled.",
-            ConfigOption.Type.MASKABLE, true);
-
-    public static final ConfigOption<Boolean> USE_MULTIQUERY = new ConfigOption<>(QUERY_NS,"batch",
-            "Whether traversal queries should be batched when executed against the storage backend. This can lead to significant " +
-                    "performance improvement if there is a non-trivial latency to the backend.",
             ConfigOption.Type.MASKABLE, false);
+
+    public static final ConfigOption<Integer> HARD_MAX_LIMIT = new ConfigOption<>(QUERY_NS, "hard-max-limit",
+            "If smart-limit is disabled and no limit is given in the query, query optimizer adds a limit in light " +
+                    "of possibly large result sets. It works in the same way as smart-limit except that hard-max-limit is " +
+                    "usually a large number. Default value is Integer.MAX_VALUE which effectively disables this behavior. " +
+                    "This option does not take effect when smart-limit is enabled.",
+            ConfigOption.Type.MASKABLE, Integer.MAX_VALUE);
 
     public static final ConfigOption<String> INDEX_SELECT_STRATEGY = new ConfigOption<>(QUERY_NS, "index-select-strategy",
             String.format("Name of the index selection strategy or full class name. Following shorthands can be used: <br>" +
@@ -280,11 +298,93 @@ public class GraphDatabaseConfiguration {
                 "will give the optimizer a chance to find more efficient execution plan but also increase the optimization overhead.",
             ConfigOption.Type.MASKABLE, true);
 
-    public static final ConfigOption<Boolean> BATCH_PROPERTY_PREFETCHING = new ConfigOption<>(QUERY_NS,"batch-property-prefetch",
-            "Whether to do a batched pre-fetch of all properties on adjacent vertices against the storage backend prior to evaluating a has condition against those vertices. " +
-                    "Because these vertex properties will be loaded into the transaction-level cache of recently-used vertices when the condition is evaluated this can " +
-                    "lead to significant performance improvement if there are many edges to adjacent vertices and there is a non-trivial latency to the backend.",
-            ConfigOption.Type.MASKABLE, false);
+    // ################ BATCH QUERY CONFIGURATION #######################
+
+    public static final ConfigNamespace QUERY_BATCH_NS = new ConfigNamespace(QUERY_NS,"batch",
+        "Configuration options to configure batch queries optimization behavior");
+
+    public static final ConfigOption<Boolean> USE_MULTIQUERY = new ConfigOption<>(QUERY_BATCH_NS,"enabled",
+        "Whether traversal queries should be batched when executed against the storage backend. This can lead to significant " +
+            "performance improvement if there is a non-trivial latency to the backend. If `false` then all other configuration options under `" +
+            QUERY_BATCH_NS.toStringWithoutRoot()+"` namespace are ignored.",
+        ConfigOption.Type.MASKABLE, true);
+
+    public static final ConfigOption<Boolean> LIMITED_BATCH = new ConfigOption<>(QUERY_BATCH_NS,"limited",
+        "Configure a maximum batch size for queries against the storage backend. This can be used to ensure " +
+            "responsiveness if batches tend to grow very large. The used batch size is equivalent to the " +
+            "barrier size of a preceding `barrier()` step. If a step has no preceding `barrier()`, the default barrier of TinkerPop " +
+            "will be inserted. This option only takes effect if `"+USE_MULTIQUERY.toStringWithoutRoot()+"` is `true`.",
+        ConfigOption.Type.MASKABLE, true);
+
+    public static final ConfigOption<Integer> LIMITED_BATCH_SIZE = new ConfigOption<>(QUERY_BATCH_NS,"limited-size",
+        "Default batch size (barrier() step size) for queries. This size is applied only for cases where `"
+            + LazyBarrierStrategy.class.getSimpleName()+"` strategy didn't apply `barrier` step and where user didn't apply " +
+            "barrier step either. This option is used only when `"+LIMITED_BATCH.toStringWithoutRoot()+"` is `true`. " +
+            "Notice, value `"+Integer.MAX_VALUE+"` is considered to be unlimited.",
+        ConfigOption.Type.MASKABLE, 2500);
+
+    public static final ConfigOption<String> REPEAT_STEP_BATCH_MODE = new ConfigOption<>(QUERY_BATCH_NS,"repeat-step-mode",
+        String.format("Batch mode for `repeat` step. Used only when "+USE_MULTIQUERY.toStringWithoutRoot()+" is `true`.<br>" +
+                "These modes are controlling how the child steps with batch support are behaving if they are placed to the start " +
+                "of the `repeat`, `emit`, or `until` traversals.<br>" +
+                "Supported modes:<br>" +
+                "- `%s` - Child start steps are receiving vertices for batching from the closest `repeat` step parent only.<br>" +
+                "- `%s` - Child start steps are receiving vertices for batching from all `repeat` step parents.<br>" +
+                "- `%s` - Child start steps are receiving vertices for batching from the closest `repeat` step parent (both for the parent start and for next iterations) " +
+                "and also from all `repeat` step parents for the parent start.",
+            MultiQueryStrategyRepeatStepMode.CLOSEST_REPEAT_PARENT.getConfigName(),
+            MultiQueryStrategyRepeatStepMode.ALL_REPEAT_PARENTS.getConfigName(),
+            MultiQueryStrategyRepeatStepMode.STARTS_ONLY_OF_ALL_REPEAT_PARENTS.getConfigName()),
+        ConfigOption.Type.MASKABLE, MultiQueryStrategyRepeatStepMode.ALL_REPEAT_PARENTS.getConfigName());
+
+    public static final ConfigOption<String> HAS_STEP_BATCH_MODE = new ConfigOption<>(QUERY_BATCH_NS,"has-step-mode",
+        String.format("Properties pre-fetching mode for `has` step. Used only when `"+USE_MULTIQUERY.toStringWithoutRoot()+"` is `true`.<br>" +
+                "Supported modes:<br>" +
+                "- `%s` - Pre-fetch all vertex properties on any property access (fetches all vertex properties in a single slice query)<br>" +
+                "- `%s` - Pre-fetch necessary vertex properties for the whole chain of foldable `has` steps (uses a separate slice query per each required property)<br>" +
+                "- `%s` - Prefetch the same properties as with `%s` mode, but also prefetch<br>" +
+                "properties which may be needed in the next properties access step like `values`, `properties,` `valueMap`, `elementMap`, or `propertyMap`.<br>" +
+                "In case the next step is not one of those properties access steps then this mode behaves same as `%s`.<br>" +
+                "In case the next step is one of the properties access steps with limited scope of properties, those properties will be<br>" +
+                "pre-fetched together in the same multi-query.<br>" +
+                "In case the next step is one of the properties access steps with unspecified scope of property keys then this mode<br>" +
+                "behaves same as `%s`.<br>"+
+                "- `%s` - Prefetch the same properties as with `%s`, but in case the next step is not<br>" +
+                "`values`, `properties,` `valueMap`, `elementMap`, or `propertyMap` then acts like `%s`.<br>"+
+                "- `%s` - Skips `has` step batch properties pre-fetch optimization.<br>",
+            MultiQueryHasStepStrategyMode.ALL_PROPERTIES.getConfigName(),
+            MultiQueryHasStepStrategyMode.REQUIRED_PROPERTIES_ONLY.getConfigName(),
+            MultiQueryHasStepStrategyMode.REQUIRED_AND_NEXT_PROPERTIES.getConfigName(),
+            MultiQueryHasStepStrategyMode.REQUIRED_PROPERTIES_ONLY.getConfigName(),
+            MultiQueryHasStepStrategyMode.REQUIRED_PROPERTIES_ONLY.getConfigName(),
+            MultiQueryHasStepStrategyMode.ALL_PROPERTIES.getConfigName(),
+            MultiQueryHasStepStrategyMode.REQUIRED_AND_NEXT_PROPERTIES_OR_ALL.getConfigName(),
+            MultiQueryHasStepStrategyMode.REQUIRED_AND_NEXT_PROPERTIES.getConfigName(),
+            MultiQueryHasStepStrategyMode.ALL_PROPERTIES.getConfigName(),
+            MultiQueryHasStepStrategyMode.NONE.getConfigName()),
+        ConfigOption.Type.MASKABLE, MultiQueryHasStepStrategyMode.REQUIRED_AND_NEXT_PROPERTIES.getConfigName());
+
+    public static final ConfigOption<String> PROPERTIES_BATCH_MODE = new ConfigOption<>(QUERY_BATCH_NS,"properties-mode",
+        String.format("Properties pre-fetching mode for `values`, `properties`, `valueMap`, `propertyMap`, `elementMap` steps. Used only when `"+USE_MULTIQUERY.toStringWithoutRoot()+"` is `true`.<br>" +
+                "Supported modes:<br>" +
+                "- `%s` - Pre-fetch all vertex properties on non-singular property access (fetches all vertex properties in a single slice query). " +
+                "On single property access this mode behaves the same as `%s` mode.<br>" +
+                "- `%s` - Pre-fetch necessary vertex properties only (uses a separate slice query per each required property)<br>" +
+                "- `%s` - Skips vertex properties pre-fetching optimization.<br>",
+            MultiQueryPropertiesStrategyMode.ALL_PROPERTIES.getConfigName(),
+            MultiQueryPropertiesStrategyMode.REQUIRED_PROPERTIES_ONLY.getConfigName(),
+            MultiQueryPropertiesStrategyMode.REQUIRED_PROPERTIES_ONLY.getConfigName(),
+            MultiQueryPropertiesStrategyMode.NONE.getConfigName()),
+        ConfigOption.Type.MASKABLE, MultiQueryPropertiesStrategyMode.REQUIRED_PROPERTIES_ONLY.getConfigName());
+
+    public static final ConfigOption<String> LABEL_STEP_BATCH_MODE = new ConfigOption<>(QUERY_BATCH_NS,"label-step-mode",
+        String.format("Labels pre-fetching mode for `label()` step. Used only when `"+USE_MULTIQUERY.toStringWithoutRoot()+"` is `true`.<br>" +
+                "Supported modes:<br>" +
+                "- `%s` - Pre-fetch labels for all vertices in a batch.<br>" +
+                "- `%s` - Skips vertex labels pre-fetching optimization.<br>",
+            MultiQueryLabelStepStrategyMode.ALL.getConfigName(),
+            MultiQueryLabelStepStrategyMode.NONE.getConfigName()),
+        ConfigOption.Type.MASKABLE, MultiQueryLabelStepStrategyMode.ALL.getConfigName());
 
     // ################ SCHEMA #######################
     // ################################################
@@ -370,7 +470,7 @@ public class GraphDatabaseConfiguration {
             "How long, in milliseconds, database-level cache will keep entries after flushing them.  " +
             "This option is only useful on distributed storage backends that are capable of acknowledging writes " +
             "without necessarily making them immediately visible.",
-            ConfigOption.Type.GLOBAL_OFFLINE, 50);
+            ConfigOption.Type.MASKABLE, 50);
 
     /**
      * The default expiration time for elements held in the database level cache. This is the time period before
@@ -383,7 +483,7 @@ public class GraphDatabaseConfiguration {
             "Entries are evicted when they reach this age even if the cache has room to spare. " +
             "Set to 0 to disable expiration (cache entries live forever or until memory pressure " +
             "triggers eviction when set to 0).",
-            ConfigOption.Type.GLOBAL_OFFLINE, 10000L);
+            ConfigOption.Type.MASKABLE, 10000L);
 
     /**
      * Configures the maximum number of recently-used vertices cached by a transaction. The smaller the cache size, the
@@ -489,6 +589,13 @@ public class GraphDatabaseConfiguration {
             "Enables transactions on storage backends that support them",
             ConfigOption.Type.MASKABLE, true);
 
+    public static final ConfigOption<Boolean> ASSIGN_TIMESTAMP = new ConfigOption<>(GRAPH_NS, "assign-timestamp",
+            "Whether to use JanusGraph generated client-side timestamp in mutations if the backend supports it. " +
+            "When enabled, JanusGraph assigns one timestamp to all insertions and another slightly earlier " +
+            "timestamp to all deletions in the same batch. When this is disabled, mutation behavior depends on the backend. Some " +
+            "might use server-side timestamp (e.g. HBase) while others might use client-side timestamp generated by driver (CQL).",
+            ConfigOption.Type.LOCAL, Boolean.class, true);
+
     /**
      * Buffers graph mutations locally up to the specified number before persisting them against the storage backend.
      * Set to 0 to disable buffering. Buffering is disabled automatically if the storage backend does not support buffered mutations.
@@ -497,33 +604,25 @@ public class GraphDatabaseConfiguration {
             "Size of the batch in which mutations are persisted",
             ConfigOption.Type.MASKABLE, 1024, ConfigOption.positiveInt());
 
-    /*
-     * Number of times the database attempts to persist the transactional state to the storage layer.
-     * Persisting the state of a committed transaction might fail for various reasons, some of which are
-     * temporary such as network failures. For temporary failures, JanusGraph will re-attempt to persist the
-     * state up to the number of times specified.
+    /**
+     * Number of mutations in a transaction after which use parallel processing for transaction aggregations.
+     * This might give a boost in transaction commit time.
+     * Default value is 100.
      */
-//    public static final ConfigOption<Integer> WRITE_ATTEMPTS = new ConfigOption<>(STORAGE_NS,"write-attempts",
-//            "Number of attempts for write operations that might experience temporary failures",
-//            ConfigOption.Type.MASKABLE, 5, ConfigOption.positiveInt());
-
-    /*
-     * Number of times the database attempts to execute a read operation against the storage layer in the current transaction.
-     * A read operation might fail for various reasons, some of which are
-     * temporary such as network failures. For temporary failures, JanusGraph will re-attempt to read the
-     * state up to the number of times specified before failing the transaction
-     */
-//    public static final ConfigOption<Integer> READ_ATTEMPTS = new ConfigOption<>(STORAGE_NS,"read-attempts",
-//            "Number of attempts for read operations that might experience temporary failures",
-//            ConfigOption.Type.MASKABLE, 3, ConfigOption.positiveInt());
+    public static final ConfigOption<Integer> NUM_MUTATIONS_PARALLEL_THRESHOLD = new ConfigOption<>(STORAGE_NS,"num-mutations-parallel-threshold",
+        "This parameter determines the minimum number of mutations a transaction must have before parallel processing is applied during aggregation. " +
+            "Leveraging parallel processing can enhance the commit times for transactions involving a large number of mutations. " +
+            "However, it is advisable not to set the threshold too low (e.g., 0 or 1) due to the overhead associated with parallelism synchronization. " +
+            "This overhead is more efficiently offset in the context of larger transactions.",
+    ConfigOption.Type.MASKABLE, 100, ConfigOption.positiveInt());
 
     public static final ConfigOption<Duration> STORAGE_WRITE_WAITTIME = new ConfigOption<>(STORAGE_NS,"write-time",
-            "Maximum time (in ms) to wait for a backend write operation to complete successfully. If a backend write operation" +
+            "Maximum time (in ms) to wait for a backend write operation to complete successfully. If a backend write operation " +
             "fails temporarily, JanusGraph will backoff exponentially and retry the operation until the wait time has been exhausted. ",
             ConfigOption.Type.MASKABLE, Duration.ofSeconds(100L));
 
     public static final ConfigOption<Duration> STORAGE_READ_WAITTIME = new ConfigOption<>(STORAGE_NS,"read-time",
-            "Maximum time (in ms) to wait for a backend read operation to complete successfully. If a backend read operation" +
+            "Maximum time (in ms) to wait for a backend read operation to complete successfully. If a backend read operation " +
                     "fails temporarily, JanusGraph will backoff exponentially and retry the operation until the wait time has been exhausted. ",
             ConfigOption.Type.MASKABLE, Duration.ofSeconds(10L));
 
@@ -536,13 +635,62 @@ public class GraphDatabaseConfiguration {
             "Whether JanusGraph should attempt to parallelize storage operations",
             ConfigOption.Type.MASKABLE, true);
 
-    /**
-     * A unique identifier for the machine running the JanusGraph instance.
-     * It must be ensured that no other machine accessing the storage backend can have the same identifier.
-     */
-//    public static final ConfigOption<String> INSTANCE_RID_RAW = new ConfigOption<>(STORAGE_NS,"machine-id",
-//            "A unique identifier for the machine running the JanusGraph instance",
-//            ConfigOption.Type.LOCAL, String.class);
+    public static final ConfigNamespace PARALLEL_BACKEND_EXECUTOR_SERVICE = new ConfigNamespace(
+        STORAGE_NS,
+        "parallel-backend-executor-service",
+        "Configuration options for executor service which is used for parallel requests when `"+PARALLEL_BACKEND_OPS.toStringWithoutRoot()+"` is enabled.");
+
+    public static final ConfigOption<Integer> PARALLEL_BACKEND_EXECUTOR_SERVICE_CORE_POOL_SIZE = new ConfigOption<>(
+        PARALLEL_BACKEND_EXECUTOR_SERVICE,
+        "core-pool-size",
+        "Core pool size for executor service. May be ignored if custom executor service is used " +
+            "(depending on the implementation of the executor service)."+
+            "If not set or set to -1 the core pool size will be equal to number of processors multiplied by "
+            +ExecutorServiceBuilder.THREAD_POOL_SIZE_SCALE_FACTOR+".",
+        ConfigOption.Type.LOCAL,
+        Integer.class);
+
+    public static final ConfigOption<Integer> PARALLEL_BACKEND_EXECUTOR_SERVICE_MAX_POOL_SIZE = new ConfigOption<>(
+        PARALLEL_BACKEND_EXECUTOR_SERVICE,
+        "max-pool-size",
+        "Maximum pool size for executor service. Ignored for `fixed` and `cached` executor services. " +
+            "May be ignored if custom executor service is used (depending on the implementation of the executor service).",
+        ConfigOption.Type.LOCAL,
+        Integer.class,
+        Integer.MAX_VALUE);
+
+    public static final ConfigOption<Long> PARALLEL_BACKEND_EXECUTOR_SERVICE_KEEP_ALIVE_TIME = new ConfigOption<>(
+        PARALLEL_BACKEND_EXECUTOR_SERVICE,
+        "keep-alive-time",
+        "Keep alive time in milliseconds for executor service. When the number of threads is greater than the `"+
+            PARALLEL_BACKEND_EXECUTOR_SERVICE_CORE_POOL_SIZE.getName()+
+            "`, this is the maximum time that excess idle threads will wait for new tasks before terminating. " +
+            "Ignored for `fixed` executor service and may be ignored if custom executor service is used " +
+            "(depending on the implementation of the executor service).",
+        ConfigOption.Type.LOCAL,
+        Long.class,
+        60000L);
+
+    public static final ConfigOption<String> PARALLEL_BACKEND_EXECUTOR_SERVICE_CLASS = new ConfigOption<>(
+        PARALLEL_BACKEND_EXECUTOR_SERVICE,
+        "class",
+        "The implementation of `ExecutorService` to use. " +
+            "The full name of the class which extends `"+ ExecutorService.class.getSimpleName()+"` which has either " +
+            "a public constructor with `"+ ExecutorServiceConfiguration.class.getSimpleName()+"` argument (preferred constructor) or " +
+            "a public parameterless constructor. Other accepted options are: `fixed` - fixed thread pool of size `"
+            +PARALLEL_BACKEND_EXECUTOR_SERVICE_CORE_POOL_SIZE.getName()+"`; `cached` - cached thread pool;",
+        ConfigOption.Type.LOCAL,
+        String.class,
+        ExecutorServiceBuilder.FIXED_THREAD_POOL_CLASS);
+
+    public static final ConfigOption<Long> PARALLEL_BACKEND_EXECUTOR_SERVICE_MAX_SHUTDOWN_WAIT_TIME = new ConfigOption<>(
+        PARALLEL_BACKEND_EXECUTOR_SERVICE,
+        "max-shutdown-wait-time",
+        "Max shutdown wait time in milliseconds for executor service threads to be finished during shutdown. " +
+            "After this time threads will be interrupted (signalled with interrupt) without any additional wait time.",
+        ConfigOption.Type.LOCAL,
+        Long.class,
+        60000L);
 
     public static final ConfigOption<String[]> STORAGE_HOSTS = new ConfigOption<>(STORAGE_NS,"hostname",
             "The hostname or comma-separated list of hostnames of storage backend servers.  " +
@@ -615,16 +763,12 @@ public class GraphDatabaseConfiguration {
             "Number of times the system attempts to acquire a lock before giving up and throwing an exception",
             ConfigOption.Type.MASKABLE, 3);
 
-    /**
-     * The number of milliseconds the system waits for a lock application to be acknowledged by the storage backend.
-     * Also, the time waited at the end of all lock applications before verifying that the applications were successful.
-     * This value should be a small multiple of the average consistent write time.
-     */
     public static final ConfigOption<Duration> LOCK_WAIT = new ConfigOption<>(LOCK_NS, "wait-time",
             "Number of milliseconds the system waits for a lock application to be acknowledged by the storage backend. " +
             "Also, the time waited at the end of all lock applications before verifying that the applications were successful. " +
-            "This value should be a small multiple of the average consistent write time.",
-            ConfigOption.Type.GLOBAL_OFFLINE, Duration.ofMillis(100L));
+            "This value should be a small multiple of the average consistent write time. Although this value is maskable, it is " +
+            "highly recommended to use the same value across JanusGraph instances in production environments.",
+            ConfigOption.Type.MASKABLE, Duration.ofMillis(100L));
 
     /**
      * Number of milliseconds after which a lock is considered to have expired. Lock applications that were not released
@@ -676,15 +820,21 @@ public class GraphDatabaseConfiguration {
     public static final ConfigNamespace STORE_META_NS = new ConfigNamespace(STORAGE_NS,"meta","Meta data to include in storage backend retrievals",true);
 
     public static final ConfigOption<Boolean> STORE_META_TIMESTAMPS = new ConfigOption<>(STORE_META_NS,"timestamps",
-            "Whether to include timestamps in retrieved entries for storage backends that automatically annotated entries with timestamps",
+            "Whether to include timestamps in retrieved entries for storage backends that automatically annotated entries with timestamps. " +
+            "If enabled, timestamp can be retrieved by `element.value(ImplicitKey.TIMESTAMP.name())` or equivalently, " +
+            "`element.value(\"" + ImplicitKey.TIMESTAMP.name() + "\")`.",
             ConfigOption.Type.GLOBAL, false);
 
     public static final ConfigOption<Boolean> STORE_META_TTL = new ConfigOption<>(STORE_META_NS,"ttl",
-            "Whether to include ttl in retrieved entries for storage backends that support storage and retrieval of cell level TTL",
+            "Whether to include ttl in retrieved entries for storage backends that support storage and retrieval of cell level TTL. " +
+            "If enabled, ttl can be retrieved by `element.value(ImplicitKey.TTL.name())` or equivalently, " +
+            "`element.value(\"" + ImplicitKey.TTL.name() + "\")`.",
             ConfigOption.Type.GLOBAL, false);
 
     public static final ConfigOption<Boolean> STORE_META_VISIBILITY = new ConfigOption<>(STORE_META_NS,"visibility",
-            "Whether to include visibility in retrieved entries for storage backends that support cell level visibility",
+            "Whether to include visibility in retrieved entries for storage backends that support cell level visibility. " +
+            "If enabled, visibility can be retrieved by `element.value(ImplicitKey.VISIBILITY.name())` or equivalently, " +
+            "`element.value(\"" + ImplicitKey.VISIBILITY.name() + "\")`.",
             ConfigOption.Type.GLOBAL, true);
 
 
@@ -692,19 +842,6 @@ public class GraphDatabaseConfiguration {
     // ################################################
 
     public static final ConfigNamespace CLUSTER_NS = new ConfigNamespace(ROOT_NS,"cluster","Configuration options for multi-machine deployments");
-
-    /*
-     * Whether the id space should be partitioned for equal distribution of keys. If the keyspace is ordered, this needs to be
-     * enabled to ensure an even distribution of data. If the keyspace is random/hashed, then enabling this only has the benefit
-     * of de-congesting a single id pool in the database.
-     */
-//    public static final ConfigOption<Boolean> CLUSTER_PARTITION = new ConfigOption<Boolean>(CLUSTER_NS,"partition",
-//            "Whether the graph's element should be randomly distributed across the cluster " +
-//            "(true) or explicitly allocated to individual partition blocks based on the configured graph partitioner (false). " +
-//            "Unless explicitly set, this defaults false for stores that hash keys and defaults true for stores that preserve key order " +
-//            "(such as HBase and Cassandra with ByteOrderedPartitioner).",
-//            ConfigOption.Type.FIXED, false);
-
 
     public static final ConfigOption<Integer> CLUSTER_MAX_PARTITIONS = new ConfigOption<>(CLUSTER_NS,"max-partitions",
             "The number of virtual partition blocks created in the partitioned graph. This should be larger than the maximum expected number of nodes" +
@@ -908,7 +1045,11 @@ public class GraphDatabaseConfiguration {
     public static final Duration TRANSACTION_LOG_DEFAULT_TTL = Duration.ofDays(7);
 
     public static final ConfigOption<String> LOG_BACKEND = new ConfigOption<>(LOG_NS,"backend",
-            "Define the log backed to use",
+            "Define the log backend to use. A reserved shortcut `default` can be used to use graph's storage backend to manage logs. " +
+                "A custom log implementation can be specified by providing " +
+                "full class path which implements " +
+                "`org.janusgraph.diskstorage.log.LogManager` and accepts a single parameter " +
+                "`org.janusgraph.diskstorage.configuration.Configuration` in the public constructor.",
             ConfigOption.Type.GLOBAL_OFFLINE, "default");
 
     public static final ConfigOption<Integer> LOG_NUM_BUCKETS = new ConfigOption<>(LOG_NS,"num-buckets",
@@ -936,8 +1077,8 @@ public class GraphDatabaseConfiguration {
             ConfigOption.Type.MASKABLE, 1, ConfigOption.positiveInt());
 
     public static final ConfigOption<Duration> LOG_STORE_TTL = new ConfigOption<Duration>(LOG_NS,"ttl",
-            "Sets a TTL on all log entries, meaning" +
-                    "that all entries added to this log expire after the configured amount of time. Requires" +
+            "Sets a TTL on all log entries, meaning " +
+                    "that all entries added to this log expire after the configured amount of time. Requires " +
                     "that the log implementation supports TTL.",
             ConfigOption.Type.GLOBAL, Duration.class, sd -> null != sd && !sd.isZero());
 
@@ -1137,6 +1278,48 @@ public class GraphDatabaseConfiguration {
             "A Graphite-specific prefix for reported metrics",
             ConfigOption.Type.MASKABLE, String.class);
 
+    // ################### SCRIPT EVALUATION #######################
+    // #############################################################
+
+    public static final ConfigNamespace SCRIPT_ENGINE_NS = new ConfigNamespace(GRAPH_NS, "script-eval",
+        "Configuration options for gremlin script engine.");
+
+    public static final ConfigOption<Boolean> SCRIPT_EVAL_ENABLED = new ConfigOption<>(SCRIPT_ENGINE_NS, "enabled",
+        "Whether to enable Gremlin script evaluation. If it is enabled, a gremlin script engine will be " +
+            "instantiated together with the JanusGraph instance, with which one can use `eval` method to evaluate a gremlin " +
+            "script in plain string format. This is usually only useful when JanusGraph is used as an embedded Java library.",
+        ConfigOption.Type.MASKABLE, false);
+
+    public static final ConfigOption<String> SCRIPT_EVAL_ENGINE = new ConfigOption<>(SCRIPT_ENGINE_NS, "engine",
+        "Full class name of script engine that implements `GremlinScriptEngine` interface. Following shorthands " +
+            "can be used: <br> " +
+            "- `GremlinLangScriptEngine` (A script engine that only accepts standard gremlin queries. Anything else " +
+            "including lambda function is not accepted. We recommend using this because it's generally safer, but it is " +
+            "not guaranteed that it has no security problem.)" +
+            "- `GremlinGroovyScriptEngine` (A script engine that accepts arbitrary groovy code. This can be dangerous " +
+            "and you should use it at your own risk. See https://tinkerpop.apache.org/docs/current/reference/#script-execution " +
+            "for potential security problems.)",
+        ConfigOption.Type.MASKABLE, "GremlinLangScriptEngine", new Predicate<String>() {
+        @Override
+        public boolean apply(@Nullable String s) {
+            if (s == null) return false;
+            if (PREREGISTERED_SCRIPT_ENGINE.containsKey(s)) return true;
+            try {
+                Class<?> clazz = ClassUtils.getClass(s);
+                return GremlinScriptEngine.class.isAssignableFrom(clazz);
+            } catch (ClassNotFoundException e) {
+                return false;
+            }
+        }
+    });
+
+    private static final Map<String, String> PREREGISTERED_SCRIPT_ENGINE = Collections.unmodifiableMap(
+        new HashMap<String, String>(2) {{
+            put("GremlinLangScriptEngine", GremlinLangScriptEngine.class.getName());
+            put("GremlinGroovyScriptEngine", GremlinGroovyScriptEngine.class.getName());
+        }}
+    );
+
     public static final ConfigNamespace GREMLIN_NS = new ConfigNamespace(ROOT_NS,"gremlin",
             "Gremlin configuration options");
 
@@ -1162,6 +1345,8 @@ public class GraphDatabaseConfiguration {
     private final ModifiableConfiguration localConfiguration;
 
     private boolean readOnly;
+    private boolean evalScript;
+    private GremlinScriptEngine scriptEngine;
     private boolean flushIDs;
     private boolean forceIndexUsage;
     private boolean batchLoading;
@@ -1171,14 +1356,21 @@ public class GraphDatabaseConfiguration {
     private boolean hasDisabledSchemaConstraints;
     private Boolean propertyPrefetching;
     private boolean adjustQueryLimit;
+    private int hardMaxLimit;
     private Boolean useMultiQuery;
+    private boolean limitedBatch;
+    private int limitedBatchSize;
+    private MultiQueryStrategyRepeatStepMode repeatStepMode;
     private boolean optimizerBackendAccess;
     private IndexSelectionStrategy indexSelectionStrategy;
-    private Boolean batchPropertyPrefetching;
     private boolean allowVertexIdSetting;
+    private boolean allowCustomVertexIdType;
     private boolean logTransactions;
     private String metricsPrefix;
     private String unknownIndexKeyName;
+    private MultiQueryHasStepStrategyMode hasStepStrategyMode;
+    private MultiQueryPropertiesStrategyMode propertiesStrategyMode;
+    private MultiQueryLabelStepStrategyMode labelStepStrategyMode;
 
     private StoreFeatures storeFeatures = null;
 
@@ -1193,12 +1385,20 @@ public class GraphDatabaseConfiguration {
 
     public static ModifiableConfiguration buildGraphConfiguration() {
         return new ModifiableConfiguration(ROOT_NS,
-            new CommonsConfiguration(new BaseConfiguration()),
+            new CommonsConfiguration(ConfigurationUtil.createBaseConfiguration()),
             BasicConfiguration.Restriction.NONE);
     }
 
     public boolean isReadOnly() {
         return readOnly;
+    }
+
+    public boolean hasScriptEval() {
+        return evalScript;
+    }
+
+    public GremlinScriptEngine getScriptEngine() {
+        return scriptEngine;
     }
 
     public boolean hasFlushIDs() {
@@ -1241,6 +1441,10 @@ public class GraphDatabaseConfiguration {
         return allowVertexIdSetting;
     }
 
+    public boolean allowCustomVertexIdType() {
+        return allowCustomVertexIdType;
+    }
+
     public Duration getMaxCommitTime() {
         return configuration.get(MAX_COMMIT_TIME);
     }
@@ -1261,6 +1465,18 @@ public class GraphDatabaseConfiguration {
         return useMultiQuery;
     }
 
+    public boolean limitedBatch() {
+        return limitedBatch;
+    }
+
+    public int limitedBatchSize() {
+        return limitedBatchSize;
+    }
+
+    public MultiQueryStrategyRepeatStepMode repeatStepMode() {
+        return repeatStepMode;
+    }
+
     public boolean optimizerBackendAccess() {
         return optimizerBackendAccess;
     }
@@ -1269,12 +1485,24 @@ public class GraphDatabaseConfiguration {
         return indexSelectionStrategy;
     }
 
-    public boolean batchPropertyPrefetching() {
-        return batchPropertyPrefetching;
+    public MultiQueryHasStepStrategyMode hasStepStrategyMode() {
+        return hasStepStrategyMode;
+    }
+
+    public MultiQueryPropertiesStrategyMode propertiesStrategyMode() {
+        return propertiesStrategyMode;
+    }
+
+    public MultiQueryLabelStepStrategyMode labelStepStrategyMode() {
+        return labelStepStrategyMode;
     }
 
     public boolean adjustQueryLimit() {
         return adjustQueryLimit;
+    }
+
+    public int getHardMaxLimit() {
+        return hardMaxLimit;
     }
 
     public String getUnknownIndexKeyName() {
@@ -1347,18 +1575,26 @@ public class GraphDatabaseConfiguration {
         else return new StandardSchemaCache(retriever);
     }
 
-    public org.apache.commons.configuration.Configuration getLocalConfiguration() {
-        org.apache.commons.configuration.Configuration config = ((CommonsConfiguration)localConfiguration.getConfiguration()).getCommonConfiguration();
+    public org.apache.commons.configuration2.Configuration getLocalConfiguration() {
+        org.apache.commons.configuration2.Configuration config = ((CommonsConfiguration)localConfiguration.getConfiguration()).getCommonConfiguration();
         config.setProperty(Graph.GRAPH, JanusGraphFactory.class.getName());
         return config;
     }
 
-    public org.apache.commons.configuration.Configuration getConfigurationAtOpen() {
-        return ReadConfigurationConverter.getInstance().convert(configurationAtOpen);
+    public org.apache.commons.configuration2.Configuration getConfigurationAtOpen() {
+        return ReadConfigurationConverter.getInstance().convertToBaseConfiguration(configurationAtOpen);
     }
 
     private void preLoadConfiguration() {
         readOnly = configuration.get(STORAGE_READONLY);
+        evalScript = configuration.get(SCRIPT_EVAL_ENABLED);
+        if (evalScript) {
+            String scriptEngineName = configuration.get(SCRIPT_EVAL_ENGINE);
+            if (PREREGISTERED_SCRIPT_ENGINE.containsKey(scriptEngineName)) {
+                scriptEngineName = PREREGISTERED_SCRIPT_ENGINE.get(scriptEngineName);
+            }
+            scriptEngine = ConfigurationUtil.instantiate(scriptEngineName);
+        }
         flushIDs = configuration.get(IDS_FLUSH);
         forceIndexUsage = configuration.get(FORCE_INDEX_USAGE);
         batchLoading = configuration.get(STORAGE_BATCH);
@@ -1385,17 +1621,38 @@ public class GraphDatabaseConfiguration {
 
         propertyPrefetching = configuration.get(PROPERTY_PREFETCHING);
         useMultiQuery = configuration.get(USE_MULTIQUERY);
+        limitedBatch = configuration.get(LIMITED_BATCH);
+        limitedBatchSize = configuration.get(LIMITED_BATCH_SIZE);
+        repeatStepMode = selectExactConfig(REPEAT_STEP_BATCH_MODE, MultiQueryStrategyRepeatStepMode.values());
+        hasStepStrategyMode = selectExactConfig(HAS_STEP_BATCH_MODE, MultiQueryHasStepStrategyMode.values());
+        propertiesStrategyMode = selectExactConfig(PROPERTIES_BATCH_MODE, MultiQueryPropertiesStrategyMode.values());
+        labelStepStrategyMode = selectExactConfig(LABEL_STEP_BATCH_MODE, MultiQueryLabelStepStrategyMode.values());
+
         indexSelectionStrategy = Backend.getImplementationClass(configuration, configuration.get(INDEX_SELECT_STRATEGY),
             REGISTERED_INDEX_SELECTION_STRATEGIES);
         optimizerBackendAccess = configuration.get(OPTIMIZER_BACKEND_ACCESS);
-        batchPropertyPrefetching = configuration.get(BATCH_PROPERTY_PREFETCHING);
+
         adjustQueryLimit = configuration.get(ADJUST_LIMIT);
+        hardMaxLimit = configuration.get(HARD_MAX_LIMIT);
+
         allowVertexIdSetting = configuration.get(ALLOW_SETTING_VERTEX_ID);
+        allowCustomVertexIdType = configuration.get(ALLOW_CUSTOM_VERTEX_ID_TYPES);
+        if (allowCustomVertexIdType && !allowVertexIdSetting) {
+            throw new JanusGraphConfigurationException(String.format("%s is enabled but %s is disabled",
+                ALLOW_CUSTOM_VERTEX_ID_TYPES.getName(), ALLOW_SETTING_VERTEX_ID.getName()));
+        }
+
         logTransactions = configuration.get(SYSTEM_LOG_TRANSACTIONS);
 
         unknownIndexKeyName = configuration.get(IGNORE_UNKNOWN_INDEX_FIELD) ? UNKNOWN_FIELD_NAME : null;
 
         configureMetrics();
+    }
+
+    private <T extends ConfigName> T selectExactConfig(ConfigOption<String> configOption, T ... configs){
+        final String configName = configuration.get(configOption);
+        T resultConfig = Arrays.stream(configs).filter(config -> config.getConfigName().equals(configName)).findAny().orElse(null);
+        return Preconditions.checkNotNull(resultConfig, configName+" is not recognized as one of the supported values of `"+configOption.toStringWithoutRoot()+"`");
     }
 
     private void configureMetrics() {

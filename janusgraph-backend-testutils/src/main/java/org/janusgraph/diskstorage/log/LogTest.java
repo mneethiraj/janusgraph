@@ -20,11 +20,11 @@ import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.StaticBuffer;
 import org.janusgraph.diskstorage.util.BufferUtil;
 import org.janusgraph.diskstorage.util.StaticArrayBuffer;
-
-import org.junit.jupiter.api.*;
-
-import static org.junit.jupiter.api.Assertions.*;
-
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,6 +36,11 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * Tests general log implementations
@@ -94,7 +99,8 @@ public abstract class LogTest {
         simpleSendReceive(2000,1);
     }
 
-    @RepeatedIfExceptionsTest(repeats = 4, minSuccess = 2)
+    // flaky test: https://github.com/JanusGraph/janusgraph/issues/1445
+    @RepeatedIfExceptionsTest(repeats = 3)
     @Tag(LogTest.requiresOrderPreserving)
     public void testMultipleReadersOnSingleLogSerial() throws Exception {
         sendReceive(4, 2000, 5, true, TIMEOUT_MS);

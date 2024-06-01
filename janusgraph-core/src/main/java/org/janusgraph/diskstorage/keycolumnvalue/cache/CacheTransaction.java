@@ -15,7 +15,11 @@
 package org.janusgraph.diskstorage.keycolumnvalue.cache;
 
 import com.google.common.base.Preconditions;
-import org.janusgraph.diskstorage.*;
+import org.janusgraph.diskstorage.BackendException;
+import org.janusgraph.diskstorage.BaseTransactionConfig;
+import org.janusgraph.diskstorage.Entry;
+import org.janusgraph.diskstorage.LoggableTransaction;
+import org.janusgraph.diskstorage.StaticBuffer;
 import org.janusgraph.diskstorage.keycolumnvalue.KCVMutation;
 import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStore;
 import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStoreManager;
@@ -24,9 +28,15 @@ import org.janusgraph.diskstorage.util.BackendOperation;
 import org.janusgraph.diskstorage.util.BufferUtil;
 import org.janusgraph.graphdb.database.idhandling.VariableLong;
 import org.janusgraph.graphdb.database.serialize.DataOutput;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 
 /**
@@ -34,21 +44,27 @@ import java.util.concurrent.Callable;
  */
 public class CacheTransaction implements StoreTransaction, LoggableTransaction {
 
+    private final Logger log = LoggerFactory.getLogger(CacheTransaction.class);
+
     private final StoreTransaction tx;
     private final KeyColumnValueStoreManager manager;
     private final boolean batchLoading;
     private final int persistChunkSize;
+
+    private final int numMutationsParallelThreshold;
     private final Duration maxWriteTime;
 
     private int numMutations;
     private final Map<KCVSCache, Map<StaticBuffer, KCVEntryMutation>> mutations;
 
     public CacheTransaction(StoreTransaction tx, KeyColumnValueStoreManager manager,
-                             int persistChunkSize, Duration maxWriteTime, boolean batchLoading) {
-        this(tx, manager, persistChunkSize, maxWriteTime, batchLoading, 2);
+                             int persistChunkSize, int numMutationsParallelThreshold,
+                            Duration maxWriteTime, boolean batchLoading) {
+        this(tx, manager, persistChunkSize, numMutationsParallelThreshold, maxWriteTime, batchLoading, 2);
     }
 
-    public CacheTransaction(StoreTransaction tx, KeyColumnValueStoreManager manager, int persistChunkSize,
+    public CacheTransaction(StoreTransaction tx, KeyColumnValueStoreManager manager,
+                            int persistChunkSize, int numMutationsParallelThreshold,
                             Duration maxWriteTime, boolean batchLoading, int expectedNumStores) {
         Preconditions.checkArgument(tx != null && manager != null && persistChunkSize > 0);
         this.tx = tx;
@@ -56,6 +72,7 @@ public class CacheTransaction implements StoreTransaction, LoggableTransaction {
         this.batchLoading = batchLoading;
         this.numMutations = 0;
         this.persistChunkSize = persistChunkSize;
+        this.numMutationsParallelThreshold = numMutationsParallelThreshold;
         this.maxWriteTime = maxWriteTime;
         this.mutations = new HashMap<>(expectedNumStores);
     }
@@ -80,6 +97,7 @@ public class CacheTransaction implements StoreTransaction, LoggableTransaction {
         numMutations += m.getTotalMutations();
 
         if (batchLoading && numMutations >= persistChunkSize) {
+            log.debug("Flushing mutations to storage numMutations={}, persistChunkSize={}", numMutations, persistChunkSize);
             flushInternal();
         }
     }
@@ -121,8 +139,12 @@ public class CacheTransaction implements StoreTransaction, LoggableTransaction {
     private void flushInternal() throws BackendException {
         if (numMutations > 0) {
             //Consolidate all mutations prior to persistence to ensure that no addition accidentally gets swallowed by a delete
-            for (Map<StaticBuffer, KCVEntryMutation> store : mutations.values()) {
-                for (KCVEntryMutation mut : store.values()) mut.consolidate();
+            if(numMutations < numMutationsParallelThreshold) {
+                for (Map<StaticBuffer, KCVEntryMutation> store : mutations.values()) {
+                    for (KCVEntryMutation mut : store.values()) mut.consolidate();
+                }
+            } else {
+                mutations.values().parallelStream().forEach(store -> store.values().forEach(KCVEntryMutation::consolidate));
             }
 
             //Chunk up mutations

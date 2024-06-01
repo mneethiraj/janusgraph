@@ -14,29 +14,29 @@
 
 package org.janusgraph.core;
 
-import org.janusgraph.graphdb.configuration.builder.GraphDatabaseConfigurationBuilder;
-import org.janusgraph.graphdb.management.ConfigurationManagementGraph;
-import org.janusgraph.graphdb.management.JanusGraphManager;
-import org.janusgraph.graphdb.database.management.ManagementSystem;
-import org.janusgraph.graphdb.database.StandardJanusGraph;
+import com.google.common.base.Preconditions;
+import org.apache.commons.configuration2.Configuration;
+import org.apache.commons.configuration2.MapConfiguration;
+import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
+import org.janusgraph.graphdb.configuration.builder.GraphDatabaseConfigurationBuilder;
+import org.janusgraph.graphdb.database.StandardJanusGraph;
+import org.janusgraph.graphdb.database.management.ManagementSystem;
+import org.janusgraph.graphdb.management.ConfigurationManagementGraph;
+import org.janusgraph.graphdb.management.JanusGraphManager;
 import org.janusgraph.graphdb.management.utils.ConfigurationManagementGraphNotEnabledException;
-import static org.janusgraph.graphdb.management.JanusGraphManager.JANUS_GRAPH_MANAGER_EXPECTED_STATE_MSG;
-
-import org.apache.tinkerpop.gremlin.structure.Graph;
-import org.apache.commons.configuration.Configuration;
-import org.apache.commons.configuration.MapConfiguration;
-
-import com.google.common.base.Preconditions;
-
-import java.util.Map;
-import java.util.List;
-import java.util.Set;
-import java.util.Objects;
-import java.util.stream.Collectors;
+import org.janusgraph.util.system.ConfigurationUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+
+import static org.janusgraph.graphdb.management.JanusGraphManager.JANUS_GRAPH_MANAGER_EXPECTED_STATE_MSG;
 
 /**
  * This class provides static methods to: 1) create graph references denoted by a
@@ -86,7 +86,7 @@ public class ConfiguredGraphFactory {
 
         final JanusGraphManager jgm = JanusGraphManagerUtility.getInstance();
         Preconditions.checkNotNull(jgm, JANUS_GRAPH_MANAGER_EXPECTED_STATE_MSG);
-        final CommonsConfiguration config = new CommonsConfiguration(new MapConfiguration(templateConfigMap));
+        final CommonsConfiguration config = new CommonsConfiguration(ConfigurationUtil.loadMapConfiguration(templateConfigMap));
         final JanusGraph g = (JanusGraph) jgm.openGraph(graphName, (String gName) -> new StandardJanusGraph(new GraphDatabaseConfigurationBuilder().build(config)));
         configManagementGraph.createConfiguration(new MapConfiguration(templateConfigMap));
         return g;
@@ -111,7 +111,7 @@ public class ConfiguredGraphFactory {
                                 "Please create configuration for this graph using the ConfigurationManagementGraph#createConfiguration API.");
         final JanusGraphManager jgm = JanusGraphManagerUtility.getInstance();
         Preconditions.checkNotNull(jgm, JANUS_GRAPH_MANAGER_EXPECTED_STATE_MSG);
-        final CommonsConfiguration config = new CommonsConfiguration(new MapConfiguration(graphConfigMap));
+        final CommonsConfiguration config = new CommonsConfiguration(ConfigurationUtil.loadMapConfiguration(graphConfigMap));
         return (JanusGraph) jgm.openGraph(graphName, (String gName) -> new StandardJanusGraph(new GraphDatabaseConfigurationBuilder().build(config)));
     }
 
@@ -121,10 +121,7 @@ public class ConfiguredGraphFactory {
      */
     public static Set<String> getGraphNames() {
         final ConfigurationManagementGraph configManagementGraph = getConfigGraphManagementInstance();
-        final List<Map<String, Object>> configurations = configManagementGraph.getConfigurations();
-        return configurations.stream()
-            .map(elem -> (String) elem.getOrDefault(ConfigurationManagementGraph.PROPERTY_GRAPH_NAME, null))
-            .filter(Objects::nonNull).collect(Collectors.toSet());
+        return configManagementGraph.getGraphNames();
     }
 
     /**
@@ -139,6 +136,7 @@ public class ConfiguredGraphFactory {
         final JanusGraphManager jgm = JanusGraphManagerUtility.getInstance();
         Preconditions.checkNotNull(jgm, JANUS_GRAPH_MANAGER_EXPECTED_STATE_MSG);
         final Graph graph = jgm.removeGraph(graphName);
+        jgm.removeTraversalSource(toTraversalSourceName(graphName));
         if (null != graph) graph.close();
         return (JanusGraph) graph;
     }
@@ -152,13 +150,64 @@ public class ConfiguredGraphFactory {
      *
      * <p><b>WARNING: This is an irreversible operation that will delete all graph and index data.</b></p>
      * @param graphName String graphName. Corresponding graph can be open or closed.
-     * @throws BackendException If an error occurs during deletion
-     * @throws ConfigurationManagementGraphNotEnabledException If ConfigurationManagementGraph not
      */
-    public static void drop(String graphName) throws Exception {
-        final StandardJanusGraph graph = (StandardJanusGraph) ConfiguredGraphFactory.close(graphName);
-        JanusGraphFactory.drop(graph);
-        removeConfiguration(graphName);
+    public static void drop(String graphName) {
+        final JanusGraphManager jgm = JanusGraphManagerUtility.getInstance();
+        Preconditions.checkNotNull(jgm, JANUS_GRAPH_MANAGER_EXPECTED_STATE_MSG);
+
+        final StandardJanusGraph graph = (StandardJanusGraph) jgm.getGraph(graphName);
+        if (graph != null) {
+            // Evict the graph from the cache in all nodes in the cluster
+            DropGraphOnEvictionTrigger dropTrigger = new DropGraphOnEvictionTrigger(graphName, graph, getConfigGraphManagementInstance());
+            removeGraphFromCache(graph, dropTrigger);
+            // Block the current thread until the drop operation finish
+            dropTrigger.waitUntilDropFinish();
+        } else {
+            // cannot open graph, do nothing
+            log.error(String.format("Failed to open graph %s. Thus, it and its traversal will not be bound on this server.", graphName));
+        }
+    }
+
+    /**
+     * This trigger will fire when the give graph was evicted from all the nodes in the cluster.
+     */
+    private static class DropGraphOnEvictionTrigger implements Callable<Boolean> {
+        private static final Logger log = LoggerFactory.getLogger(DropGraphOnEvictionTrigger.class);
+        private final String graphName;
+        private final JanusGraph graph;
+        private final ConfigurationManagementGraph configManagementGraph;
+        private final CountDownLatch latch;
+
+        private DropGraphOnEvictionTrigger(String graphName, JanusGraph graph, ConfigurationManagementGraph configManagementGraph) {
+            this.graphName = graphName;
+            this.graph = graph;
+            this.configManagementGraph = configManagementGraph;
+            this.latch = new CountDownLatch(1);
+        }
+
+        @Override
+        public Boolean call() throws BackendException {
+            try {
+                log.info("Graph {} has been removed from the graph cache on every JanusGraph node in the cluster.", graphName);
+                log.warn("Attempting to drop the graph {}.", graphName);
+                configManagementGraph.removeConfiguration(graphName);
+                JanusGraphFactory.drop(graph);
+                log.warn("Graph {} has been dropped.", graphName);
+                return true;
+            } finally {
+                latch.countDown();
+            }
+        }
+
+        public void waitUntilDropFinish() {
+            log.debug("Waiting for graph {} to be evicted from the cache in all JanusGraph nodes...", graphName);
+            try {
+                latch.await();
+            } catch (InterruptedException e)  {
+                Thread.currentThread().interrupt();
+                log.error("Thread interrupted while waiting for graph to be dropped.", e);
+            }
+        }
     }
 
     private static ConfigurationManagementGraph getConfigGraphManagementInstance() {
@@ -228,24 +277,38 @@ public class ConfiguredGraphFactory {
         configManagementGraph.removeConfiguration(graphName);
     }
 
+    /**
+     * Remove configuration corresponding to supplied graphName; we remove supplied existing
+     * properties.
+     * NOTE: The updated configuration is only guaranteed to take effect if the {@link Graph} corresponding to
+     * graphName has been closed and reopened on every JanusGraph Node.
+     */
+    public static void removeConfiguration(final String graphName, final Set<String> configKeys) {
+        final ConfigurationManagementGraph configManagementGraph = getConfigGraphManagementInstance();
+        removeGraphFromCache(graphName);
+        configManagementGraph.removeConfiguration(graphName, configKeys);
+    }
+
     private static void removeGraphFromCache(final String graphName) {
 
         try {
             final JanusGraph graph = open(graphName);
-            removeGraphFromCache(graph);
+            removeGraphFromCache(graph, null);
         } catch (Exception e) {
             // cannot open graph, do nothing
             log.error(String.format("Failed to open graph %s with the following error:\n %s.\n" +
-                "Thus, it and its traversal will not be bound on this server.", graphName, e.toString()));
+                "Thus, it and its traversal will not be bound on this server.", graphName, e));
         }
     }
 
-    private static void removeGraphFromCache(final JanusGraph graph) {
+    private static void removeGraphFromCache(final JanusGraph graph, Callable<Boolean> evictionTrigger) {
         final JanusGraphManager jgm = JanusGraphManagerUtility.getInstance();
         Preconditions.checkNotNull(jgm, JANUS_GRAPH_MANAGER_EXPECTED_STATE_MSG);
-        jgm.removeGraph(((StandardJanusGraph) graph).getGraphName());
+        final String graphName = ((StandardJanusGraph) graph).getGraphName();
+        jgm.removeGraph(graphName);
+        jgm.removeTraversalSource(toTraversalSourceName(graphName));
         final ManagementSystem mgmt = (ManagementSystem) graph.openManagement();
-        mgmt.evictGraphFromCache();
+        mgmt.evictGraphFromCache(evictionTrigger);
         mgmt.commit();
     }
 
@@ -263,9 +326,9 @@ public class ConfiguredGraphFactory {
      *
      * @return Map&lt;String, Object&gt;
      */
-    public static Map<String, Object> getConfiguration(final String configName) {
+    public static Map<String, Object> getConfiguration(final String graphName) {
         final ConfigurationManagementGraph configManagementGraph = getConfigGraphManagementInstance();
-        return configManagementGraph.getConfiguration(configName);
+        return configManagementGraph.getConfiguration(graphName);
     }
 
     /**
@@ -287,6 +350,15 @@ public class ConfiguredGraphFactory {
     public static Map<String, Object> getTemplateConfiguration() {
         final ConfigurationManagementGraph configManagementGraph = getConfigGraphManagementInstance();
         return configManagementGraph.getTemplateConfiguration();
+    }
+
+    /**
+     * Get traversal source name given a graph name.
+     * @param graphName
+     * @return A traversal source name for the provided graph name
+     */
+    public static String toTraversalSourceName(String graphName){
+        return graphName + "_traversal";
     }
 }
 

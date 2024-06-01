@@ -14,22 +14,9 @@
 
 package org.janusgraph.olap;
 
-import org.janusgraph.core.Cardinality;
-import org.janusgraph.core.JanusGraphComputer;
-import org.janusgraph.core.JanusGraphTransaction;
-import org.janusgraph.core.JanusGraphVertex;
-import org.janusgraph.core.Multiplicity;
-import org.janusgraph.core.PropertyKey;
-import org.janusgraph.core.Transaction;
-import org.janusgraph.diskstorage.keycolumnvalue.scan.ScanJob;
-import org.janusgraph.diskstorage.keycolumnvalue.scan.ScanMetrics;
-import org.janusgraph.graphdb.JanusGraphBaseTest;
-import org.janusgraph.graphdb.olap.QueryContainer;
-import org.janusgraph.graphdb.olap.VertexJobConverter;
-import org.janusgraph.graphdb.olap.VertexScanJob;
-import org.janusgraph.graphdb.olap.computer.FulgoraGraphComputer;
-import org.janusgraph.graphdb.olap.job.GhostVertexRemover;
-
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Iterables;
 import org.apache.tinkerpop.gremlin.process.computer.ComputerResult;
 import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
 import org.apache.tinkerpop.gremlin.process.computer.KeyValue;
@@ -52,10 +39,19 @@ import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
+import org.janusgraph.core.Cardinality;
+import org.janusgraph.core.JanusGraphComputer;
+import org.janusgraph.core.JanusGraphTransaction;
+import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.core.Multiplicity;
+import org.janusgraph.core.PropertyKey;
+import org.janusgraph.core.Transaction;
+import org.janusgraph.diskstorage.keycolumnvalue.scan.ScanMetrics;
+import org.janusgraph.graphdb.JanusGraphBaseTest;
+import org.janusgraph.graphdb.olap.QueryContainer;
+import org.janusgraph.graphdb.olap.VertexScanJob;
+import org.janusgraph.graphdb.olap.computer.FulgoraGraphComputer;
+import org.janusgraph.graphdb.olap.job.GhostVertexRemover;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
@@ -97,18 +93,6 @@ public abstract class OLAPTest extends JanusGraphBaseTest {
     @BeforeEach
     public void setUp(TestInfo testInfo) throws Exception {
         super.setUp(testInfo);
-    }
-
-    private ScanMetrics executeScanJob(VertexScanJob job) throws Exception {
-        return executeScanJob(VertexJobConverter.convert(graph,job));
-    }
-
-    private ScanMetrics executeScanJob(ScanJob job) throws Exception {
-        return graph.getBackend().buildEdgeScanJob()
-                .setNumProcessingThreads(2)
-                .setWorkBlockSize(100)
-                .setJob(job)
-                .execute().get();
     }
 
     private int generateRandomGraph(int numV) {
@@ -236,9 +220,9 @@ public abstract class OLAPTest extends JanusGraphBaseTest {
         v2.addEdge("knows",v3);
         v1.addEdge("knows",v2);
         newTx();
-        long v3id = getId(v3);
-        long v1id = getId(v1);
-        assertTrue(v3id>0);
+        Object v3id = getId(v3);
+        Object v1id = getId(v1);
+        assertTrue(!(v3id instanceof Number) || (long) v3id > 0);
 
         v3 = getV(tx, v3id);
         assertNotNull(v3);
@@ -258,7 +242,7 @@ public abstract class OLAPTest extends JanusGraphBaseTest {
         assertNull(getV(tx,v3id));
         v1 = getV(tx, v1id);
         assertNotNull(v1);
-        assertEquals(v3id, v1.query().direction(Direction.IN).labels("knows").vertices().iterator().next().longId());
+        assertEquals(v3id, v1.query().direction(Direction.IN).labels("knows").vertices().iterator().next().id());
         tx.commit();
         mgmt.commit();
 
@@ -276,8 +260,19 @@ public abstract class OLAPTest extends JanusGraphBaseTest {
 
     @Test
     public void testBasicComputeJob() {
-        GraphTraversalSource g = graph.traversal().withComputer(FulgoraGraphComputer.class);
-        System.out.println(g.V().count().next());
+        int numV = 1000;
+        for (int i = 0; i < numV; i++) {
+            Vertex v = graph.addVertex();
+            v.addEdge("loop", v, "val", i % 2);
+        }
+        graph.tx().commit();
+        long startTime = System.currentTimeMillis();
+        // in JanusGraph, withComputer() is equivalent to withComputer(FulgoraGraphComputer.class)
+        GraphTraversalSource g = graph.traversal().withComputer();
+        long result = g.V().outE().has("val", 0).count().next();
+        long elapsedTime = System.currentTimeMillis() - startTime;
+        log.info("elapsed time = {}", elapsedTime);
+        assertEquals(numV / 2, result);
     }
 
     @Test
@@ -356,8 +351,8 @@ public abstract class OLAPTest extends JanusGraphBaseTest {
             for (JanusGraphVertex v : gview.query().vertices()) {
                 long degree2 = ((Integer)v.value(DegreeCounter.DEGREE)).longValue();
                 long actualDegree2 = 0;
-                for (Object w : v.query().direction(Direction.OUT).vertices()) {
-                    actualDegree2 += Iterables.size(((JanusGraphVertex) w).query().direction(Direction.OUT).vertices());
+                for (JanusGraphVertex w : v.query().direction(Direction.OUT).vertices()) {
+                    actualDegree2 += Iterables.size(w.query().direction(Direction.OUT).vertices());
                 }
                 assertEquals(actualDegree2,degree2);
             }
@@ -424,7 +419,6 @@ public abstract class OLAPTest extends JanusGraphBaseTest {
     public static class DegreeCounter extends StaticVertexProgram<Integer> {
 
         public static final String DEGREE = "degree";
-        public static final MessageCombiner<Integer> ADDITION = (a,b) -> a+b;
         public static final MessageScope.Local<Integer> DEG_MSG = MessageScope.Local.of(__::inE);
 
         private final int length;
@@ -447,7 +441,7 @@ public abstract class OLAPTest extends JanusGraphBaseTest {
             if (memory.isInitialIteration()) {
                 messenger.sendMessage(DEG_MSG, 1);
             } else {
-                int degree = IteratorUtils.stream(messenger.receiveMessages()).reduce(0, (a, b) -> a + b);
+                int degree = IteratorUtils.stream(messenger.receiveMessages()).reduce(0, Integer::sum);
                 vertex.property(VertexProperty.Cardinality.single, DEGREE, degree);
                 if (memory.getIteration()<length) messenger.sendMessage(DEG_MSG, degree);
             }
@@ -470,7 +464,7 @@ public abstract class OLAPTest extends JanusGraphBaseTest {
 
         @Override
         public Optional<MessageCombiner<Integer>> getMessageCombiner() {
-            return Optional.of(ADDITION);
+            return Optional.of(Integer::sum);
         }
 
         @Override
@@ -526,7 +520,7 @@ public abstract class OLAPTest extends JanusGraphBaseTest {
         @Override
         public Map<Long, Integer> generateFinalResult(Iterator<KeyValue<Long, Integer>> keyValues) {
             Map<Long,Integer> result = new HashMap<>();
-            for (; keyValues.hasNext(); ) {
+            while (keyValues.hasNext()) {
                 KeyValue<Long, Integer> r =  keyValues.next();
                 result.put(r.getKey(),r.getValue());
             }
@@ -620,6 +614,7 @@ public abstract class OLAPTest extends JanusGraphBaseTest {
         final JanusGraphComputer computer = graph.compute();
         computer.resultMode(JanusGraphComputer.ResultMode.NONE);
         computer.workers(4);
+        computer.vertexProperties(__.properties("dummy"));
         computer.program(PageRankVertexProgram.build().iterations(10).vertexCount(numV).dampingFactor(alpha).create(graph));
         computer.mapReduce(PageRankMapReduce.build().create());
         ComputerResult result = computer.submit().get();

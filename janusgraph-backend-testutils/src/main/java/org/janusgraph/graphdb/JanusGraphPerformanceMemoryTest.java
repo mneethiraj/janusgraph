@@ -14,38 +14,61 @@
 
 package org.janusgraph.graphdb;
 
-import static org.janusgraph.testutil.JanusGraphAssert.assertCount;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.util.Random;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.commons.math.stat.descriptive.SummaryStatistics;
+import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.apache.tinkerpop.gremlin.structure.Edge;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
-import org.junit.Rule;
-import org.junit.rules.TestRule;
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
-
-import org.janusgraph.core.PropertyKey;
+import org.janusgraph.TestCategory;
 import org.janusgraph.core.JanusGraphEdge;
 import org.janusgraph.core.JanusGraphTransaction;
 import org.janusgraph.core.JanusGraphVertex;
-import org.janusgraph.TestCategory;
-import org.janusgraph.testutil.JUnitBenchmarkProvider;
+import org.janusgraph.core.PropertyKey;
 import org.janusgraph.testutil.MemoryAssess;
+import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.Tag;
+
+import java.util.List;
+import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.janusgraph.testutil.JanusGraphAssert.assertCount;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * These tests focus on the in-memory data structures of individual transactions and how they hold up to high memory pressure
  */
 @Tag(TestCategory.MEMORY_TESTS)
 public abstract class JanusGraphPerformanceMemoryTest extends JanusGraphBaseTest {
 
-    @Rule
-    public TestRule benchmark = JUnitBenchmarkProvider.get();
+    @RepeatedTest(10)
+    public void edgeById() {
+        Vertex v1 = graph.traversal()
+                         .addV("V1")
+                         .property("p1", "1").next();
 
-    @Test
+        Vertex v2 = graph.traversal()
+                         .addV("V1")
+                         .property("p1", "1").next();
+        for (int i = 0; i < 10000; i++) {
+            graph.traversal()
+                 .V(v1)
+                 .addE("E")
+                 .to(v2)
+                 .property("time", i)
+                 .iterate();
+        }
+        graph.traversal().tx().commit();
+
+        List<Edge> edges = graph.traversal().E().toList();
+
+        for (Edge edge : edges) {
+            graph.traversal().E(edge).count().next();
+        }
+        assertEquals(10000, graph.traversal().E(edges).count().next());
+    }
+
+    @RepeatedTest(10)
     public void testMemoryLeakage() {
         long memoryBaseline = 0;
         SummaryStatistics stats = new SummaryStatistics();
@@ -74,7 +97,7 @@ public abstract class JanusGraphPerformanceMemoryTest extends JanusGraphBaseTest
         assertTrue(stats.getStandardDeviation() < stats.getMin());
     }
 
-    @Test
+    @RepeatedTest(10)
     public void testTransactionalMemory() throws Exception {
         makeVertexIndexedUniqueKey("uid",Long.class);
         makeKey("name",String.class);
@@ -128,9 +151,9 @@ public abstract class JanusGraphPerformanceMemoryTest extends JanusGraphBaseTest
                     JanusGraphVertex v = getVertex(tx,"uid", random.nextInt(maxUID) + 1);
                     assertCount(2, v.properties());
                     int count = 0;
-                    for (Object e : v.query().direction(Direction.BOTH).edges()) {
+                    for (JanusGraphEdge e : v.query().direction(Direction.BOTH).edges()) {
                         count++;
-                        assertTrue(((JanusGraphEdge) e).<Integer>value("time") >= 0);
+                        assertTrue(e.<Integer>value("time") >= 0);
                     }
                     assertTrue(count <= 2);
 //                        if (t%(trials/10)==0) System.out.println(t);

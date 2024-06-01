@@ -23,6 +23,8 @@ public enum ElasticMajorVersion {
 
     SEVEN(7),
 
+    EIGHT(8),
+
     ;
 
     static final Pattern PATTERN = Pattern.compile("(\\d+)\\.\\d+\\.\\d+.*");
@@ -39,11 +41,13 @@ public enum ElasticMajorVersion {
 
     public static ElasticMajorVersion parse(final String value) {
         final Matcher m = value != null ? PATTERN.matcher(value) : null;
-        switch (m != null && m.find() ? Integer.valueOf(m.group(1)) : -1) {
+        switch (m != null && m.find() ? Integer.parseInt(m.group(1)) : -1) {
             case 6:
                 return ElasticMajorVersion.SIX;
             case 7:
                 return ElasticMajorVersion.SEVEN;
+            case 8:
+                return ElasticMajorVersion.EIGHT;
             default:
                 throw new IllegalArgumentException("Unsupported Elasticsearch server major version: " + value);
         }

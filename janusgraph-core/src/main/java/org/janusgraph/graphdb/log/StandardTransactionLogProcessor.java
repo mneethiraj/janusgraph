@@ -14,23 +14,33 @@
 
 package org.janusgraph.graphdb.log;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import com.github.benmanes.caffeine.cache.RemovalCause;
+import com.github.benmanes.caffeine.cache.RemovalListener;
+import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
-import com.google.common.cache.*;
-import com.google.common.collect.*;
-import org.janusgraph.core.RelationType;
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Maps;
+import com.google.common.collect.SetMultimap;
 import org.janusgraph.core.JanusGraphElement;
 import org.janusgraph.core.JanusGraphException;
 import org.janusgraph.core.JanusGraphTransaction;
+import org.janusgraph.core.RelationType;
 import org.janusgraph.core.log.TransactionRecovery;
-import org.janusgraph.diskstorage.*;
+import org.janusgraph.diskstorage.BackendTransaction;
+import org.janusgraph.diskstorage.ReadBuffer;
+import org.janusgraph.diskstorage.StaticBuffer;
 import org.janusgraph.diskstorage.indexing.IndexEntry;
 import org.janusgraph.diskstorage.indexing.IndexTransaction;
-import org.janusgraph.diskstorage.log.*;
+import org.janusgraph.diskstorage.log.Log;
+import org.janusgraph.diskstorage.log.Message;
+import org.janusgraph.diskstorage.log.MessageReader;
+import org.janusgraph.diskstorage.log.ReadMarker;
 import org.janusgraph.diskstorage.util.BackendOperation;
-
-
 import org.janusgraph.diskstorage.util.time.TimestampProvider;
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
 import org.janusgraph.graphdb.database.StandardJanusGraph;
@@ -58,7 +68,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -89,7 +98,6 @@ public class StandardTransactionLogProcessor implements TransactionRecovery {
 
     private final Cache<StandardTransactionId,TxEntry> txCache;
 
-
     public StandardTransactionLogProcessor(StandardJanusGraph graph,
                                            Instant startTime) {
         Preconditions.checkArgument(graph != null && graph.isOpen());
@@ -107,18 +115,15 @@ public class StandardTransactionLogProcessor implements TransactionRecovery {
         this.persistenceTime = graph.getConfiguration().getMaxWriteTime();
         this.verboseLogging = graph.getConfiguration().getConfiguration()
                 .get(GraphDatabaseConfiguration.VERBOSE_TX_RECOVERY);
-        this.txCache = CacheBuilder.newBuilder()
-                .concurrencyLevel(2)
+        this.txCache = Caffeine.newBuilder()
                 .initialCapacity(100)
                 .expireAfterWrite(maxTxLength.toNanos(), TimeUnit.NANOSECONDS)
-                .removalListener((RemovalListener<StandardTransactionId, TxEntry>) notification -> {
-                    final RemovalCause cause = notification.getCause();
+                .removalListener((RemovalListener<StandardTransactionId, TxEntry>) (key,entry, cause) -> {
                     Preconditions.checkArgument(cause == RemovalCause.EXPIRED,
-                            "Unexpected removal cause [%s] for transaction [%s]", cause, notification.getKey());
-                    final TxEntry entry = notification.getValue();
+                        "Unexpected removal cause [%s] for transaction [%s]", cause, key);
                     if (entry.status == LogTxStatus.SECONDARY_FAILURE || entry.status == LogTxStatus.PRIMARY_SUCCESS) {
                         failureTxCounter.incrementAndGet();
-                        fixSecondaryFailure(notification.getKey(), entry);
+                        fixSecondaryFailure(key, entry);
                     } else {
                         successTxCounter.incrementAndGet();
                     }
@@ -206,7 +211,7 @@ public class StandardTransactionLogProcessor implements TransactionRecovery {
                                 && isFailedIndex.apply(index.getBackingIndexName())) {
                                 assert rel.isProperty();
                                 indexRestores.put(index.getBackingIndexName(), new IndexRestore(
-                                    rel.getVertex(0).longId(), ElementCategory.VERTEX, getIndexId(index)));
+                                    rel.getVertex(0).id(), ElementCategory.VERTEX, getIndexId(index)));
                             }
                         }
                         //See if relation itself is affected
@@ -313,7 +318,7 @@ public class StandardTransactionLogProcessor implements TransactionRecovery {
 
     private class TxLogMessageReader implements MessageReader {
 
-        private final Callable<TxEntry> entryFactory = TxEntry::new;
+        private final Function<StandardTransactionId, TxEntry> entryFactory = key -> new TxEntry();
 
         @Override
         public void read(Message message) {
@@ -324,12 +329,7 @@ public class StandardTransactionLogProcessor implements TransactionRecovery {
             StandardTransactionId transactionId = new StandardTransactionId(senderId,txheader.getId(),
                     txheader.getTimestamp());
 
-            TxEntry entry;
-            try {
-                entry = txCache.get(transactionId,entryFactory);
-            } catch (ExecutionException e) {
-                throw new AssertionError("Unexpected exception",e);
-            }
+            TxEntry entry = txCache.get(transactionId,entryFactory);
 
             entry.update(txentry);
         }

@@ -19,15 +19,15 @@
 
 package org.janusgraph.graphdb.predicate;
 
-import java.util.Arrays;
-import java.util.List;
-
 import org.janusgraph.core.attribute.Cmp;
 import org.janusgraph.core.attribute.Geo;
 import org.janusgraph.core.attribute.Geoshape;
 import org.janusgraph.core.attribute.Text;
 import org.janusgraph.graphdb.query.JanusGraphPredicate;
 import org.junit.jupiter.api.Test;
+
+import java.util.Arrays;
+import java.util.List;
 
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
@@ -83,11 +83,6 @@ public abstract class ConnectiveJanusPredicateTest {
     @Test
     public void testHasNegationOk() {
         assertTrue(getPredicate(Arrays.asList(Geo.INTERSECT, Cmp.EQUAL)).hasNegation());
-    }
-
-    @Test
-    public void testHasNegationKo() {
-        assertFalse(getPredicate(Arrays.asList(Text.CONTAINS, Cmp.EQUAL)).hasNegation());
     }
 
     @Test

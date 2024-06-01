@@ -21,6 +21,7 @@ on:
     - '.github/workflows/ci-docs.yml'
     - '.github/ISSUE_TEMPLATE/**'
     - 'requirements.txt'
+    - 'mkdocs.yml'
     - 'docs.Dockerfile'
     - '*.md'
   push:
@@ -29,8 +30,11 @@ on:
     - '.github/workflows/ci-docs.yml'
     - '.github/ISSUE_TEMPLATE/**'
     - 'requirements.txt'
+    - 'mkdocs.yml'
     - 'docs.Dockerfile'
     - '*.md'
+    branches-ignore:
+      - 'dependabot/**'
 
 env:
   ES_JAVA_OPTS: "-Xms256m -Xmx512m"
@@ -39,43 +43,60 @@ env:
 
 jobs:
   build-all:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v2
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-maven-
-      - uses: actions/setup-java@v1
+      - uses: actions/setup-java@v4
         with:
-          java-version: 1.8
+          java-version: 8
+          distribution: zulu
       - run: mvn clean install --projects janusgraph-all -Pjanusgraph-cache -Dmaven.javadoc.skip=true ${{ env.BUILD_MAVEN_OPTS }}
       - run: mvn verify --projects janusgraph-all -Pjanusgraph-cache ${{ env.VERIFY_MAVEN_OPTS }}
 
   tests:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     needs: build-all
     strategy:
       fail-fast: false
       matrix:
         include:
           - module: solr
-            args: "-Psolr7"
-          - module: solr
             args: "-Psolr8"
+            name: solr8-java8
+            java: 8
+          - module: solr
+            install-args: "-Pjava-11"
+            args: "-Psolr8"
+            name: solr8
+            java: 11
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v2
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/cache@v4
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-maven-
-      - uses: actions/setup-java@v1
+      - uses: actions/setup-java@v4
         with:
-          java-version: 1.8
+          java-version: ${{ matrix.java }}
+          distribution: zulu
       - run: mvn clean install --projects janusgraph-${{ matrix.module }} ${{ env.BUILD_MAVEN_OPTS }} ${{ matrix.install-args }}
-      - run: mvn verify --projects janusgraph-${{ matrix.module }} ${{ env.VERIFY_MAVEN_OPTS }} ${{ matrix.args }}
-      - uses: codecov/codecov-action@v1
+      - run: mvn verify --projects janusgraph-${{ matrix.module }} ${{ env.VERIFY_MAVEN_OPTS }} ${{ matrix.install-args }} ${{ matrix.args }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-reports-${{ matrix.module }}-${{ matrix.name }}
+          path: target/jacoco-combined.exec
+      - uses: codecov/codecov-action@v4
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          name: codecov-index-${{ matrix.name }}-java-${{ matrix.java }}

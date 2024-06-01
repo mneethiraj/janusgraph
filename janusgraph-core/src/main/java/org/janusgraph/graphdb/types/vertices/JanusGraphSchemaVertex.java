@@ -16,31 +16,47 @@ package org.janusgraph.graphdb.types.vertices;
 
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
-import com.google.common.collect.*;
+import com.google.common.collect.ImmutableListMultimap;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.ListMultimap;
+import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.janusgraph.core.JanusGraphEdge;
-import org.janusgraph.core.JanusGraphVertexProperty;
 import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.core.JanusGraphVertexProperty;
 import org.janusgraph.core.JanusGraphVertexQuery;
 import org.janusgraph.core.schema.SchemaStatus;
 import org.janusgraph.graphdb.internal.JanusGraphSchemaCategory;
 import org.janusgraph.graphdb.transaction.RelationConstructor;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
-import org.janusgraph.graphdb.types.*;
+import org.janusgraph.graphdb.types.IndexType;
+import org.janusgraph.graphdb.types.SchemaSource;
+import org.janusgraph.graphdb.types.TypeDefinitionCategory;
+import org.janusgraph.graphdb.types.TypeDefinitionDescription;
+import org.janusgraph.graphdb.types.TypeDefinitionMap;
 import org.janusgraph.graphdb.types.indextype.CompositeIndexTypeWrapper;
 import org.janusgraph.graphdb.types.indextype.MixedIndexTypeWrapper;
 import org.janusgraph.graphdb.types.system.BaseKey;
 import org.janusgraph.graphdb.types.system.BaseLabel;
 import org.janusgraph.graphdb.vertices.CacheVertex;
-import org.apache.tinkerpop.gremlin.structure.Direction;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
+
+import java.util.List;
 
 public class JanusGraphSchemaVertex extends CacheVertex implements SchemaSource {
 
-    public JanusGraphSchemaVertex(StandardJanusGraphTx tx, long id, byte lifecycle) {
+    public JanusGraphSchemaVertex(StandardJanusGraphTx tx, Object id, byte lifecycle) {
         super(tx, id, lifecycle);
     }
 
     private String name = null;
+    private TypeDefinitionMap definition = null;
+    private ListMultimap<TypeDefinitionCategory,Entry> outRelations = null;
+    private ListMultimap<TypeDefinitionCategory,Entry> inRelations = null;
+
+    @Override
+    public long longId() {
+        return ((Number) id()).longValue();
+    }
 
     @Override
     public String name() {
@@ -65,8 +81,6 @@ public class JanusGraphSchemaVertex extends CacheVertex implements SchemaSource 
     protected Vertex getVertexLabelInternal() {
         return null;
     }
-
-    private TypeDefinitionMap definition = null;
 
     @Override
     public TypeDefinitionMap getDefinition() {
@@ -94,12 +108,8 @@ public class JanusGraphSchemaVertex extends CacheVertex implements SchemaSource 
         return def;
     }
 
-    private ListMultimap<TypeDefinitionCategory,Entry> outRelations = null;
-    private ListMultimap<TypeDefinitionCategory,Entry> inRelations = null;
-
-
     @Override
-    public Iterable<Entry> getRelated(TypeDefinitionCategory def, Direction dir) {
+    public List<Entry> getRelated(TypeDefinitionCategory def, Direction dir) {
         assert dir==Direction.OUT || dir==Direction.IN;
         ListMultimap<TypeDefinitionCategory,Entry> relations = dir==Direction.OUT?outRelations:inRelations;
         if (relations==null) {
@@ -137,7 +147,7 @@ public class JanusGraphSchemaVertex extends CacheVertex implements SchemaSource 
      * This is needed when the type gets modified in the {@link org.janusgraph.graphdb.database.management.ManagementSystem}.
      */
     @Override
-  public void resetCache() {
+    public void resetCache() {
         name = null;
         definition=null;
         outRelations=null;
@@ -170,11 +180,9 @@ public class JanusGraphSchemaVertex extends CacheVertex implements SchemaSource 
     @Override
     public IndexType asIndexType() {
         Preconditions.checkArgument(getDefinition().containsKey(TypeDefinitionCategory.INTERNAL_INDEX),"Schema vertex is not a type vertex: [%s,%s]", longId(), name());
-        if (getDefinition().<Boolean>getValue(TypeDefinitionCategory.INTERNAL_INDEX)) {
-            return new CompositeIndexTypeWrapper(this);
-        } else {
-            return new MixedIndexTypeWrapper(this);
-        }
+        return getDefinition().<Boolean>getValue(TypeDefinitionCategory.INTERNAL_INDEX) ?
+            new CompositeIndexTypeWrapper(this) :
+            new MixedIndexTypeWrapper(this);
     }
 
 }

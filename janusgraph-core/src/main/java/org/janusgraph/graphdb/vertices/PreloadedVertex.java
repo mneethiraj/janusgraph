@@ -17,8 +17,13 @@ package org.janusgraph.graphdb.vertices;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
 import com.google.common.collect.Iterators;
-
+import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
+import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.apache.tinkerpop.gremlin.structure.Edge;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 import org.janusgraph.core.JanusGraphEdge;
+import org.janusgraph.core.JanusGraphRelation;
 import org.janusgraph.core.JanusGraphVertexProperty;
 import org.janusgraph.diskstorage.EntryList;
 import org.janusgraph.diskstorage.keycolumnvalue.SliceQuery;
@@ -28,11 +33,6 @@ import org.janusgraph.graphdb.query.vertex.VertexCentricQueryBuilder;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
 import org.janusgraph.graphdb.util.ElementHelper;
 import org.janusgraph.util.datastructures.Retriever;
-import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
-import org.apache.tinkerpop.gremlin.structure.Direction;
-import org.apache.tinkerpop.gremlin.structure.Edge;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
-import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 
 import java.util.Collections;
 import java.util.Iterator;
@@ -47,7 +47,7 @@ public class PreloadedVertex extends CacheVertex {
     private PropertyMixing mixin = NO_MIXIN;
     private AccessCheck accessCheck = DEFAULT_CHECK;
 
-    public PreloadedVertex(StandardJanusGraphTx tx, long id, byte lifecycle) {
+    public PreloadedVertex(StandardJanusGraphTx tx, Object id, byte lifecycle) {
         super(tx, id, lifecycle);
         assert lifecycle == ElementLifeCycle.Loaded : "Invalid lifecycle encountered: " + lifecycle;
     }
@@ -67,12 +67,18 @@ public class PreloadedVertex extends CacheVertex {
         super.addToQueryCache(query, entries);
     }
 
-    public EntryList getFromCache(final SliceQuery query) {
-        return queryCache.get(query);
+    @Override
+    public Iterable<InternalRelation> getAddedRelations(Predicate<InternalRelation> query) {
+        return Collections.EMPTY_LIST;
     }
 
     @Override
-    public Iterable<InternalRelation> getAddedRelations(Predicate<InternalRelation> query) {
+    public Iterable<InternalRelation> findAddedProperty(Predicate<InternalRelation> query) {
+        return Collections.EMPTY_LIST;
+    }
+
+    @Override
+    public Iterable<InternalRelation> findPreviousRelation(long id) {
         return Collections.EMPTY_LIST;
     }
 
@@ -124,7 +130,7 @@ public class PreloadedVertex extends CacheVertex {
             if (count == 0 || !mixin.properties(keys).hasNext()) return super.properties(keys);
             else if (count == keys.length) return mixin.properties(keys);
         }
-        return (Iterator) Iterators.concat(super.properties(keys), mixin.properties(keys));
+        return Iterators.concat(super.properties(keys), mixin.properties(keys));
     }
 
     @Override
@@ -140,6 +146,11 @@ public class PreloadedVertex extends CacheVertex {
 
     @Override
     public void remove() {
+
+    }
+
+    @Override
+    public void remove(Iterable<JanusGraphRelation> loadedRelations) {
 
     }
 
