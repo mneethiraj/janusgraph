@@ -30,7 +30,7 @@ public enum StandardStoreManager {
     CQL("org.janusgraph.diskstorage.cql.CQLStoreManager", "cql"),
     HBASE("org.janusgraph.diskstorage.hbase.HBaseStoreManager", "hbase"),
     IN_MEMORY("org.janusgraph.diskstorage.inmemory.InMemoryStoreManager", "inmemory"),
-    SCYLLA("org.janusgraph.diskstorage.cql.ScyllaStoreManager", "scylla");
+    SCYLLA("org.janusgraph.diskstorage.cql.ScyllaStoreManager", "scylla"),
     RDBMS("org.janusgraph.diskstorage.rdbms.RdbmsStoreManager", "rdbms");
 
     private static final Set<String> ALL_SHORTHANDS;
