@@ -18,8 +18,17 @@
  */
 package org.janusgraph.diskstorage.rdbms.entity;
 
-import javax.persistence.*;
-import javax.xml.bind.annotation.XmlRootElement;
+import javax.persistence.Cacheable;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.GeneratedValue;
+import javax.persistence.GenerationType;
+import javax.persistence.Id;
+import javax.persistence.Index;
+import javax.persistence.Lob;
+import javax.persistence.Table;
+import javax.persistence.SequenceGenerator;
+import javax.persistence.UniqueConstraint;
 import java.util.Objects;
 
 /**
@@ -29,7 +38,6 @@ import java.util.Objects;
  */
 @Entity
 @Cacheable(false)
-@XmlRootElement
 @Table(name = "janus_column",
        indexes = {@Index(name="janus_column_idx_key_id", columnList = "key_id")},
        uniqueConstraints = {@UniqueConstraint(name = "janus_column_uk_key_name", columnNames = {"key_id", "name"})})
@@ -119,3 +127,4 @@ public class JanusColumn implements java.io.Serializable {
         return "JanusColumn(id=" + id + ", keyId=" + keyId + ", name=" + name + ", val=" + val + ")";
     }
 }
+

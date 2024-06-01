@@ -47,3 +47,4 @@ public class JanusStoreDao extends BaseDao<JanusStore> {
         return null;
     }
 }
+

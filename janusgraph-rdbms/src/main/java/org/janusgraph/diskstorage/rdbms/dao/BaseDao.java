@@ -50,3 +50,4 @@ public abstract class BaseDao<T> {
         return (obj instanceof byte[]) ? (byte[]) obj : null;
     }
 }
+

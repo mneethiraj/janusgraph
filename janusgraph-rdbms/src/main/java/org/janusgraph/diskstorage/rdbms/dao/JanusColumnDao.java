@@ -316,5 +316,5 @@ public class JanusColumnDao extends BaseDao<JanusColumn> {
         @Override
         public StaticBuffer next() { return null; }
     };
-
 }
+
