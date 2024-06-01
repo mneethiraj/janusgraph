@@ -17,7 +17,11 @@ package org.janusgraph.diskstorage;
 
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
-import org.janusgraph.diskstorage.configuration.*;
+import org.janusgraph.diskstorage.configuration.BasicConfiguration;
+import org.janusgraph.diskstorage.configuration.ConfigNamespace;
+import org.janusgraph.diskstorage.configuration.ConfigOption;
+import org.janusgraph.diskstorage.configuration.Configuration;
+import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
 import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
 import org.janusgraph.diskstorage.keycolumnvalue.SliceQuery;
 import org.janusgraph.diskstorage.keycolumnvalue.scan.ScanJob;
@@ -25,14 +29,20 @@ import org.janusgraph.diskstorage.keycolumnvalue.scan.ScanMetrics;
 import org.janusgraph.diskstorage.util.BufferUtil;
 import org.janusgraph.diskstorage.util.Hex;
 import org.janusgraph.diskstorage.util.StaticArrayBuffer;
-import org.apache.commons.configuration.BaseConfiguration;
+import org.janusgraph.util.system.ConfigurationUtil;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Predicate;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 public class SimpleScanJob implements ScanJob {
 
@@ -92,7 +102,7 @@ public class SimpleScanJob implements ScanJob {
                 StaticBuffer start = StaticArrayBuffer.of(Hex.hexToBytes(queryTokens[0]));
                 StaticBuffer end = StaticArrayBuffer.of(Hex.hexToBytes(queryTokens[1]));
                 SliceQuery query = new SliceQuery(start, end);
-                int limit = Integer.valueOf(queryTokens[2]);
+                int limit = Integer.parseInt(queryTokens[2]);
                 if (0 <= limit) {
                     query.setLimit(limit);
                 }
@@ -271,7 +281,7 @@ public class SimpleScanJob implements ScanJob {
     public static Configuration getJobConf(List<SliceQuery> queries, Long modulus, Long modVal) {
         ModifiableConfiguration conf2 =
                 new ModifiableConfiguration(SimpleScanJob.ROOT_NS,
-                        new CommonsConfiguration(new BaseConfiguration()), BasicConfiguration.Restriction.NONE);
+                        new CommonsConfiguration(ConfigurationUtil.createBaseConfiguration()), BasicConfiguration.Restriction.NONE);
         if (null != queries)
             conf2.set(HEX_QUERIES, encodeQueries(queries));
         if (null != modulus)

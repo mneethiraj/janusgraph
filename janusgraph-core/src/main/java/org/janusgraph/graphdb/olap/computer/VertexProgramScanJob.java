@@ -14,6 +14,13 @@
 
 package org.janusgraph.graphdb.olap.computer;
 
+import org.apache.tinkerpop.gremlin.process.computer.MessageScope;
+import org.apache.tinkerpop.gremlin.process.computer.VertexProgram;
+import org.apache.tinkerpop.gremlin.process.computer.clustering.connected.ConnectedComponentVertexProgram;
+import org.apache.tinkerpop.gremlin.process.computer.search.path.ShortestPathVertexProgram;
+import org.apache.tinkerpop.gremlin.process.computer.traversal.TraversalVertexProgram;
+import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.janusgraph.core.JanusGraph;
 import org.janusgraph.core.JanusGraphVertex;
 import org.janusgraph.core.ReadOnlyTransactionException;
@@ -31,14 +38,6 @@ import org.janusgraph.graphdb.olap.VertexScanJob;
 import org.janusgraph.graphdb.tinkerpop.optimize.step.JanusGraphVertexStep;
 import org.janusgraph.graphdb.vertices.PreloadedVertex;
 
-import org.apache.tinkerpop.gremlin.process.computer.MessageScope;
-import org.apache.tinkerpop.gremlin.process.computer.VertexProgram;
-import org.apache.tinkerpop.gremlin.process.computer.clustering.connected.ConnectedComponentVertexProgram;
-import org.apache.tinkerpop.gremlin.process.computer.search.path.ShortestPathVertexProgram;
-import org.apache.tinkerpop.gremlin.process.computer.traversal.TraversalVertexProgram;
-import org.apache.tinkerpop.gremlin.structure.Direction;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
-
 import java.io.Closeable;
 import java.util.List;
 import java.util.Set;
@@ -48,7 +47,7 @@ import java.util.Set;
  */
 public class VertexProgramScanJob<M> implements VertexScanJob {
 
-    private final static MessageScope.Global globalScope = MessageScope.Global.instance();
+    private static final MessageScope.Global globalScope = MessageScope.Global.instance();
     private final IDManager idManager;
     private final FulgoraMemory memory;
     private final FulgoraVertexMemory<M> vertexMemory;
@@ -81,21 +80,21 @@ public class VertexProgramScanJob<M> implements VertexScanJob {
     @Override
     public void process(JanusGraphVertex vertex, ScanMetrics metrics) {
         PreloadedVertex v = (PreloadedVertex)vertex;
-        long vertexId = v.longId();
+        Object vertexId = v.id();
         VertexMemoryHandler<M> vh = new VertexMemoryHandler(vertexMemory,v);
         vh.setInExecute(true);
         v.setAccessCheck(PreloadedVertex.OPENSTAR_CHECK);
         if (idManager.isPartitionedVertex(vertexId)) {
-            if (idManager.isCanonicalVertexId(vertexId)) {
+            if (idManager.isCanonicalVertexId(((Number) vertexId).longValue())) {
                 EntryList results = v.getFromCache(SYSTEM_PROPS_QUERY);
                 if (results == null) results = EntryList.EMPTY_LIST;
-                vertexMemory.setLoadedProperties(vertexId,results);
+                vertexMemory.setLoadedProperties(((Number) vertexId).longValue(), results);
             }
             for (MessageScope scope : vertexMemory.getPreviousScopes()) {
                 if (scope instanceof MessageScope.Local) {
                     vh.receiveMessages(scope)
                       .iterator()
-                      .forEachRemaining(m -> vertexMemory.aggregateMessage(vertexId, m, scope));
+                      .forEachRemaining(m -> vertexMemory.aggregateMessage(((Number) vertexId).longValue(), m, scope));
                 }
             }
         } else {

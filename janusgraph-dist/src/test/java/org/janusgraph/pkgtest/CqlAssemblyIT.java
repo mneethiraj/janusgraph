@@ -24,7 +24,7 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 public class CqlAssemblyIT extends AbstractJanusGraphAssemblyIT {
 
     @Container
-    private static JanusGraphCassandraContainer cql = new JanusGraphCassandraContainer(true);
+    private static final JanusGraphCassandraContainer _cql = new JanusGraphCassandraContainer(true);
 
     @Override
     protected String getConfigPath() {
@@ -50,4 +50,10 @@ public class CqlAssemblyIT extends AbstractJanusGraphAssemblyIT {
     @Disabled
     @Override
     public void testGettingStartedAgainstGremlinShFull() {}
+
+    @Test
+    @Disabled
+    @Override
+    public void testSparkGraphComputerTraversalLocal() {
+    }
 }

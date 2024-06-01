@@ -14,23 +14,30 @@
 
 package org.janusgraph.hadoop;
 
-import org.janusgraph.core.Cardinality;
-import org.janusgraph.core.JanusGraphVertex;
-import org.janusgraph.example.GraphOfTheGodsFactory;
-import org.janusgraph.graphdb.JanusGraphBaseTest;
-import org.apache.commons.configuration.ConfigurationException;
+import org.apache.commons.configuration2.ex.ConfigurationException;
 import org.apache.tinkerpop.gremlin.process.computer.Computer;
 import org.apache.tinkerpop.gremlin.process.traversal.P;
-import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
+import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
 import org.apache.tinkerpop.gremlin.spark.process.computer.SparkGraphComputer;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.janusgraph.core.Cardinality;
+import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.example.GraphOfTheGodsFactory;
+import org.janusgraph.graphdb.JanusGraphBaseTest;
+import org.janusgraph.graphdb.relations.RelationIdentifier;
+import org.junit.Assert;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.util.*;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -111,6 +118,45 @@ public abstract class AbstractInputFormatIT extends JanusGraphBaseTest {
         Set<Object> edges = new HashSet<>();
         edgeIdIterator.forEachRemaining(edges::add);
         assertEquals(2, edges.size());
+        // Check the edgeID format
+        checkEdgeIDFormat(edges);
+        // Make sure the edgeID returned by OLAP is consistent with OLTP result
+        assertTrue(graph.traversal().E(edges.iterator().next()).hasNext());
+    }
+
+    @Test
+    public void testReadMultipleSelfEdges() throws Exception {
+        GraphOfTheGodsFactory.load(graph, null, true);
+        assertEquals(12L, (long) graph.traversal().V().count().next());
+
+        // Similarly to testReadSelfEdge(), add multiple self-loop edges on sky with edge label "lives"
+        JanusGraphVertex sky = graph.query().has("name", "sky").vertices().iterator().next();
+        assertNotNull(sky);
+        assertEquals("sky", sky.value("name"));
+        assertEquals(1L, sky.query().direction(Direction.IN).edgeCount());
+        assertEquals(0L, sky.query().direction(Direction.OUT).edgeCount());
+        assertEquals(1L, sky.query().direction(Direction.BOTH).edgeCount());
+        sky.addEdge("lives", sky, "reason", "testReadMultipleSelfEdges1");
+        sky.addEdge("lives", sky, "reason", "testReadMultipleSelfEdges2");
+        sky.addEdge("lives", sky, "reason", "testReadMultipleSelfEdges3");
+        assertEquals(4L, sky.query().direction(Direction.IN).edgeCount());
+        assertEquals(3L, sky.query().direction(Direction.OUT).edgeCount());
+        assertEquals(7L, sky.query().direction(Direction.BOTH).edgeCount());
+        graph.tx().commit();
+
+        // Read all the new edges using the inputformat
+        Graph g = getGraph();
+        GraphTraversalSource t = g.traversal().withComputer(SparkGraphComputer.class);
+        Iterator<Object> edgeIdIterator = t.V().has("name", "sky").bothE().id();
+        assertNotNull(edgeIdIterator);
+        assertTrue(edgeIdIterator.hasNext());
+        Set<Object> edges = new HashSet<>();
+        edgeIdIterator.forEachRemaining(edges::add);
+        assertEquals(4, edges.size());
+        // Check the edgeID format
+        checkEdgeIDFormat(edges);
+        // Make sure the edgeID returned by OLAP is consistent with OLTP result
+        assertTrue(graph.traversal().E(edges.iterator().next()).hasNext());
     }
 
     @Test
@@ -203,5 +249,17 @@ public abstract class AbstractInputFormatIT extends JanusGraphBaseTest {
             .properties("meta_property").count().next());
     }
 
-    abstract protected Graph getGraph() throws IOException, ConfigurationException;
+    private void checkEdgeIDFormat(Set<Object> edges) {
+        Iterator<Object> it = edges.iterator();
+        while (it.hasNext()) {
+            Object edgeId = it.next();
+            RelationIdentifier relationIdentifier = RelationIdentifier.parse((String)edgeId);
+            Assert.assertTrue(relationIdentifier.getRelationId() > 0);
+            Assert.assertTrue(relationIdentifier.getInVertexId() != null);
+            Assert.assertTrue(relationIdentifier.getOutVertexId() != null);
+            Assert.assertTrue(relationIdentifier.getTypeId() > 0);
+        }
+    }
+
+    protected abstract Graph getGraph() throws IOException, ConfigurationException;
 }

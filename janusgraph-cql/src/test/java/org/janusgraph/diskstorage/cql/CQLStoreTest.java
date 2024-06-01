@@ -15,22 +15,35 @@
 package org.janusgraph.diskstorage.cql;
 
 import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.config.DefaultDriverOption;
+import com.datastax.oss.driver.api.core.config.DriverConfig;
+import com.datastax.oss.driver.api.core.config.DriverExecutionProfile;
+import com.datastax.oss.driver.api.core.context.DriverContext;
 import com.datastax.oss.driver.api.core.cql.Statement;
 import com.datastax.oss.driver.api.core.metadata.Metadata;
+import com.datastax.oss.driver.api.core.metadata.Node;
 import com.datastax.oss.driver.api.core.metadata.schema.KeyspaceMetadata;
 import com.datastax.oss.driver.api.core.metadata.schema.TableMetadata;
 import org.janusgraph.JanusGraphCassandraContainer;
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.KeyColumnValueStoreTest;
+import org.janusgraph.diskstorage.PermanentBackendException;
 import org.janusgraph.diskstorage.configuration.Configuration;
 import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyRangeQuery;
+import org.janusgraph.diskstorage.keycolumnvalue.SliceQuery;
+import org.janusgraph.diskstorage.keycolumnvalue.StandardStoreFeatures;
 import org.janusgraph.diskstorage.keycolumnvalue.StoreFeatures;
+import org.janusgraph.diskstorage.util.BufferUtil;
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
 import org.janusgraph.testutil.FeatureFlag;
 import org.janusgraph.testutil.JanusGraphFeature;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -39,14 +52,39 @@ import org.slf4j.LoggerFactory;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
-import static org.janusgraph.diskstorage.cql.CQLConfigOptions.*;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.janusgraph.diskstorage.cql.CQLConfigOptions.CF_COMPRESSION;
+import static org.janusgraph.diskstorage.cql.CQLConfigOptions.CF_COMPRESSION_BLOCK_SIZE;
+import static org.janusgraph.diskstorage.cql.CQLConfigOptions.CF_COMPRESSION_TYPE;
+import static org.janusgraph.diskstorage.cql.CQLConfigOptions.GC_GRACE_SECONDS;
+import static org.janusgraph.diskstorage.cql.CQLConfigOptions.KEYSPACE;
+import static org.janusgraph.diskstorage.cql.CQLConfigOptions.METRICS_NODE_ENABLED;
+import static org.janusgraph.diskstorage.cql.CQLConfigOptions.METRICS_SESSION_ENABLED;
+import static org.janusgraph.diskstorage.cql.CQLConfigOptions.SPECULATIVE_RETRY;
+import static org.janusgraph.diskstorage.cql.CQLConfigOptions.USE_EXTERNAL_LOCKING;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.BASIC_METRICS;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 @Testcontainers
@@ -87,7 +125,6 @@ public class CQLStoreTest extends KeyColumnValueStoreTest {
     @FeatureFlag(feature = JanusGraphFeature.UnorderedScan)
     public void testUnorderedConfiguration(TestInfo testInfo) {
         final StoreFeatures features = this.manager.getFeatures();
-        assertFalse(features.isKeyOrdered());
         assertFalse(features.hasLocalKeyPartition());
     }
 
@@ -102,7 +139,7 @@ public class CQLStoreTest extends KeyColumnValueStoreTest {
     public void testExternalLocking() throws BackendException {
         assertFalse(this.manager.getFeatures().hasLocking());
         assertTrue(openStorageManager(getBaseStorageConfiguration()
-                .set(USE_EXTERNAL_LOCKING, true)).getFeatures().hasLocking());
+            .set(USE_EXTERNAL_LOCKING, true)).getFeatures().hasLocking());
     }
 
     @Test
@@ -160,6 +197,61 @@ public class CQLStoreTest extends KeyColumnValueStoreTest {
             opts.remove("enabled");
         }
         assertEquals(Collections.emptyMap(), opts);
+    }
+
+    @Test
+    public void testCqlMetricsInitialization() throws BackendException, InterruptedException {
+        final ModifiableConfiguration config = getBaseStorageConfiguration();
+        // override keyspace so a cached CQLStoreManager is not used and CQLStoreManager#initializeSession is called 
+        config.set(KEYSPACE, "testkeyspace_metrics");
+        config.set(BASIC_METRICS, true);
+        config.set(METRICS_NODE_ENABLED, "pool.open-connections,pool.available-streams,pool.in-flight,bytes-sent,bytes-received,cql-messages".split(","));
+        config.set(METRICS_SESSION_ENABLED, "bytes-sent,bytes-received,cql-requests,cql-client-timeouts,throttling.delay,throttling.queue-size,throttling.errors".split(","));
+        // Will update CQL Gauge metrics on graph creation
+        openStorageManager(config);  // throws NoSuchMethodError on metrics-core 3.x / 4.x conflict
+    }
+
+    @Test
+    public void testSetGcGraceSeconds() throws BackendException {
+        final String cf = TEST_CF_NAME + "_set_gc_grace_seconds";
+        final int oneDayInSeconds = 86400;
+
+        final ModifiableConfiguration config = getBaseStorageConfiguration();
+        config.set(GC_GRACE_SECONDS, oneDayInSeconds);
+
+        final CQLStoreManager cqlStoreManager = openStorageManager(config);
+        cqlStoreManager.openDatabase(cf);
+        assertEquals(oneDayInSeconds, cqlStoreManager.getGcGraceSeconds(cf));
+    }
+
+    @ParameterizedTest
+    @MethodSource("validSpeculativeRetryProvider")
+    public void testValidSpeculativeRetry(int idx, String input, String pattern) throws BackendException {
+        final String cf = TEST_CF_NAME + "_valid_speculative_retry_" + idx;
+
+        final ModifiableConfiguration config = getBaseStorageConfiguration();
+        config.set(SPECULATIVE_RETRY, input);
+
+        final CQLStoreManager cqlStoreManager = openStorageManager(config);
+        cqlStoreManager.openDatabase(cf);
+
+        String value = cqlStoreManager.getSpeculativeRetry(cf);
+        if (!Pattern.matches(pattern, value)) {
+            fail("Pattern " + pattern + " doesn´t match " + value);
+        }
+    }
+
+    public static Stream<Arguments> validSpeculativeRetryProvider() {
+        return Stream.of(
+            arguments(0, "NONE", "(NONE|NEVER)"),
+            arguments(1, "ALWAYS", "ALWAYS"),
+            arguments(2, "95percentile", "95(?:\\.0+)?(PERCENTILE|p)"),
+            arguments(3, "99PERCENTILE", "99(?:\\.0+)?(PERCENTILE|p)"),
+            arguments(4, "99.9PERCENTILE", "99\\.90*(PERCENTILE|p)"),
+            arguments(5, "100ms", "100(?:\\.0+)?ms"),
+            arguments(6, "100MS", "100(?:\\.0+)?ms"),
+            arguments(7, "100.9ms", "100(\\.90*)*ms")
+        );
     }
 
     @Test
@@ -229,9 +321,64 @@ public class CQLStoreTest extends KeyColumnValueStoreTest {
         verify(session, times(1)).execute(any(Statement.class));
     }
 
+    @Test
+    @FeatureFlag(feature = JanusGraphFeature.UnorderedScan)
+    public void testGetKeysWithoutOrderedScan() throws BackendException, NoSuchFieldException, IllegalAccessException {
+        // support unordered scan but not ordered scan
+        Field field = StandardStoreFeatures.class.getDeclaredField("orderedScan");
+        field.setAccessible(true);
+        Field modifiersField = Field.class
+            .getDeclaredField("modifiers");
+        modifiersField.setAccessible(true);
+        modifiersField.setInt(field, field.getModifiers() & ~Modifier.FINAL);
+        field.set(manager.getFeatures(), false);
+        Exception ex = assertThrows(PermanentBackendException.class, () -> store.getKeys(
+            new KeyRangeQuery(BufferUtil.getLongBuffer(1), BufferUtil.getLongBuffer(1000), BufferUtil.getLongBuffer(1),
+                BufferUtil.getLongBuffer(1000)), tx));
+        assertEquals("This operation is only allowed when the byteorderedpartitioner is used.", ex.getMessage());
+        assertDoesNotThrow(() -> store.getKeys(
+            new SliceQuery(BufferUtil.zeroBuffer(1), BufferUtil.oneBuffer(4)), tx));
+    }
+
+    @Test
+    @FeatureFlag(feature = JanusGraphFeature.OrderedScan)
+    public void testGetKeysWithoutUnorderedScan() throws BackendException, NoSuchFieldException, IllegalAccessException {
+        // support ordered scan but not unordered scan
+        Field field = StandardStoreFeatures.class.getDeclaredField("unorderedScan");
+        field.setAccessible(true);
+        Field modifiersField = Field.class
+            .getDeclaredField("modifiers");
+        modifiersField.setAccessible(true);
+        modifiersField.setInt(field, field.getModifiers() & ~Modifier.FINAL);
+        field.set(manager.getFeatures(), false);
+        Exception ex = assertThrows(PermanentBackendException.class, () -> store.getKeys(
+            new SliceQuery(BufferUtil.zeroBuffer(1), BufferUtil.oneBuffer(4)), tx));
+        assertEquals("This operation is only allowed when partitioner supports unordered scan", ex.getMessage());
+        assertDoesNotThrow(() -> store.getKeys(
+            new KeyRangeQuery(BufferUtil.getLongBuffer(1), BufferUtil.getLongBuffer(1000), BufferUtil.getLongBuffer(1),
+                BufferUtil.getLongBuffer(1000)), tx));
+    }
+
     @Override
     public CQLStoreManager openStorageManagerForClearStorageTest() throws Exception {
         return openStorageManager(getBaseStorageConfiguration().set(GraphDatabaseConfiguration.DROP_ON_CLEAR, true));
+    }
+
+    @Test
+    public void backPressureLimitOverflowTest(){
+        Metadata metadata = mock(Metadata.class);
+        DriverContext driverContext = mock(DriverContext.class);
+        DriverConfig driverConfig = mock(DriverConfig.class);
+        DriverExecutionProfile profile = mock(DriverExecutionProfile.class);
+        when(session.getMetadata()).thenReturn(metadata);
+        when(metadata.getNodes()).thenReturn(Collections.singletonMap(UUID.randomUUID(), mock(Node.class)));
+        when(session.getContext()).thenReturn(driverContext);
+        when(driverContext.getConfig()).thenReturn(driverConfig);
+        when(driverConfig.getDefaultProfile()).thenReturn(profile);
+        when(profile.getInt(DefaultDriverOption.CONNECTION_MAX_REQUESTS)).thenReturn(Integer.MAX_VALUE/2);
+        when(profile.getInt(DefaultDriverOption.CONNECTION_POOL_LOCAL_SIZE)).thenReturn(10);
+        int backPressure = CQLStoreManager.getDefaultBackPressureLimit(session);
+        assertEquals(Integer.MAX_VALUE, backPressure);
     }
 
 }

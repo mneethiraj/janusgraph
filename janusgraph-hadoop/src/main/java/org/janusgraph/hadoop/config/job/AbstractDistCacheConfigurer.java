@@ -14,51 +14,23 @@
 
 package org.janusgraph.hadoop.config.job;
 
+import com.google.common.collect.ImmutableList;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
-
-import org.apache.hadoop.fs.FileStatus;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
-
-import com.google.common.collect.ImmutableList;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Abstract base class for {@link org.janusgraph.hadoop.config.job.JobClasspathConfigurer}
  * implementations that use Hadoop's distributed cache to store push class files to the cluster.
  */
 public abstract class AbstractDistCacheConfigurer {
-
-//    public static enum FileCopyMode {
-//
-//        /**
-//         * Copy a jar unless a file with the same name already exists in the staging
-//         * directory of the Hadoop FileSystem.
-//         */
-//        FILENAME,
-//
-//        /**
-//         * Copy a jar unless a file with the same name and same modify time already exists
-//         * in the staging directory of the Hadoop FileSystem.
-//         */
-//        MODTIME,
-//
-//        /**
-//         * Unconditionally copy all jars to the Hadoop FileSystem, even if they
-//         * already exist at the destination and have up-to-date modify times.
-//         */
-//        ALWAYS;
-//    }
-//
-//    public static final ConfigOption<Boolean> SKIP_LOCAL_COPIES =
-//            new ConfigOption<Boolean>(JanusGraphHadoopConfiguration.JARCACHE_NS, "skip-local-copies",
-//            "When this option is true and Hadoop is configured to use a LocalFileSystem as " +
-//            "its default, JanusGraph will not attempt to copy jars from the classpath to the " +
-//            "LocalFileSystem (which is redundant when using the local JobRunner)", ConfigOption.Type.MASKABLE, true);
 
     private final Conf conf;
 
@@ -175,28 +147,4 @@ public abstract class AbstractDistCacheConfigurer {
         }
     }
 
-    // LocalFileSystem doesn't checksum, it just returns null, so this is useless
-//    private boolean compareChecksums(FileSystem localFS, Path localPath, FileSystem destFS, Path destPath) throws IOException {
-//        if (destFS.exists(destPath)) {
-//            FileChecksum localCheck = localFS.getFileChecksum(localPath);
-//            FileChecksum destCheck = destFS.getFileChecksum(destPath);
-//            if (null != destCheck && null != localCheck) {
-//                byte[] db = destCheck.getBytes();
-//                byte[] lb = localCheck.getBytes();
-//                if (null != db && null != lb && Arrays.equals(db, lb)) {
-//                    if (log.isDebugEnabled())
-//                        log.debug("Checksum {} for file {} is up-to-date", Arrays.toString(db), destPath);
-//                    return true;
-//                } else {
-//                    log.debug("Checksum mismatch on file {}: local={} dest={}", destPath, lb, db);
-//                }
-//            } else {
-//                log.debug("Unable to checksum files: localPath={} localCheck={}, destPath={} destCheck={}",
-//                        localPath, localCheck, destPath, destCheck);
-//            }
-//        } else {
-//            log.debug("File {} does not exist", destPath);
-//        }
-//        return false;
-//    }
 }

@@ -14,20 +14,19 @@
 
 package org.janusgraph.testutil;
 
-import java.io.File;
-import java.time.temporal.ChronoUnit;
-import java.util.concurrent.TimeUnit;
-
 import com.google.common.base.Preconditions;
+import org.apache.commons.configuration2.PropertiesConfiguration;
+import org.apache.commons.configuration2.ex.ConfigurationException;
+import org.janusgraph.diskstorage.configuration.WriteConfiguration;
+import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
 import org.janusgraph.diskstorage.util.time.Temporals;
-import org.apache.commons.configuration.Configuration;
-import org.apache.commons.configuration.ConfigurationException;
-import org.apache.commons.configuration.PropertiesConfiguration;
+import org.janusgraph.util.system.ConfigurationUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import org.janusgraph.diskstorage.configuration.WriteConfiguration;
-import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
+import java.io.File;
+import java.time.temporal.ChronoUnit;
+import java.util.concurrent.TimeUnit;
 
 /**
  * A central mechanism for overriding graph configuration parameters during
@@ -55,7 +54,7 @@ public class TestGraphConfigs {
                 log.warn("Graph configuration overrides file {} does not exist or is not an ordinary file", overridesFile);
             } else {
                 try {
-                    Configuration cc = new  PropertiesConfiguration(overridesFile);
+                    PropertiesConfiguration cc = ConfigurationUtil.loadPropertiesConfig(overridesFile);
                     o = new CommonsConfiguration(cc);
                     log.info("Loaded configuration from file {}", overridesFile);
                 } catch (ConfigurationException e) {
@@ -98,56 +97,4 @@ public class TestGraphConfigs {
         return l;
     }
 
-//
-//    public static WriteConfiguration applyOverrides(final WriteConfiguration base) {
-//
-//        return new WriteConfiguration() {
-//
-//            private final ReadConfiguration first = overrides;
-//            private final WriteConfiguration second = base;
-//
-//            @Override
-//            public Iterable<String> getKeys(String prefix) {
-//                ImmutableSet.Builder<String> b = ImmutableSet.builder();
-//                if (null != first)
-//                    b.addAll(first.getKeys(prefix));
-//                b.addAll(second.getKeys(prefix));
-//                return b.build();
-//            }
-//
-//            @Override
-//            public <O> O get(String key, Class<O> dataType) {
-//                Object o = null;
-//                if (null != first)
-//                    o = first.get(key, dataType);
-//
-//                if (null == o)
-//                    o = second.get(key, dataType);
-//
-//                return (O)o;
-//            }
-//
-//            @Override
-//            public void close() {
-//                if (null != first)
-//                    first.close();
-//                second.close();
-//            }
-//
-//            @Override
-//            public <O> void set(String key, O value) {
-//                second.set(key, value);
-//            }
-//
-//            @Override
-//            public void remove(String key) {
-//                second.remove(key);
-//            }
-//
-//            @Override
-//            public WriteConfiguration clone() {
-//                return second.clone();
-//            }
-//        };
-//    }
 }

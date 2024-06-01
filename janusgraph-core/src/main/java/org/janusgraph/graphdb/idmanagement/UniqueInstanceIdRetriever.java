@@ -16,7 +16,7 @@ package org.janusgraph.graphdb.idmanagement;
 
 import com.google.common.base.Preconditions;
 import org.apache.commons.codec.binary.Hex;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.janusgraph.core.JanusGraphConfigurationException;
 import org.janusgraph.diskstorage.configuration.ConfigElement;
 import org.janusgraph.diskstorage.configuration.Configuration;
@@ -44,7 +44,7 @@ public class UniqueInstanceIdRetriever {
 
     private UniqueInstanceIdRetriever(){}
 
-    public static UniqueInstanceIdRetriever getInstance(){
+    public static synchronized UniqueInstanceIdRetriever getInstance(){
         if(uniqueInstanceIdGenerator == null){
             uniqueInstanceIdGenerator = new UniqueInstanceIdRetriever();
         }
@@ -66,11 +66,7 @@ public class UniqueInstanceIdRetriever {
     private String computeUniqueInstanceId(Configuration config) {
         final String suffix = getSuffix(config);
         final String uid = getUid(config);
-        String instanceId = uid + suffix;
-        for (char c : ConfigElement.ILLEGAL_CHARS) {
-            instanceId = StringUtils.replaceChars(instanceId,c,'-');
-        }
-        return instanceId;
+        return ConfigElement.replaceIllegalChars(uid + suffix);
     }
 
     private String getSuffix(Configuration config) {

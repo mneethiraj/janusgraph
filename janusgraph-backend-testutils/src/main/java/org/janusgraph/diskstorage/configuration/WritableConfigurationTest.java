@@ -16,14 +16,16 @@ package org.janusgraph.diskstorage.configuration;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -53,17 +55,19 @@ public abstract class WritableConfigurationTest {
         config.set("storage.duba", new String[]{"x", "y"});
         config.set("times.60m", Duration.ofMinutes(60));
         config.set("obj", new Object()); // necessary for AbstractConfiguration.getSubset
-        assertEquals("world", config.get("test.key", String.class));
-        assertEquals(ImmutableSet.of("test.key", "test.bar"), Sets.newHashSet(config.getKeys("test")));
-        // assertEquals(ImmutableSet.of("test.key", "test.bar", "test.baz"), Sets.newHashSet(config.getKeys("test")));
-        assertEquals(ImmutableSet.of("storage.xyz", "storage.duba", "storage.abc"),
-            Sets.newHashSet(config.getKeys("storage")));
-        assertEquals(100,config.get("test.bar",Integer.class).intValue());
-        // assertEquals(1,config.get("test.baz",Integer.class).intValue());
-        assertEquals(true, config.get("storage.xyz", Boolean.class));
-        assertEquals(false, config.get("storage.abc", Boolean.class));
-        assertArrayEquals(new String[]{"x", "y"}, config.get("storage.duba", String[].class));
-        assertEquals(Duration.ofMinutes(60), config.get("times.60m", Duration.class));
-        assertTrue(Object.class.isAssignableFrom(config.get("obj", Object.class).getClass()));
+        assertAll(
+            () -> assertEquals("world", config.get("test.key", String.class)),
+            () -> assertEquals(ImmutableSet.of("test.key", "test.bar"), Sets.newHashSet(config.getKeys("test"))),
+            // () -> assertEquals(ImmutableSet.of("test.key", "test.bar", "test.baz"), Sets.newHashSet(config.getKeys("test"))),
+            () -> assertEquals(ImmutableSet.of("storage.xyz", "storage.duba", "storage.abc"),
+                Sets.newHashSet(config.getKeys("storage"))),
+            () -> assertEquals(100,config.get("test.bar",Integer.class).intValue()),
+            // () -> assertEquals(1,config.get("test.baz",Integer.class).intValue()),
+            () -> assertEquals(true, config.get("storage.xyz", Boolean.class)),
+            () -> assertEquals(false, config.get("storage.abc", Boolean.class)),
+            () -> assertArrayEquals(new String[]{"x", "y"}, config.get("storage.duba", String[].class)),
+            () -> assertEquals(Duration.ofMinutes(60), config.get("times.60m", Duration.class)),
+            () -> assertTrue(Object.class.isAssignableFrom(config.get("obj", Object.class).getClass()))
+        );
     }
 }

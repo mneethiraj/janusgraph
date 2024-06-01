@@ -14,17 +14,17 @@
 
 package org.janusgraph.diskstorage.indexing;
 
-import org.apache.commons.lang.StringUtils;
+import com.google.common.base.Preconditions;
+import org.apache.commons.lang3.StringUtils;
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.BaseTransaction;
 import org.janusgraph.diskstorage.BaseTransactionConfig;
 import org.janusgraph.diskstorage.BaseTransactionConfigurable;
+import org.janusgraph.graphdb.tinkerpop.optimize.step.Aggregation;
 
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
-
-import com.google.common.base.Preconditions;
 
 /**
  * External index for querying.
@@ -85,6 +85,8 @@ public interface IndexProvider extends IndexInformation {
      */
     void restore(Map<String,Map<String, List<IndexEntry>>> documents, KeyInformation.IndexRetriever information, BaseTransaction tx) throws BackendException;
 
+    Number queryAggregation(IndexQuery query, KeyInformation.IndexRetriever information, BaseTransaction tx, Aggregation aggregation) throws BackendException;
+
     /**
      * Executes the given query against the index.
      *
@@ -110,7 +112,7 @@ public interface IndexProvider extends IndexInformation {
     Stream<RawQuery.Result<String>> query(RawQuery query, KeyInformation.IndexRetriever information, BaseTransaction tx) throws BackendException;
 
     /**
-     * Executes the given raw query against the index and returns the total hits. e.g. limit=0
+     * Executes the given raw query against the index and returns the total hits after specified offset and in limit scope if specified.
      *
      * @param query Query to execute
      * @param information Information on the keys used in the query accessible through {@link KeyInformation.IndexRetriever}.
@@ -139,6 +141,12 @@ public interface IndexProvider extends IndexInformation {
      * @throws org.janusgraph.diskstorage.BackendException
      */
     void clearStorage() throws BackendException;
+
+    /**
+     * Clears a single field by removing all its entries.
+     * @throws org.janusgraph.diskstorage.BackendException
+     */
+    void clearStore(String storeName) throws BackendException;
 
     /**
      * Checks whether the index exists.

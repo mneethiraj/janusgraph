@@ -16,17 +16,23 @@ package org.janusgraph.diskstorage.configuration.converter;
 
 import com.google.common.collect.ImmutableSet;
 import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.configuration.BaseConfiguration;
+import org.apache.commons.configuration2.BaseConfiguration;
 import org.janusgraph.diskstorage.configuration.ReadConfiguration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 public class ReadConfigurationConverterTest {
@@ -51,7 +57,7 @@ public class ReadConfigurationConverterTest {
             return configurationProperties.get(key);
         });
 
-        BaseConfiguration baseConfiguration = readConfigurationConverter.convert(readConfiguration);
+        BaseConfiguration baseConfiguration = readConfigurationConverter.convertToBaseConfiguration(readConfiguration);
 
         Iterator<String> keyIterator = baseConfiguration.getKeys();
         int propertiesAmount = 0;

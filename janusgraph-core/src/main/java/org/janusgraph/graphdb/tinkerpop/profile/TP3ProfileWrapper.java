@@ -15,9 +15,9 @@
 package org.janusgraph.graphdb.tinkerpop.profile;
 
 import com.google.common.base.Preconditions;
-import org.janusgraph.graphdb.query.profile.QueryProfiler;
 import org.apache.tinkerpop.gremlin.process.traversal.util.MutableMetrics;
 import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalMetrics;
+import org.janusgraph.graphdb.query.profile.QueryProfiler;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -32,14 +32,18 @@ public class TP3ProfileWrapper implements QueryProfiler {
     }
 
     @Override
-    public QueryProfiler addNested(String groupName) {
-        //Flatten out AND/OR nesting
-        if (groupName.equals(AND_QUERY) || groupName.equals(OR_QUERY)) return this;
+    public QueryProfiler addNested(String groupName, boolean hasSiblings) {
+        //Flatten out AND/OR nesting unless it has siblings
+        if (!hasSiblings && (groupName.equals(AND_QUERY) || groupName.equals(OR_QUERY))) return this;
 
         int nextId = (subMetricCounter++);
         MutableMetrics nested = new MutableMetrics(metrics.getId()+"."+groupName+"_"+nextId,groupName);
         metrics.addNested(nested);
         return new TP3ProfileWrapper(nested);
+    }
+
+    public MutableMetrics getMetrics() {
+        return metrics;
     }
 
     @Override

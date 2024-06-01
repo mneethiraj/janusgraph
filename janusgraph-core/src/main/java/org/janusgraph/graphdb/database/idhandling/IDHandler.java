@@ -14,17 +14,21 @@
 
 package org.janusgraph.graphdb.database.idhandling;
 
+import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.janusgraph.diskstorage.ReadBuffer;
 import org.janusgraph.diskstorage.StaticBuffer;
 import org.janusgraph.diskstorage.WriteBuffer;
 import org.janusgraph.diskstorage.util.BufferUtil;
 import org.janusgraph.diskstorage.util.StaticArrayBuffer;
 import org.janusgraph.diskstorage.util.WriteByteBuffer;
+import org.janusgraph.graphdb.database.serialize.DataOutput;
 import org.janusgraph.graphdb.idmanagement.IDManager;
 import org.janusgraph.graphdb.internal.RelationCategory;
-import org.apache.tinkerpop.gremlin.structure.Direction;
 
-import static org.janusgraph.graphdb.idmanagement.IDManager.VertexIDType.*;
+import static org.janusgraph.graphdb.idmanagement.IDManager.VertexIDType.SystemEdgeLabel;
+import static org.janusgraph.graphdb.idmanagement.IDManager.VertexIDType.SystemPropertyKey;
+import static org.janusgraph.graphdb.idmanagement.IDManager.VertexIDType.UserEdgeLabel;
+import static org.janusgraph.graphdb.idmanagement.IDManager.VertexIDType.UserPropertyKey;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -34,6 +38,15 @@ public class IDHandler {
 
     public static final StaticBuffer MIN_KEY = BufferUtil.getLongBuffer(0);
     public static final StaticBuffer MAX_KEY = BufferUtil.getLongBuffer(-1);
+
+    public static final byte STOP_MASK = -128;
+
+    /**
+     * See {@link VariableString} for more detail. This marker has highest
+     * bit being one. When JanusGraph sees it, it knows the buffer stores
+     * a string ID rather than a positive long ID (whose highest bit is zero).
+     */
+    public static final byte STRING_ID_MARKER = -128;
 
     public enum DirectionID {
 
@@ -190,6 +203,40 @@ public class IDHandler {
         end++;
         assert end > start;
         return new StaticBuffer[]{getPrefixed(start), getPrefixed(end)};
+    }
+
+    public static void writeVertexId(DataOutput out, Object id, boolean forward) {
+        if (forward) {
+            if (id instanceof String) {
+                VariableString.write(out, id.toString());
+            } else {
+                VariableLong.writePositive(out, ((Number) id).longValue());
+            }
+        } else {
+            if (id instanceof String) {
+                VariableString.writeBackward(out, id.toString());
+            } else {
+                VariableLong.writePositiveBackward(out, ((Number) id).longValue());
+            }
+        }
+    }
+
+    public static Object readVertexId(ReadBuffer in, boolean forward) {
+        int position = forward ? in.getPosition() : in.getPosition() - 1;
+        boolean isStringId = in.getByte(position) == STRING_ID_MARKER;
+        if (forward) {
+            if (isStringId) {
+                return VariableString.read(in);
+            } else {
+                return VariableLong.readPositive(in);
+            }
+        } else {
+            if (isStringId) {
+                return VariableString.readBackward(in);
+            } else {
+                return VariableLong.readPositiveBackward(in);
+            }
+        }
     }
 
 }

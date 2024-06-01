@@ -14,11 +14,15 @@
 
 package org.janusgraph.graphdb.types.indextype;
 
-import com.google.common.collect.Iterables;
-import org.janusgraph.core.schema.Parameter;
-import org.janusgraph.core.PropertyKey;
-import org.janusgraph.graphdb.types.*;
 import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.janusgraph.core.PropertyKey;
+import org.janusgraph.core.schema.Parameter;
+import org.janusgraph.graphdb.types.MixedIndexType;
+import org.janusgraph.graphdb.types.ParameterIndexField;
+import org.janusgraph.graphdb.types.SchemaSource;
+import org.janusgraph.graphdb.types.TypeDefinitionCategory;
+
+import java.util.List;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -26,6 +30,7 @@ import org.apache.tinkerpop.gremlin.structure.Direction;
 public class MixedIndexTypeWrapper extends IndexTypeWrapper implements MixedIndexType {
 
     public static final String NAME_PREFIX = "extindex";
+    private ParameterIndexField[] fields = null;
 
     public MixedIndexTypeWrapper(SchemaSource base) {
         super(base);
@@ -41,14 +46,12 @@ public class MixedIndexTypeWrapper extends IndexTypeWrapper implements MixedInde
         return true;
     }
 
-    ParameterIndexField[] fields = null;
-
     @Override
     public ParameterIndexField[] getFieldKeys() {
         ParameterIndexField[] result = fields;
         if (result==null) {
-            Iterable<SchemaSource.Entry> entries = base.getRelated(TypeDefinitionCategory.INDEX_FIELD,Direction.OUT);
-            int numFields = Iterables.size(entries);
+            List<SchemaSource.Entry> entries = base.getRelated(TypeDefinitionCategory.INDEX_FIELD,Direction.OUT);
+            int numFields = entries.size();
             result = new ParameterIndexField[numFields];
             int pos = 0;
             for (SchemaSource.Entry entry : entries) {
@@ -77,6 +80,5 @@ public class MixedIndexTypeWrapper extends IndexTypeWrapper implements MixedInde
     public String getStoreName() {
         return base.getDefinition().getValue(TypeDefinitionCategory.INDEXSTORE_NAME,String.class);
     }
-
 
 }

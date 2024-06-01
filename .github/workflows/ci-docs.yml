@@ -17,75 +17,80 @@ name: CI Docs
 on:
   pull_request:
   push:
+    branches-ignore:
+      - 'dependabot/**'
 
 env:
-  STRUCTOR_VERSION: v1.11.2
+  STRUCTOR_VERSION: v1.13.2
   BUILD_MAVEN_OPTS: "-DskipTests=true --batch-mode --also-make"
   VERIFY_MAVEN_OPTS: "-Pcoverage"
 
 jobs:
   build-all:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v2
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-maven-
-      - uses: actions/setup-java@v1
+      - uses: actions/setup-java@v4
         with:
-          java-version: 1.8
+          java-version: 8
+          distribution: zulu
       - run: mvn clean install --projects janusgraph-all -Pjanusgraph-cache -Dmaven.javadoc.skip=true ${{ env.BUILD_MAVEN_OPTS }}
       - run: mvn verify --projects janusgraph-all -Pjanusgraph-cache ${{ env.VERIFY_MAVEN_OPTS }}
 
   build-doc:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     needs: build-all
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v2
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
             ${{ runner.os }}-maven-
-      - uses: actions/setup-java@v1
+      - uses: actions/setup-java@v4
         with:
-          java-version: 1.8
-      - run: mvn clean install -pl janusgraph-doc ${{ env.BUILD_MAVEN_OPTS }}
+          java-version: 11
+          distribution: zulu
+      - run: mvn clean install -Pjava-11 -pl janusgraph-doc ${{ env.BUILD_MAVEN_OPTS }}
       - run: git diff  --exit-code docs/configs/janusgraph-cfg.md
       - run: docker build -t doc-site:mkdocs -f docs.Dockerfile .
       - run: docker run --rm -v $PWD:/mkdocs doc-site:mkdocs mkdocs build
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         if: github.ref != 'refs/heads/master'
         with:
-          name: distribution-builds
+          name: distribution-doc-builds
           path: site
 
   deploy-doc:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     if: github.ref == 'refs/heads/master'
     needs: build-doc
-    steps: 
-      - uses: actions/checkout@v2
+    steps:
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: false
       - run: mkdir ./bin
       - run: curl -sfL https://raw.githubusercontent.com/traefik/structor/master/godownloader.sh | bash -s -- -b ./bin ${STRUCTOR_VERSION}
-      - run: sudo ./bin/structor -o janusgraph -r janusgraph 
-            --force-edit-url 
-            --rqts-url="https://raw.githubusercontent.com/JanusGraph/janusgraph/master/requirements.txt" 
-            --dockerfile-url="https://raw.githubusercontent.com/JanusGraph/janusgraph/master/docs.Dockerfile" 
-            --dockerfile-name="https://raw.githubusercontent.com/JanusGraph/janusgraph/master/docs.Dockerfile" 
-            --menu.js-url="https://raw.githubusercontent.com/JanusGraph/janusgraph/master/docs/theme/structor-menu.js.gotmpl" 
+      - run: sudo ./bin/structor -o janusgraph -r janusgraph
+            --force-edit-url
+            --rqts-url="https://raw.githubusercontent.com/JanusGraph/janusgraph/master/requirements.txt"
+            --dockerfile-url="https://raw.githubusercontent.com/JanusGraph/janusgraph/master/docs.Dockerfile"
+            --dockerfile-name="https://raw.githubusercontent.com/JanusGraph/janusgraph/master/docs.Dockerfile"
+            --menu.js-url="https://raw.githubusercontent.com/JanusGraph/janusgraph/master/docs/theme/structor-menu.js.gotmpl"
             --exp-branch=master --debug
       - run: sudo chown -R $(id -u):$(id -g) .
-      - uses: JamesIves/github-pages-deploy-action@4.0.0-beta-01
+      - uses: JamesIves/github-pages-deploy-action@v4
         with:
-          ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
-          REPOSITORY_NAME: JanusGraph/docs.janusgraph.org
-          BRANCH: master
-          FOLDER: site
+          token: ${{ secrets.ACCESS_TOKEN }}
+          repository-name: JanusGraph/docs.janusgraph.org
+          branch: master
+          folder: site
+          force: false

@@ -14,7 +14,12 @@
 
 package org.janusgraph.diskstorage;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * This enum is only intended for use by JanusGraph internals.
@@ -25,6 +30,7 @@ public enum StandardStoreManager {
     CQL("org.janusgraph.diskstorage.cql.CQLStoreManager", "cql"),
     HBASE("org.janusgraph.diskstorage.hbase.HBaseStoreManager", "hbase"),
     IN_MEMORY("org.janusgraph.diskstorage.inmemory.InMemoryStoreManager", "inmemory"),
+    SCYLLA("org.janusgraph.diskstorage.cql.ScyllaStoreManager", "scylla");
     RDBMS("org.janusgraph.diskstorage.rdbms.RdbmsStoreManager", "rdbms");
 
     private static final Set<String> ALL_SHORTHANDS;

@@ -29,7 +29,7 @@
                 <exclude>**/bin/*.bat</exclude>
                 <exclude>**/bin/*.ps1</exclude>
                 <exclude>**/conf/cassandra.yaml</exclude>
-                <exclude>**/conf/jvm.options</exclude>
+                <exclude>**/conf/jvm-server.options</exclude>
                 <exclude>**/conf/logback.xml</exclude>
                 <exclude>**/data/**</exclude>
                 <exclude>**/logs/**</exclude>
@@ -63,16 +63,6 @@
             <excludes>
                 <exclude>${project.groupId}:janusgraph-core:jar:javadoc:${project.version}</exclude>
             </excludes>
-        </dependencySet>
-
-        <!-- Example data (from janusgraph-hadoop/faunus) -->
-        <dependencySet>
-            <unpack>true</unpack>
-            <outputDirectory>/examples</outputDirectory>
-            <useProjectArtifact>false</useProjectArtifact>
-            <includes>
-                <include>${project.groupId}:janusgraph-hadoop-core:zip:example-data:${project.version}</include>
-            </includes>
         </dependencySet>
     </dependencySets>
 </component>

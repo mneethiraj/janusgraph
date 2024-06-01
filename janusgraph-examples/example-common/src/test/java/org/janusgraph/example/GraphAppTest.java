@@ -14,14 +14,21 @@
 
 package org.janusgraph.example;
 
-import org.apache.commons.configuration.ConfigurationException;
+import org.apache.commons.configuration2.ex.ConfigurationException;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class GraphAppTest {
     protected static final String CONF_FILE = "conf/jgex-inmemory.properties";
@@ -30,7 +37,7 @@ public class GraphAppTest {
     protected static GraphTraversalSource g;
 
     @BeforeAll
-    public static void setUpClass() throws ConfigurationException {
+    public static void setUpClass() throws ConfigurationException, IOException {
         app = new GraphApp(CONF_FILE);
         g = app.openGraph();
     }
@@ -55,12 +62,12 @@ public class GraphAppTest {
 
     @Test
     public void openGraphNullConfig() throws ConfigurationException {
-        assertThrows(ConfigurationException.class, () -> new GraphApp(null).openGraph());
+        assertThrows(NullPointerException.class, () -> new GraphApp(null).openGraph());
     }
 
     @Test
     public void openGraphConfigNotFound() throws ConfigurationException {
-        assertThrows(ConfigurationException.class, () -> new GraphApp("conf/foobar").openGraph());
+        assertThrows(FileNotFoundException.class, () -> new GraphApp("conf/foobar").openGraph());
     }
 
     @Test

@@ -14,12 +14,11 @@
 
 package org.janusgraph.graphdb.tinkerpop.io.binary;
 
-import org.apache.commons.lang.SerializationException;
+import org.apache.commons.lang3.SerializationException;
 import org.apache.tinkerpop.gremlin.structure.io.Buffer;
 import org.apache.tinkerpop.gremlin.structure.io.binary.DataType;
 import org.apache.tinkerpop.gremlin.structure.io.binary.GraphBinaryReader;
 import org.apache.tinkerpop.gremlin.structure.io.binary.GraphBinaryWriter;
-
 import org.apache.tinkerpop.gremlin.structure.io.binary.types.CustomTypeSerializer;
 
 import java.io.IOException;

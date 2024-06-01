@@ -15,41 +15,89 @@
 package org.janusgraph.graphdb;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
+import org.apache.tinkerpop.gremlin.structure.Edge;
+import org.apache.tinkerpop.gremlin.structure.Element;
+import org.apache.tinkerpop.gremlin.structure.T;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.janusgraph.JanusGraphBaseStoreFeaturesTest;
-import org.janusgraph.core.*;
+import org.janusgraph.core.Cardinality;
+import org.janusgraph.core.EdgeLabel;
+import org.janusgraph.core.JanusGraph;
+import org.janusgraph.core.JanusGraphEdge;
+import org.janusgraph.core.JanusGraphElement;
+import org.janusgraph.core.JanusGraphException;
+import org.janusgraph.core.JanusGraphFactory;
+import org.janusgraph.core.JanusGraphQuery;
+import org.janusgraph.core.JanusGraphTransaction;
+import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.core.JanusGraphVertexProperty;
+import org.janusgraph.core.JanusGraphVertexQuery;
+import org.janusgraph.core.PropertyKey;
+import org.janusgraph.core.RelationType;
+import org.janusgraph.core.Transaction;
 import org.janusgraph.core.schema.JanusGraphIndex;
 import org.janusgraph.core.schema.JanusGraphManagement;
-import org.janusgraph.diskstorage.BackendException;
-
+import org.janusgraph.core.schema.SchemaAction;
+import org.janusgraph.core.schema.SchemaStatus;
 import org.janusgraph.diskstorage.Backend;
-import org.janusgraph.diskstorage.configuration.*;
+import org.janusgraph.diskstorage.BackendException;
+import org.janusgraph.diskstorage.configuration.BasicConfiguration;
+import org.janusgraph.diskstorage.configuration.ConfigElement;
+import org.janusgraph.diskstorage.configuration.ConfigOption;
+import org.janusgraph.diskstorage.configuration.Configuration;
+import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
+import org.janusgraph.diskstorage.configuration.WriteConfiguration;
 import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStoreManager;
 import org.janusgraph.diskstorage.keycolumnvalue.StoreFeatures;
+import org.janusgraph.diskstorage.keycolumnvalue.scan.ScanJob;
+import org.janusgraph.diskstorage.keycolumnvalue.scan.ScanMetrics;
 import org.janusgraph.diskstorage.log.Log;
 import org.janusgraph.diskstorage.log.LogManager;
 import org.janusgraph.diskstorage.log.kcvs.KCVSLogManager;
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
 import org.janusgraph.graphdb.database.StandardJanusGraph;
+import org.janusgraph.graphdb.database.management.ManagementSystem;
+import org.janusgraph.graphdb.internal.ElementCategory;
 import org.janusgraph.graphdb.internal.Order;
+import org.janusgraph.graphdb.internal.OrderList;
+import org.janusgraph.graphdb.internal.RelationCategory;
+import org.janusgraph.graphdb.olap.VertexJobConverter;
+import org.janusgraph.graphdb.olap.VertexScanJob;
+import org.janusgraph.graphdb.query.graph.GraphCentricQueryBuilder;
+import org.janusgraph.graphdb.query.profile.QueryProfiler;
+import org.janusgraph.graphdb.query.profile.SimpleQueryProfiler;
+import org.janusgraph.graphdb.query.vertex.BasicVertexCentricQueryBuilder;
 import org.janusgraph.graphdb.types.StandardEdgeLabelMaker;
 import org.janusgraph.testutil.TestGraphConfigs;
-
-import org.apache.tinkerpop.gremlin.structure.T;
-import org.apache.tinkerpop.gremlin.structure.Edge;
-import org.apache.tinkerpop.gremlin.structure.Element;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.janusgraph.util.datastructures.IterablesUtil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestInfo;
 
 import java.time.Duration;
-import java.util.*;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.*;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.LOG_BACKEND;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.MANAGEMENT_LOG;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.TRANSACTION_LOG;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.USER_LOG;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -333,7 +381,7 @@ public abstract class JanusGraphBaseTest implements JanusGraphBaseStoreFeaturesT
     public static int getThreadCount() {
         final String s = System.getProperty("janusgraph.test.threads");
         if (null != s)
-            return Integer.valueOf(s);
+            return Integer.parseInt(s);
         else
             return DEFAULT_THREAD_COUNT;
     }
@@ -392,18 +440,6 @@ public abstract class JanusGraphBaseTest implements JanusGraphBaseStoreFeaturesT
         return result;
     }
 
-//    public static<E> E getOnlyElement(GraphTraversal<?,E> traversal) {
-//        if (!traversal.hasNext()) throw new NoSuchElementException();
-//        return getOnlyElement(traversal,null);
-//    }
-//
-//    public static<E> E getOnlyElement(GraphTraversal<?,E> traversal, E defaultElement) {
-//        if (!traversal.hasNext()) return defaultElement;
-//        E result = traversal.next();
-//        if (traversal.hasNext()) throw new IllegalArgumentException("Traversal contains more than 1 element: " + result + ", " + traversal.next());
-//        return result;
-//    }
-
     public static void assertMissing(Transaction g, Object vid) {
         assertFalse(g.vertices(vid).hasNext());
     }
@@ -423,8 +459,8 @@ public abstract class JanusGraphBaseTest implements JanusGraphBaseStoreFeaturesT
         else return obj.toString();
     }
 
-    public static long getId(Element e) {
-        return ((JanusGraphElement)e).longId();
+    public static Object getId(Element e) {
+        return e.id();
     }
 
     public static void verifyElementOrder(Iterable<? extends Element> elements, String key, Order order, int expectedCount) {
@@ -450,7 +486,7 @@ public abstract class JanusGraphBaseTest implements JanusGraphBaseStoreFeaturesT
 
     public static <T> Stream<T> asStream(final Iterator<T> source) {
         final Iterable<T> iterable = () -> source;
-        return StreamSupport.stream(iterable.spliterator(),false);
+        return IterablesUtil.stream(iterable);
     }
 
     public JanusGraph getForceIndexGraph() {
@@ -466,4 +502,231 @@ public abstract class JanusGraphBaseTest implements JanusGraphBaseStoreFeaturesT
         return JanusGraphFactory.open(adjustedWriteConfig);
     }
 
+    protected void discardIndex(String indexName) throws InterruptedException, ExecutionException {
+        mgmt.updateIndex(mgmt.getGraphIndex(indexName), SchemaAction.DISCARD_INDEX).get();
+        mgmt.commit();
+        assertTrue(ManagementSystem
+            .awaitGraphIndexStatus(graph, indexName)
+            .status(SchemaStatus.DISCARDED)
+            .call()
+            .getSucceeded()
+        );
+        mgmt = graph.openManagement();
+    }
+
+    protected void markIndexDiscarded(String indexName) throws InterruptedException, ExecutionException {
+        mgmt.updateIndex(mgmt.getGraphIndex(indexName), SchemaAction.MARK_DISCARDED).get();
+        mgmt.commit();
+        assertTrue(ManagementSystem
+            .awaitGraphIndexStatus(graph, indexName)
+            .status(SchemaStatus.DISCARDED)
+            .call()
+            .getSucceeded()
+        );
+        mgmt = graph.openManagement();
+    }
+
+    protected void enableIndex(String indexName) throws InterruptedException, ExecutionException {
+        mgmt.updateIndex(mgmt.getGraphIndex(indexName), SchemaAction.ENABLE_INDEX).get();
+        mgmt.commit();
+        assertTrue(ManagementSystem
+            .awaitGraphIndexStatus(graph, indexName)
+            .status(SchemaStatus.ENABLED)
+            .call()
+            .getSucceeded()
+        );
+        mgmt = graph.openManagement();
+    }
+
+    protected void dropIndex(String indexName) throws InterruptedException, ExecutionException {
+        mgmt.updateIndex(mgmt.getGraphIndex(indexName), SchemaAction.DROP_INDEX).get();
+        mgmt.commit();
+        mgmt = graph.openManagement();
+        assertNull(mgmt.getGraphIndex(indexName));
+    }
+
+    protected void disableIndex(String indexName) throws InterruptedException, ExecutionException {
+        mgmt.updateIndex(mgmt.getGraphIndex(indexName), SchemaAction.DISABLE_INDEX).get();
+        mgmt.commit();
+        assertTrue(ManagementSystem
+            .awaitGraphIndexStatus(graph, indexName)
+            .status(SchemaStatus.DISABLED)
+            .call()
+            .getSucceeded()
+        );
+        mgmt = graph.openManagement();
+    }
+    public static void evaluateQuery(JanusGraphVertexQuery query, RelationCategory resultType,
+                                     int expectedResults, int numSubQueries, boolean[] subQuerySpecs) {
+        evaluateQuery(query, resultType, expectedResults, numSubQueries, subQuerySpecs, ImmutableMap.of());
+    }
+
+    public static void evaluateQuery(JanusGraphVertexQuery query, RelationCategory resultType,
+                                     int expectedResults, int numSubQueries, boolean[] subQuerySpecs,
+                                     PropertyKey orderKey, Order order) {
+        evaluateQuery(query, resultType, expectedResults, numSubQueries, subQuerySpecs, ImmutableMap.of(orderKey, order));
+    }
+
+
+    public static void evaluateQuery(JanusGraphVertexQuery query, RelationCategory resultType,
+                                     int expectedResults, int numSubQueries, boolean[] subQuerySpecs,
+                                     Map<PropertyKey, Order> orderMap) {
+        SimpleQueryProfiler profiler = new SimpleQueryProfiler();
+        ((BasicVertexCentricQueryBuilder) query).profiler(profiler);
+
+        Iterable<? extends JanusGraphElement> result;
+        switch (resultType) {
+            case PROPERTY:
+                result = query.properties();
+                break;
+            case EDGE:
+                result = query.edges();
+                break;
+            case RELATION:
+                result = query.relations();
+                break;
+            default:
+                throw new AssertionError();
+        }
+        OrderList orders = profiler.getAnnotation(QueryProfiler.ORDERS_ANNOTATION);
+
+        //Check elements and that they are returned in the correct order
+        int no = 0;
+        JanusGraphElement previous = null;
+        for (JanusGraphElement e : result) {
+            assertNotNull(e);
+            no++;
+            if (previous != null && !orders.isEmpty()) {
+                assertTrue(orders.compare(previous, e) <= 0);
+            }
+            previous = e;
+        }
+        assertEquals(expectedResults, no);
+
+        //Check OrderList of query
+        assertNotNull(orders);
+        assertEquals(orderMap.size(), orders.size());
+        for (int i = 0; i < orders.size(); i++) {
+            assertEquals(orderMap.get(orders.getKey(i)), orders.getOrder(i));
+        }
+        for (PropertyKey key : orderMap.keySet()) assertTrue(orders.containsKey(key));
+
+        //Check subqueries
+        assertEquals(Integer.valueOf(1), profiler.getAnnotation(QueryProfiler.NUMVERTICES_ANNOTATION));
+        int subQueryCounter = 0;
+        for (SimpleQueryProfiler subProfiler : profiler) {
+            assertNotNull(subProfiler);
+            if (subProfiler.getGroupName().equals(QueryProfiler.OPTIMIZATION) || Boolean.TRUE.equals(subProfiler.getAnnotation(QueryProfiler.MULTI_SLICES_ANNOTATION))) continue;
+            if (subQuerySpecs.length == 2) { //0=>fitted, 1=>ordered
+                assertEquals(subQuerySpecs[0], subProfiler.getAnnotation(QueryProfiler.FITTED_ANNOTATION));
+                assertEquals(subQuerySpecs[1], subProfiler.getAnnotation(QueryProfiler.ORDERED_ANNOTATION));
+            }
+            //assertEquals(1,Iterables.size(subProfiler)); This only applies if a disk call is necessary
+            subQueryCounter++;
+        }
+        assertEquals(numSubQueries, subQueryCounter);
+    }
+
+    public static void evaluateQuery(JanusGraphQuery query, ElementCategory resultType,
+                                     int expectedResults, boolean[] subQuerySpecs,
+                                     PropertyKey orderKey1, Order order1,
+                                     String... intersectingIndexes) {
+        evaluateQuery(query, resultType, expectedResults, subQuerySpecs,
+            ImmutableMap.of(orderKey1, order1), intersectingIndexes);
+    }
+
+    public static void evaluateQuery(JanusGraphQuery query, ElementCategory resultType,
+                                     int expectedResults, boolean[] subQuerySpecs,
+                                     PropertyKey orderKey1, Order order1, PropertyKey orderKey2, Order order2,
+                                     String... intersectingIndexes) {
+        evaluateQuery(query, resultType, expectedResults, subQuerySpecs,
+            ImmutableMap.of(orderKey1, order1, orderKey2, order2), intersectingIndexes);
+    }
+
+    public static void evaluateQuery(JanusGraphQuery query, ElementCategory resultType,
+                                     int expectedResults, boolean[] subQuerySpecs,
+                                     String... intersectingIndexes) {
+        evaluateQuery(query, resultType, expectedResults, subQuerySpecs, ImmutableMap.of(), intersectingIndexes);
+    }
+
+    public static void evaluateQuery(JanusGraphQuery query, ElementCategory resultType,
+                                     int expectedResults, boolean[] subQuerySpecs,
+                                     Map<PropertyKey, Order> orderMap, String... intersectingIndexes) {
+        if (intersectingIndexes == null) intersectingIndexes = new String[0];
+
+        SimpleQueryProfiler profiler = new SimpleQueryProfiler();
+        ((GraphCentricQueryBuilder) query).profiler(profiler);
+
+        Iterable<? extends JanusGraphElement> result;
+        switch (resultType) {
+            case PROPERTY:
+                result = query.properties();
+                break;
+            case EDGE:
+                result = query.edges();
+                break;
+            case VERTEX:
+                result = query.vertices();
+                break;
+            default:
+                throw new AssertionError();
+        }
+        OrderList orders = profiler.getAnnotation(QueryProfiler.ORDERS_ANNOTATION);
+
+        //Check elements and that they are returned in the correct order
+        int no = 0;
+        JanusGraphElement previous = null;
+        for (JanusGraphElement e : result) {
+            assertNotNull(e);
+            no++;
+            if (previous != null && !orders.isEmpty()) {
+                assertTrue(orders.compare(previous, e) <= 0);
+            }
+            previous = e;
+        }
+        assertEquals(expectedResults, no);
+
+        //Check OrderList of query
+        assertNotNull(orders);
+        assertEquals(orderMap.size(), orders.size());
+        for (int i = 0; i < orders.size(); i++) {
+            assertEquals(orderMap.get(orders.getKey(i)), orders.getOrder(i));
+        }
+        for (PropertyKey key : orderMap.keySet()) assertTrue(orders.containsKey(key));
+
+        //Check subqueries
+        SimpleQueryProfiler simpleQueryProfiler = Iterables.getOnlyElement(IterablesUtil.stream(profiler)
+            .filter(p -> !p.getGroupName().equals(QueryProfiler.OPTIMIZATION)).collect(Collectors.toList()));
+        if (subQuerySpecs.length == 2) { //0=>fitted, 1=>ordered
+            assertEquals(subQuerySpecs[0], simpleQueryProfiler.getAnnotation(QueryProfiler.FITTED_ANNOTATION));
+            assertEquals(subQuerySpecs[1], simpleQueryProfiler.getAnnotation(QueryProfiler.ORDERED_ANNOTATION));
+        }
+        Set<String> indexNames = new HashSet<>();
+        int indexQueries = 0;
+        boolean fullScan = false;
+        for (SimpleQueryProfiler indexProfiler : simpleQueryProfiler) {
+            if (indexProfiler.getAnnotation(QueryProfiler.FULLSCAN_ANNOTATION) != null) {
+                fullScan = true;
+            } else {
+                indexNames.add(indexProfiler.getAnnotation(QueryProfiler.INDEX_ANNOTATION));
+                indexQueries++;
+            }
+        }
+        if (indexQueries > 0) assertFalse(fullScan);
+        if (fullScan) assertEquals(0, intersectingIndexes.length);
+        assertEquals(intersectingIndexes.length, indexQueries);
+        assertEquals(Sets.newHashSet(intersectingIndexes), indexNames);
+    }
+
+    protected ScanMetrics executeScanJob(VertexScanJob job) throws Exception {
+        return executeScanJob(VertexJobConverter.convert(graph,job));
+    }
+
+    protected ScanMetrics executeScanJob(ScanJob job) throws Exception {
+        return graph.getBackend().buildEdgeScanJob()
+            .setNumProcessingThreads(2)
+            .setWorkBlockSize(100)
+            .setJob(job)
+            .execute().get();
+    }
 }

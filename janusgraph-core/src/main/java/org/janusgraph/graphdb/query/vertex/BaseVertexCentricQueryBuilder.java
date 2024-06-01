@@ -15,26 +15,27 @@
 package org.janusgraph.graphdb.query.vertex;
 
 import com.google.common.base.Preconditions;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.janusgraph.core.BaseVertexQuery;
-import org.janusgraph.core.PropertyKey;
-import org.janusgraph.core.RelationType;
 import org.janusgraph.core.JanusGraphRelation;
 import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.core.PropertyKey;
+import org.janusgraph.core.RelationType;
 import org.janusgraph.core.attribute.Cmp;
 import org.janusgraph.core.schema.SchemaInspector;
 import org.janusgraph.graphdb.internal.Order;
 import org.janusgraph.graphdb.internal.OrderList;
 import org.janusgraph.graphdb.internal.RelationCategory;
-import org.janusgraph.graphdb.query.Query;
 import org.janusgraph.graphdb.query.JanusGraphPredicate;
+import org.janusgraph.graphdb.query.Query;
 import org.janusgraph.graphdb.query.condition.PredicateCondition;
 import org.janusgraph.graphdb.relations.RelationIdentifier;
 import org.janusgraph.graphdb.tinkerpop.ElementUtils;
 import org.janusgraph.graphdb.types.system.ImplicitKey;
 import org.janusgraph.graphdb.types.system.SystemRelationType;
-import org.apache.commons.lang.StringUtils;
-import org.apache.tinkerpop.gremlin.structure.Direction;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.janusgraph.util.IDUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -84,7 +85,7 @@ public abstract class BaseVertexCentricQueryBuilder<Q extends BaseVertexQuery<Q>
 
     protected abstract Q getThis();
 
-    protected abstract JanusGraphVertex getVertex(long vertexId);
+    protected abstract JanusGraphVertex getVertex(Object vertexId);
 
 
     /* ---------------------------------------------------------------
@@ -106,15 +107,15 @@ public abstract class BaseVertexCentricQueryBuilder<Q extends BaseVertexQuery<Q>
         //Treat special cases
         if (type.equals(ImplicitKey.ADJACENT_ID.name())) {
             Preconditions.checkArgument(rel == Cmp.EQUAL, "Only equality constraints are supported for %s", type);
-            long vertexId = ElementUtils.getVertexId(value);
-            Preconditions.checkArgument(vertexId > 0, "Expected valid vertex id: %s", value);
+            Object vertexId = ElementUtils.getVertexId(value);
+            IDUtils.checkId(vertexId);
             return adjacent(getVertex(vertexId));
         } else if (type.equals(ImplicitKey.ID.name())) {
             RelationIdentifier rid = ElementUtils.getEdgeId(value);
             Preconditions.checkNotNull(rid, "Expected valid relation id: %s", value);
             return addConstraint(ImplicitKey.JANUSGRAPHID.name(), rel, rid.getRelationId());
         } else {
-            Preconditions.checkArgument(rel.isValidCondition(value), "Invalid condition provided: " + value);
+            Preconditions.checkArgument(rel.isValidCondition(value), "Invalid condition provided: %s", value);
         }
         if (constraints == NO_CONSTRAINTS) constraints = new ArrayList<>(5);
         constraints.add(new PredicateCondition<>(type, rel, value));
@@ -179,7 +180,10 @@ public abstract class BaseVertexCentricQueryBuilder<Q extends BaseVertexQuery<Q>
     @Override
     public Q types(String... types) {
         if (types == null) types = NO_TYPES;
-        for (String type : types) Preconditions.checkArgument(StringUtils.isNotBlank(type), "Invalid type: %s", type);
+        for (String type : types)
+            if (type != null) {
+                Preconditions.checkArgument(StringUtils.isNotBlank(type), "Invalid type: %s", type);
+            }
         this.types = types;
         return getThis();
     }
@@ -241,7 +245,9 @@ public abstract class BaseVertexCentricQueryBuilder<Q extends BaseVertexQuery<Q>
      * @return
      */
     protected final boolean isImplicitKeyQuery(RelationCategory returnType) {
-        return returnType != RelationCategory.EDGE && types.length == 1 && constraints.isEmpty() && schemaInspector.getRelationType(types[0]) instanceof ImplicitKey;
+        if (types.length != 1) return false;
+        if (types[0] == null) return false;
+        return returnType != RelationCategory.EDGE && constraints.isEmpty() && schemaInspector.getRelationType(types[0]) instanceof ImplicitKey;
     }
 
 

@@ -14,20 +14,9 @@
 
 package org.janusgraph.graphdb;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.params.provider.Arguments.arguments;
-
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.util.Arrays;
-import java.util.function.Function;
-import java.util.stream.Stream;
-
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.io.GraphReader;
 import org.apache.tinkerpop.gremlin.structure.io.GraphWriter;
-import org.apache.tinkerpop.gremlin.structure.io.IoCore;
 import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONMapper;
 import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONReader;
 import org.apache.tinkerpop.gremlin.structure.io.graphson.GraphSONVersion;
@@ -40,7 +29,6 @@ import org.janusgraph.core.schema.JanusGraphManagement;
 import org.janusgraph.example.GraphOfTheGodsFactory;
 import org.janusgraph.graphdb.tinkerpop.JanusGraphIoRegistry;
 import org.janusgraph.graphdb.tinkerpop.JanusGraphIoRegistryV1d0;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -49,6 +37,16 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.LineString;
 import org.locationtech.jts.geom.Polygon;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.util.Arrays;
+import java.util.function.Function;
+import java.util.stream.Stream;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 /**
  * Tests JanusGraph specific serialization classes not covered by the TinkerPop suite.
@@ -75,10 +73,7 @@ public abstract class JanusGraphIoTest extends JanusGraphBaseTest {
                 (Function<Graph, GraphWriter>) g -> GraphSONWriter.build().mapper(v2mapper).create()),
             arguments("graphson-v3",
                 (Function<Graph, GraphReader>) g -> GraphSONReader.build().mapper(v3mapper).create(),
-                (Function<Graph, GraphWriter>) g -> GraphSONWriter.build().mapper(v3mapper).create()),
-            arguments("gryo",
-                (Function<Graph, GraphReader>) g -> g.io(IoCore.gryo()).reader().mapper(g.io(IoCore.gryo()).mapper().create()).create(),
-                (Function<Graph, GraphWriter>) g -> g.io(IoCore.gryo()).writer().mapper(g.io(IoCore.gryo()).mapper().create()).create())
+                (Function<Graph, GraphWriter>) g -> GraphSONWriter.build().mapper(v3mapper).create())
         );
     }
 

@@ -14,6 +14,8 @@
 
 package org.janusgraph.graphdb.olap.computer;
 
+import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
+import org.apache.tinkerpop.gremlin.process.computer.MapReduce;
 import org.janusgraph.core.JanusGraph;
 import org.janusgraph.core.JanusGraphVertex;
 import org.janusgraph.diskstorage.EntryList;
@@ -27,8 +29,6 @@ import org.janusgraph.graphdb.olap.VertexJobConverter;
 import org.janusgraph.graphdb.olap.VertexScanJob;
 import org.janusgraph.graphdb.vertices.PreloadedVertex;
 import org.janusgraph.util.datastructures.Retriever;
-import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
-import org.apache.tinkerpop.gremlin.process.computer.MapReduce;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -111,7 +111,7 @@ public class VertexMapJob implements VertexScanJob {
             v.setPropertyMixing(vh);
         }
         v.setAccessCheck(MAPREDUCE_CHECK);
-        if (idManager.isPartitionedVertex(v.longId()) && !idManager.isCanonicalVertexId(v.longId())) {
+        if (idManager.isPartitionedVertex(v.id()) && !idManager.isCanonicalVertexId(((Number) v.id()).longValue())) {
             return; //Only consider the canonical partition vertex representative
         }
         for (Map.Entry<MapReduce, FulgoraMapEmitter> mapJob : mapJobs.entrySet()) {

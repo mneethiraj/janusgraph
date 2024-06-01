@@ -59,6 +59,7 @@ Full-text search is case-insensitive.
 -   `textContainsFuzzy`: is true if (at least) one word inside the text
     string is similar to the query String (based on Levenshtein edit
     distance)
+-   `textContainsPhrase`: is true if the text string does contain the sequence of words in the query string
 
 ```groovy
 import static org.janusgraph.core.attribute.Text.*
@@ -66,7 +67,17 @@ g.V().has('booksummary', textContains('unicorns'))
 g.V().has('booksummary', textContainsPrefix('uni'))
 g.V().has('booksummary', textContainsRegex('.*corn.*'))
 g.V().has('booksummary', textContainsFuzzy('unicorn'))
+g.V().has('booksummary', textContainsPhrase('unicorn horn'))
 ```
+
+The Elasticsearch backend extends this functionality and includes support for negations
+of the above predicates, as well as phrase matching:
+
+- `textNotContains`: is true if no words inside the text string match the query string
+- `textNotContainsPrefix`: is true if no words inside the text string begin with the query string
+- `textNotContainsRegex`: is true if no words inside the text string match the given regular expression
+- `textNotContainsFuzzy`:  is true if no words inside the text string are similar to the query string (based on Levenshtein edit distance)
+- `textNotContainsPhrase`:  is true if the text string does not contain the sequence of words in the query string
 
 String search predicates (see below) may be used in queries, but those
 require filtering in memory which can be very costly.
@@ -111,6 +122,13 @@ g.V().has('bookname', textRegex('.*corn.*'))
 g.V().has('bookname', textFuzzy('unicorn'))
 ```
 
+The Elasticsearch backend extends this functionality and includes support for negations
+of the above text predicates:
+
+- `textNotPrefix`: if the string value does not start with the given query string
+- `textNotRegex`: if the string value does not match the given regular expression in its entirety
+- `textNotFuzzy`: if the string value is not similar to the given query string (based on Levenshtein edit distance)
+
 Full-text search predicates may be used in queries, but those require
 filtering in memory which can be very costly.
 
@@ -147,19 +165,20 @@ g.V().has('bookname', containing('nico'))
 By default, JanusGraph supports indexing geo properties with point type
 and querying geo properties by circle or box. To index a non-point geo
 property with support for querying by any geoshape type, specify the
-mapping as `Mapping.PREFIX_TREE`:
+mapping as `Mapping.BKD` (preferred for ElasticSearch) or `Mapping.PREFIX_TREE` (Supported in Solr, Lucene, and ElasticSearch 6. 
+Deprecated in ElasticSearch 7. Support was removed in ElasticSearch 8):
 
 ```groovy
 mgmt = graph.openManagement()
 name = mgmt.makePropertyKey('border').dataType(Geoshape.class).make()
-mgmt.buildIndex('borderIndex', Vertex.class).addKey(name, Mapping.PREFIX_TREE.asParameter()).buildMixedIndex("search")
+mgmt.buildIndex('borderIndex', Vertex.class).addKey(name, Mapping.BKD.asParameter()).buildMixedIndex("search")
 mgmt.commit()
 ```
 
-Additional parameters can be specified to tune the configuration of the
-underlying prefix tree mapping. These optional parameters include the
-number of levels used in the prefix tree as well as the associated
-precision.
+When `Mapping.PREFIX_TREE` is used it is possible to specify additional 
+parameters to tune the configuration of the underlying prefix tree mapping. 
+These optional parameters include the number of levels used in the prefix 
+tree as well as the associated precision.
 
 ```groovy
 mgmt = graph.openManagement()
@@ -171,3 +190,12 @@ mgmt.commit()
 Note that some indexing backends (e.g. Solr) may require additional
 external schema configuration to support and tune indexing non-point
 properties.
+
+!!! info
+    `Mapping.BKD` mapping which is preferred for ElasticSearch doesn't support Circle shape. 
+    Instead of indexing a Circle as it was with `Mapping.PREFIX_TREE` there are Circle 
+    processors available which transform Circle into other shapes and index those shapes instead. 
+    Depending on the precision configuration used, search for such circles may behave differently. 
+    The higher the precision the more points is used during indexing which may affect storage size
+    and index time. See `index.[X].bkd-circle-processor` configuration properties for more information
+    about BKD circle processors.

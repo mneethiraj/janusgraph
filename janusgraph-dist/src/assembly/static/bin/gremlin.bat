@@ -47,7 +47,7 @@ IF NOT DEFINED HADOOP_HOME (
         SET HADOOP_HOME=%JANUSGRAPH_HOME%
     ) ELSE (
         ECHO HADOOP_HOME is not set.
-        ECHO Download https://public-repo-1.hortonworks.com/hdp-win-alpha/winutils.exe
+        ECHO Download https://github.com/cdarlint/winutils/raw/master/hadoop-2.8.5/bin/winutils.exe
         ECHO Place it under !JANUSGRAPH_WINUTILS!
         PAUSE
         GOTO :eof
@@ -84,9 +84,7 @@ SET CP=%CLASSPATH%;%SLF4J_LOG4J_JAR%;%JANUSGRAPH_JARS%;%JANUSGRAPH_LIB%\*;%EXTDI
 IF NOT DEFINED JAVA_OPTIONS (
  SET JAVA_OPTIONS=-Xms32m -Xmx512m ^
  -Dtinkerpop.ext=%JANUSGRAPH_EXT% ^
- -Dlogback.configurationFile=%JANUSGRAPH_HOME%\conf\logback.xml ^
- -Dlog4j.configuration=file:/%JANUSGRAPH_HOME%\conf\log4j-console.properties ^
- -Dgremlin.log4j.level=%GREMLIN_LOG_LEVEL% ^
+ -Dlog4j2.configurationFile=file:/%JANUSGRAPH_HOME%\conf\log4j2-server.xml ^
  -Djline.terminal=none ^
  -javaagent:%JAMM_JAR% ^
  -Dgremlin.io.kryoShimService=org.janusgraph.hadoop.serialize.JanusGraphKryoShimService

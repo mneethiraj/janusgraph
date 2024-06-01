@@ -15,17 +15,17 @@
 package org.janusgraph.graphdb.database.management;
 
 import com.google.common.base.Preconditions;
+import org.apache.commons.collections.CollectionUtils;
 import org.janusgraph.core.JanusGraphManagerUtility;
 import org.janusgraph.core.JanusGraphTransaction;
 import org.janusgraph.core.schema.JanusGraphManagement;
-import org.janusgraph.diskstorage.ResourceUnavailableException;
-
-import org.janusgraph.diskstorage.util.time.Timer;
-import org.janusgraph.diskstorage.util.time.TimestampProvider;
 import org.janusgraph.diskstorage.ReadBuffer;
+import org.janusgraph.diskstorage.ResourceUnavailableException;
 import org.janusgraph.diskstorage.log.Log;
 import org.janusgraph.diskstorage.log.Message;
 import org.janusgraph.diskstorage.log.MessageReader;
+import org.janusgraph.diskstorage.util.time.Timer;
+import org.janusgraph.diskstorage.util.time.TimestampProvider;
 import org.janusgraph.graphdb.database.StandardJanusGraph;
 import org.janusgraph.graphdb.database.cache.SchemaCache;
 import org.janusgraph.graphdb.database.idhandling.VariableLong;
@@ -33,18 +33,20 @@ import org.janusgraph.graphdb.database.serialize.DataOutput;
 import org.janusgraph.graphdb.database.serialize.Serializer;
 import org.janusgraph.graphdb.management.JanusGraphManager;
 import org.janusgraph.graphdb.types.vertices.JanusGraphSchemaVertex;
-import static org.janusgraph.graphdb.database.management.GraphCacheEvictionAction.EVICT;
-import static org.janusgraph.graphdb.database.management.GraphCacheEvictionAction.DO_NOT_EVICT;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.Iterator;
-import java.util.Set;
 import java.util.List;
-import java.util.concurrent.*;
+import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.janusgraph.graphdb.database.management.GraphCacheEvictionAction.DO_NOT_EVICT;
+import static org.janusgraph.graphdb.database.management.GraphCacheEvictionAction.EVICT;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -91,6 +93,9 @@ public class ManagementLogger implements MessageReader {
                 for (int i = 0; i < numEvictions; i++) {
                     long typeId = VariableLong.readPositive(in);
                     schemaCache.expireSchemaElement(typeId);
+                    for (JanusGraphTransaction tx : graph.getOpenTransactions()) {
+                        tx.expireSchemaElement(typeId);
+                    }
                 }
                 final GraphCacheEvictionAction action = serializer.readObjectNotNull(in, GraphCacheEvictionAction.class);
                 Preconditions.checkNotNull(action);
@@ -123,7 +128,7 @@ public class ManagementLogger implements MessageReader {
                                              final boolean evictGraphFromCache,
                                              List<Callable<Boolean>> updatedTypeTriggers,
                                              Set<String> openInstances) {
-        Preconditions.checkArgument(!openInstances.isEmpty());
+        Preconditions.checkArgument(CollectionUtils.isNotEmpty(openInstances), "openInstances cannot be null or empty");
         long evictionId = evictionTriggerCounter.incrementAndGet();
         evictionTriggerMap.put(evictionId,new EvictionTrigger(evictionId,updatedTypeTriggers,graph));
         DataOutput out = graph.getDataSerializer().getDataOutput(128);

@@ -15,8 +15,6 @@
 package org.janusgraph.graphdb.transaction.lock;
 
 import org.janusgraph.core.JanusGraphException;
-
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,7 +39,7 @@ public class ReentrantTransactionLock extends ReentrantLock implements Transacti
         try {
             success = super.tryLock(timeout.toNanos(), TimeUnit.NANOSECONDS);
         } catch (InterruptedException e) {
-            log.warn("Interrupted waiting for lock: {}",e);
+            log.warn("Interrupted waiting for lock: {}", this, e);
         }
         if (!success) throw new JanusGraphException("Possible dead lock detected. Waited for transaction lock without success");
     }

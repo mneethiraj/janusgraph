@@ -15,6 +15,7 @@
 package org.janusgraph.olap;
 
 import com.google.common.collect.ImmutableSet;
+import org.apache.commons.configuration2.Configuration;
 import org.apache.tinkerpop.gremlin.process.computer.GraphComputer;
 import org.apache.tinkerpop.gremlin.process.computer.Memory;
 import org.apache.tinkerpop.gremlin.process.computer.MessageScope;
@@ -22,15 +23,13 @@ import org.apache.tinkerpop.gremlin.process.computer.Messenger;
 import org.apache.tinkerpop.gremlin.process.computer.VertexComputeKey;
 import org.apache.tinkerpop.gremlin.process.computer.util.AbstractVertexProgramBuilder;
 import org.apache.tinkerpop.gremlin.process.computer.util.StaticVertexProgram;
+import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
-import org.apache.commons.configuration.Configuration;
+import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
 
 import java.util.Set;
-
-import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
-import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
 
 /**
  * This implementation is only intended for testing.
@@ -91,12 +90,12 @@ public class PageRankVertexProgram extends StaticVertexProgram<Double> {
             messenger.sendMessage(inE, 1D);
         } else if (1 == memory.getIteration()) {
             double initialPageRank = 1D / vertexCount;
-            double edgeCount = IteratorUtils.stream(messenger.receiveMessages()).reduce(0D, (a, b) -> a + b);
+            double edgeCount = IteratorUtils.stream(messenger.receiveMessages()).reduce(0D, Double::sum);
             vertex.property(VertexProperty.Cardinality.single, PAGE_RANK, initialPageRank);
             vertex.property(VertexProperty.Cardinality.single, OUTGOING_EDGE_COUNT, edgeCount);
             messenger.sendMessage(outE, initialPageRank / edgeCount);
         } else {
-            double newPageRank = IteratorUtils.stream(messenger.receiveMessages()).reduce(0D, (a, b) -> a + b);
+            double newPageRank = IteratorUtils.stream(messenger.receiveMessages()).reduce(0D, Double::sum);
             newPageRank =  (dampingFactor * newPageRank) + ((1D - dampingFactor) / vertexCount);
             vertex.property(VertexProperty.Cardinality.single, PAGE_RANK, newPageRank);
             messenger.sendMessage(outE, newPageRank / vertex.<Double>value(OUTGOING_EDGE_COUNT));

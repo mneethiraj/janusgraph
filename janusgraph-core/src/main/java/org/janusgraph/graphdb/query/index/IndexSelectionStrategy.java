@@ -14,14 +14,16 @@
 
 package org.janusgraph.graphdb.query.index;
 
-import java.util.*;
 import org.janusgraph.core.JanusGraphElement;
 import org.janusgraph.graphdb.database.IndexSerializer;
+import org.janusgraph.graphdb.internal.ElementCategory;
 import org.janusgraph.graphdb.internal.OrderList;
 import org.janusgraph.graphdb.query.condition.Condition;
 import org.janusgraph.graphdb.query.condition.MultiCondition;
 import org.janusgraph.graphdb.query.graph.JointIndexQuery;
-import org.janusgraph.graphdb.types.*;
+import org.janusgraph.graphdb.types.IndexType;
+
+import java.util.Set;
 
 /**
  * @author Florian Grieskamp (Florian.Grieskamp@gdata.de)
@@ -32,6 +34,10 @@ public interface IndexSelectionStrategy {
                                      final Set<Condition> coveredClauses, OrderList orders,
                                      IndexSerializer serializer);
 
+    SelectedIndexQuery selectIndices(final ElementCategory resultType,
+                                     final MultiCondition<JanusGraphElement> conditions,
+                                     final Set<Condition> coveredClauses, OrderList orders,
+                                     IndexSerializer serializer);
     class SelectedIndexQuery {
         private JointIndexQuery query;
         private boolean isSorted;

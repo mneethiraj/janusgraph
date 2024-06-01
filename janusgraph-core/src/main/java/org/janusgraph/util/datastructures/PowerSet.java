@@ -14,13 +14,18 @@
 
 package org.janusgraph.util.datastructures;
 
-import java.util.*;
+import java.util.AbstractSet;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
 
 /**
  * @author Florian Grieskamp (Florian.Grieskamp@gdata.de)
  */
 public class PowerSet<T> extends AbstractSet<Set<T>> {
-    
+
     private final Set<T> originalSet;
 
     public PowerSet(final Set<T> originalSet) {
@@ -29,7 +34,7 @@ public class PowerSet<T> extends AbstractSet<Set<T>> {
 
     @Override
     public Iterator<Set<T>> iterator() {
-        return new PowerSetIterator<T>(originalSet);
+        return new PowerSetIterator<>(originalSet);
     }
 
     @Override
@@ -52,7 +57,7 @@ public class PowerSet<T> extends AbstractSet<Set<T>> {
             }
 
             // allow efficient access by index
-            originalElements = new ArrayList<T>(originalSet);
+            originalElements = new ArrayList<>(originalSet);
             resultSize = 1 << originalSet.size();
             position = 0;
         }
@@ -64,7 +69,7 @@ public class PowerSet<T> extends AbstractSet<Set<T>> {
 
         @Override
         public Set<T> next() {
-            Set<T> result = new HashSet<T>(originalElements.size());
+            Set<T> result = new HashSet<>(originalElements.size());
             for (int elementMap = position, elementIdx = 0; elementMap > 0; elementMap /= 2, ++elementIdx) {
                 // we use elementMap as a binary representation of which elements are contained in the result set
                 if (elementMap % 2 == 1) {

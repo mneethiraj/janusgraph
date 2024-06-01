@@ -17,18 +17,32 @@ package org.janusgraph.diskstorage.locking.consistentkey;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 import org.janusgraph.core.JanusGraphConfigurationException;
-
+import org.janusgraph.diskstorage.BackendException;
+import org.janusgraph.diskstorage.Entry;
+import org.janusgraph.diskstorage.PermanentBackendException;
+import org.janusgraph.diskstorage.StaticBuffer;
+import org.janusgraph.diskstorage.TemporaryBackendException;
 import org.janusgraph.diskstorage.configuration.ConfigElement;
-
+import org.janusgraph.diskstorage.configuration.Configuration;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStore;
+import org.janusgraph.diskstorage.keycolumnvalue.KeySliceQuery;
+import org.janusgraph.diskstorage.keycolumnvalue.StoreManager;
+import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
+import org.janusgraph.diskstorage.locking.AbstractLocker;
+import org.janusgraph.diskstorage.locking.LocalLockMediator;
+import org.janusgraph.diskstorage.locking.LocalLockMediators;
+import org.janusgraph.diskstorage.locking.Locker;
+import org.janusgraph.diskstorage.locking.LockerState;
+import org.janusgraph.diskstorage.locking.PermanentLockingException;
+import org.janusgraph.diskstorage.locking.TemporaryLockingException;
+import org.janusgraph.diskstorage.util.BufferUtil;
+import org.janusgraph.diskstorage.util.KeyColumn;
+import org.janusgraph.diskstorage.util.StandardBaseTransactionConfig;
+import org.janusgraph.diskstorage.util.StaticArrayBuffer;
+import org.janusgraph.diskstorage.util.StaticArrayEntry;
 import org.janusgraph.diskstorage.util.time.Timer;
 import org.janusgraph.diskstorage.util.time.TimestampProvider;
-import org.janusgraph.diskstorage.*;
-import org.janusgraph.diskstorage.configuration.Configuration;
-import org.janusgraph.diskstorage.keycolumnvalue.*;
-import org.janusgraph.diskstorage.locking.*;
-import org.janusgraph.diskstorage.util.*;
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -453,7 +467,7 @@ public class ConsistentKeyLocker extends AbstractLocker<ConsistentKeyLockStatus>
                 // Locks that this instance wrote that have now expired should not only log
                 // but also throw a descriptive exception
                 if (rid.equals(tr.getRid()) && ls.getWriteTimestamp().equals(tr.getTimestamp())) {
-                    throw new ExpiredLockException("Expired lock on " + kc.toString() +
+                    throw new ExpiredLockException("Expired lock on " + kc +
                             ": lock timestamp " + tr.getTimestamp() + " " + times.getUnit() + " is older than " +
                             ConfigElement.getPath(GraphDatabaseConfiguration.LOCK_EXPIRE) + "=" + lockExpire);
                     // Really shouldn't refer to GDC.LOCK_EXPIRE here,
@@ -577,12 +591,12 @@ public class ConsistentKeyLocker extends AbstractLocker<ConsistentKeyLockStatus>
         if (tx != null) {
             try {
                 if (log.isDebugEnabled()) {
-                    log.debug("Transaction is still open! Rolling back: " + tx.toString(), new Throwable());
+                    log.debug("Transaction is still open! Rolling back: " + tx, new Throwable());
                 }
 
                 tx.rollback();
             } catch (Throwable excp) {
-                log.error("Failed to rollback transaction " + tx.toString() + ". The transaction may be leaked.", excp);
+                log.error("Failed to rollback transaction " + tx + ". The transaction may be leaked.", excp);
             }
         }
 

@@ -15,7 +15,7 @@
 package org.janusgraph.diskstorage.inmemory;
 
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.lang.SystemUtils;
+import org.apache.commons.lang3.SystemUtils;
 import org.janusgraph.diskstorage.Entry;
 import org.janusgraph.diskstorage.EntryList;
 import org.janusgraph.diskstorage.StaticBuffer;
@@ -27,13 +27,17 @@ import org.janusgraph.diskstorage.util.StandardBaseTransactionConfig;
 import org.janusgraph.diskstorage.util.time.TimestampProviders;
 import org.junit.jupiter.api.Test;
 
+import java.io.File;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ForkJoinPool;
+
 import static org.janusgraph.diskstorage.inmemory.BufferPageTest.makeEntry;
 import static org.janusgraph.diskstorage.inmemory.BufferPageTest.makeStaticBuffer;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-
-import java.io.File;
-import java.util.*;
-import java.util.concurrent.ForkJoinPool;
 
 public class InMemoryStoreManagerTest
 {

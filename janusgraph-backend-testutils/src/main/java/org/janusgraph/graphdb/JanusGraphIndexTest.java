@@ -18,80 +18,139 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Sets;
+import io.github.artsok.RepeatedIfExceptionsTest;
+import org.apache.tinkerpop.gremlin.process.traversal.P;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversal;
+import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
+import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
+import org.apache.tinkerpop.gremlin.process.traversal.step.util.ElementValueComparator;
 import org.apache.tinkerpop.gremlin.process.traversal.util.Metrics;
 import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalMetrics;
+import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.apache.tinkerpop.gremlin.structure.Edge;
+import org.apache.tinkerpop.gremlin.structure.Element;
+import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.T;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 import org.janusgraph.TestCategory;
-import org.janusgraph.core.*;
+import org.janusgraph.core.Cardinality;
+import org.janusgraph.core.EdgeLabel;
+import org.janusgraph.core.JanusGraph;
+import org.janusgraph.core.JanusGraphElement;
+import org.janusgraph.core.JanusGraphException;
+import org.janusgraph.core.JanusGraphFactory;
+import org.janusgraph.core.JanusGraphIndexQuery;
+import org.janusgraph.core.JanusGraphQuery;
+import org.janusgraph.core.JanusGraphTransaction;
+import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.core.JanusGraphVertexProperty;
+import org.janusgraph.core.Multiplicity;
+import org.janusgraph.core.PropertyKey;
+import org.janusgraph.core.VertexLabel;
 import org.janusgraph.core.attribute.Cmp;
 import org.janusgraph.core.attribute.Geo;
 import org.janusgraph.core.attribute.Geoshape;
 import org.janusgraph.core.attribute.Text;
 import org.janusgraph.core.log.TransactionRecovery;
+import org.janusgraph.core.schema.JanusGraphIndex;
+import org.janusgraph.core.schema.JanusGraphManagement;
 import org.janusgraph.core.schema.Mapping;
 import org.janusgraph.core.schema.Parameter;
 import org.janusgraph.core.schema.SchemaAction;
 import org.janusgraph.core.schema.SchemaStatus;
-import org.janusgraph.core.schema.JanusGraphIndex;
-import org.janusgraph.core.schema.JanusGraphManagement;
 import org.janusgraph.core.util.ManagementUtil;
 import org.janusgraph.diskstorage.Backend;
 import org.janusgraph.diskstorage.BackendException;
+import org.janusgraph.diskstorage.BackendTransaction;
 import org.janusgraph.diskstorage.configuration.ConfigElement;
 import org.janusgraph.diskstorage.configuration.WriteConfiguration;
+import org.janusgraph.diskstorage.indexing.IndexEntry;
 import org.janusgraph.diskstorage.indexing.IndexFeatures;
 import org.janusgraph.diskstorage.indexing.IndexInformation;
 import org.janusgraph.diskstorage.indexing.IndexProvider;
+import org.janusgraph.diskstorage.indexing.IndexTransaction;
 import org.janusgraph.diskstorage.log.kcvs.KCVSLog;
 import org.janusgraph.diskstorage.util.time.TimestampProvider;
 import org.janusgraph.example.GraphOfTheGodsFactory;
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
+import org.janusgraph.graphdb.database.IndexRecordEntry;
+import org.janusgraph.graphdb.database.index.IndexMutationType;
+import org.janusgraph.graphdb.database.index.IndexUpdate;
 import org.janusgraph.graphdb.database.management.ManagementSystem;
+import org.janusgraph.graphdb.database.util.IndexRecordUtil;
+import org.janusgraph.graphdb.database.util.StaleIndexRecordUtil;
 import org.janusgraph.graphdb.internal.ElementCategory;
+import org.janusgraph.graphdb.internal.ElementLifeCycle;
 import org.janusgraph.graphdb.internal.Order;
 import org.janusgraph.graphdb.log.StandardTransactionLogProcessor;
 import org.janusgraph.graphdb.query.index.ApproximateIndexSelectionStrategy;
 import org.janusgraph.graphdb.query.index.BruteForceIndexSelectionStrategy;
 import org.janusgraph.graphdb.query.index.ThresholdBasedIndexSelectionStrategy;
 import org.janusgraph.graphdb.query.profile.QueryProfiler;
+import org.janusgraph.graphdb.tinkerpop.optimize.step.JanusGraphMixedIndexAggStep;
+import org.janusgraph.graphdb.tinkerpop.optimize.step.JanusGraphStep;
+import org.janusgraph.graphdb.tinkerpop.optimize.strategy.JanusGraphMixedIndexCountStrategy;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
+import org.janusgraph.graphdb.types.MixedIndexType;
 import org.janusgraph.graphdb.types.ParameterType;
 import org.janusgraph.graphdb.types.StandardEdgeLabelMaker;
+import org.janusgraph.graphdb.types.vertices.JanusGraphSchemaVertex;
+import org.janusgraph.graphdb.vertices.CacheVertex;
 import org.janusgraph.testutil.TestGraphConfigs;
-import org.apache.tinkerpop.gremlin.process.traversal.P;
-import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
-import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
-import org.apache.tinkerpop.gremlin.process.traversal.step.util.ElementValueComparator;
-import org.apache.tinkerpop.gremlin.structure.Direction;
-import org.apache.tinkerpop.gremlin.structure.Edge;
-import org.apache.tinkerpop.gremlin.structure.Element;
-import org.apache.tinkerpop.gremlin.structure.Graph;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
-import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
-import static org.janusgraph.graphdb.JanusGraphTest.evaluateQuery;
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.*;
-import static org.janusgraph.graphdb.query.index.ThresholdBasedIndexSelectionStrategy.INDEX_SELECT_BRUTE_FORCE_THRESHOLD;
-import static org.janusgraph.testutil.JanusGraphAssert.*;
-import static org.apache.tinkerpop.gremlin.process.traversal.Order.desc;
 import static org.apache.tinkerpop.gremlin.process.traversal.Order.asc;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.apache.tinkerpop.gremlin.process.traversal.Order.desc;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.FORCE_INDEX_USAGE;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.INDEX_BACKEND;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.INDEX_NAME_MAPPING;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.INDEX_SELECT_STRATEGY;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.LOG_READ_INTERVAL;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.LOG_SEND_DELAY;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.MANAGEMENT_LOG;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.MAX_COMMIT_TIME;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_WRITE_WAITTIME;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.SYSTEM_LOG_TRANSACTIONS;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.TRANSACTION_LOG;
+import static org.janusgraph.graphdb.query.index.ThresholdBasedIndexSelectionStrategy.INDEX_SELECT_BRUTE_FORCE_THRESHOLD;
+import static org.janusgraph.testutil.JanusGraphAssert.assertBackendHit;
+import static org.janusgraph.testutil.JanusGraphAssert.assertCount;
+import static org.janusgraph.testutil.JanusGraphAssert.assertEmpty;
+import static org.janusgraph.testutil.JanusGraphAssert.assertIntRange;
+import static org.janusgraph.testutil.JanusGraphAssert.assertNoBackendHit;
+import static org.janusgraph.testutil.JanusGraphAssert.assertNotEmpty;
+import static org.janusgraph.testutil.JanusGraphAssert.assertTraversal;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 
 /**
@@ -156,7 +215,13 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
 
     public abstract boolean supportsGeoPointExistsQuery();
 
+    public abstract boolean supportsGeoShapePrefixTreeMapping();
+
     public String getStringField(String propertyKey) {
+        return propertyKey;
+    }
+
+    public String getTextField(String propertyKey) {
         return propertyKey;
     }
 
@@ -190,6 +255,48 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
         assertEquals("demigod", h.label());
         assertCount(5, h.query().direction(Direction.BOTH).edges());
         graphOfTheGods.tx().commit();
+    }
+
+    @Test
+    public void testUpdateSchemaChangeNameForPropertyKey() {
+        PropertyKey name = mgmt.makePropertyKey("name").dataType(String.class).make();
+        mgmt.buildIndex("mixed", Vertex.class).addKey(name, getStringMapping()).buildMixedIndex(INDEX);
+        finishSchema();
+
+        graph.addVertex("name", "original");
+        graph.tx().commit();
+
+        PropertyKey prop = mgmt.getPropertyKey("name");
+        mgmt.changeName(prop, "oldName");
+        assertEquals("oldName", prop.name());
+        finishSchema();
+
+        assertTrue(mgmt.containsPropertyKey("oldName"));
+        assertFalse(mgmt.containsPropertyKey("name"));
+
+        // the renamed property can now be used for insertion and query
+        graph.addVertex("oldName", "old");
+        graph.tx().commit();
+        clopen(option(FORCE_INDEX_USAGE), true);
+        assertTrue(graph.traversal().V().has("oldName", "old").hasNext());
+
+        // create a new property using the old name
+        name = mgmt.makePropertyKey("name").dataType(String.class).make();
+        finishSchema();
+        graph.addVertex("name", "new");
+        JanusGraphException ex = assertThrows(JanusGraphException.class, () -> graph.traversal().V().has("name", "new").hasNext());
+        assertEquals("Could not find a suitable index to answer graph query and graph scans are disabled: [(name = new)]:VERTEX", ex.getMessage());
+        clopen();
+        assertTrue(graph.traversal().V().has("name", "new").hasNext());
+
+        // demonstrate that the same property name cannot be added to the same mixed index
+        // see https://github.com/JanusGraph/janusgraph/issues/2653
+        finishSchema();
+        mgmt.addIndexKey(mgmt.getGraphIndex("mixed"), mgmt.getPropertyKey("name"), getStringMapping());
+        mgmt.commit();
+        graph.addVertex("name", "new");
+        ex = assertThrows(JanusGraphException.class, () -> graph.tx().commit());
+        assertEquals("Duplicate index field names found, likely you have multiple properties mapped to the same index field", ex.getCause().getMessage());
     }
 
     @Test
@@ -525,8 +632,13 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
         createExternalEdgeIndex(location, INDEX);
 
         final PropertyKey boundary = makeKey("boundary", Geoshape.class);
-        mgmt.addIndexKey(getExternalIndex(Vertex.class,INDEX),boundary, Parameter.of("mapping", Mapping.PREFIX_TREE), Parameter.of("index-geo-dist-error-pct", 0.0025));
-        mgmt.addIndexKey(getExternalIndex(Edge.class,INDEX),boundary, Parameter.of("mapping", Mapping.PREFIX_TREE), Parameter.of("index-geo-dist-error-pct", 0.0025));
+        if(supportsGeoShapePrefixTreeMapping()){
+            mgmt.addIndexKey(getExternalIndex(Vertex.class,INDEX),boundary, Parameter.of("mapping", Mapping.PREFIX_TREE), Parameter.of("index-geo-dist-error-pct", 0.0025));
+            mgmt.addIndexKey(getExternalIndex(Edge.class,INDEX),boundary, Parameter.of("mapping", Mapping.PREFIX_TREE), Parameter.of("index-geo-dist-error-pct", 0.0025));
+        } else {
+            mgmt.addIndexKey(getExternalIndex(Vertex.class,INDEX),boundary, Parameter.of("mapping", Mapping.BKD));
+            mgmt.addIndexKey(getExternalIndex(Edge.class,INDEX),boundary, Parameter.of("mapping", Mapping.BKD));
+        }
 
         final PropertyKey time = makeKey("time", Long.class);
         createExternalVertexIndex(time, INDEX);
@@ -1023,16 +1135,34 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
     public void testGraphCentricQueryProfiling() {
         final PropertyKey name = makeKey("name", String.class);
         final PropertyKey prop = makeKey("prop", String.class);
-        mgmt.buildIndex("mixed", Vertex.class).addKey(name, Mapping.STRING.asParameter())
-            .addKey(prop, Mapping.STRING.asParameter()).buildMixedIndex(INDEX);
+        final PropertyKey description = makeKey("desc", String.class);
+        final PropertyKey pet = makeKey("pet", String.class);
+        final PropertyKey height = makeKey("height", Integer.class);
+        final PropertyKey weight = makeKey("weight", Float.class);
+        mgmt.buildIndex("mixed", Vertex.class)
+            .addKey(name, Mapping.STRING.asParameter())
+            .addKey(prop, Mapping.STRING.asParameter())
+            .addKey(height)
+            .addKey(weight)
+            .buildMixedIndex(INDEX);
+        mgmt.buildIndex("mi", Vertex.class).addKey(description).addKey(pet).buildMixedIndex(INDEX2);
         finishSchema();
 
-        tx.addVertex("name", "bob", "prop", "val");
+        tx.addVertex("name", "bob", "prop", "val", "desc", "he likes coding", "pet", "he likes dogs", "age", 20, "height", 170, "weight", 72.3);
+        tx.addVertex("name", "bob", "prop", "val2", "desc", "he likes coding", "pet", "he likes cats", "age", 25, "height", 175, "weight", 102.5);
+        tx.addVertex("name", "alex", "prop", "val", "desc", "he likes debugging", "pet", "he likes cats", "age", 20, "height", 190, "weight", 55.3);
         tx.commit();
 
         // satisfied by a single graph-centric query which is satisfied by a single mixed index query
         if (indexFeatures.supportNotQueryNormalForm()) {
             newTx();
+            assertEquals(3, tx.traversal().V().or(__.has("name", "bob"), __.has("prop", "val")).count().next());
+            assertEquals(3, tx.traversal().V().or(__.has("name", "bob"), __.has("prop", "val")).toList().size());
+            assertEquals(190, tx.traversal().V().or(__.has("name", "bob"), __.has("prop", "val")).values("height").max().next());
+            assertEquals(25, tx.traversal().V().or(__.has("name", "bob"), __.has("prop", "val")).values("age").max().next());
+            assertEquals(170, tx.traversal().V().or(__.has("name", "bob"), __.has("prop", "val")).values("height").min().next());
+            assertEquals(535L, tx.traversal().V().or(__.has("name", "bob"), __.has("prop", "val")).values("height").sum().next());
+            assertEquals(535.0/3, tx.traversal().V().or(__.has("name", "bob"), __.has("prop", "val")).values("height").mean().next());
             Metrics mMixedOr = tx.traversal().V().or(__.has("name", "bob"), __.has("prop", "val"))
                 .profile().next().getMetrics(0);
             assertEquals("Or(JanusGraphStep([],[name.eq(bob)]),JanusGraphStep([],[prop.eq(val)]))", mMixedOr.getName());
@@ -1047,41 +1177,197 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
             Map<String, String> annotations = new HashMap() {{
                 put("condition", "((name = bob) OR (prop = val))");
                 put("orders", "[]");
-                put("isFitted", "false");
+                put("isFitted", "true");
                 put("isOrdered", "true");
-                put("query", "[((name = bob) OR (prop = val))](2000):mixed");
+                put("query", "[((name = bob) OR (prop = val))]:mixed");
                 put("index", "mixed");
                 put("index_impl", "search");
             }};
             assertEquals(annotations, nested.getAnnotations());
+
+            // multiple or clause satisfied by a single graph-centric query which is satisfied by a single mixed index query
+            newTx();
+            assertEquals(1, tx.traversal().V()
+                    .or(__.has("name", "bob"), __.has("prop", "val2"))
+                    .or(__.has("name", "alex"), __.has("prop", "val"))
+                    .count().next());
+            assertEquals(1, tx.traversal().V()
+                    .or(__.has("name", "bob"), __.has("prop", "val2"))
+                    .or(__.has("name", "alex"), __.has("prop", "val"))
+                    .toList().size());
+            final Metrics mMixedOr2 = tx.traversal().V()
+                    .or(__.has("name", "bob"), __.has("prop", "val2"))
+                    .or(__.has("name", "alex"), __.has("prop", "val"))
+                    .profile().next().getMetrics(0);
+            assertEquals("Or(JanusGraphStep([],[name.eq(bob)]),JanusGraphStep([],[prop.eq(val2)])).Or(JanusGraphStep([],[name.eq(alex)]),JanusGraphStep([],[prop.eq(val)]))", mMixedOr2.getName());
+            assertTrue(mMixedOr2.getDuration(TimeUnit.MICROSECONDS) > 0);
+            assertEquals(2, mMixedOr2.getNested().size());
+            nested = (Metrics) mMixedOr2.getNested().toArray()[0];
+            assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+            assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+            nested = (Metrics) mMixedOr2.getNested().toArray()[1];
+            assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+            assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+            annotations = new HashMap() {{
+                put("condition", "(((name = bob) OR (prop = val2)) AND ((name = alex) OR (prop = val)))");
+                put("orders", "[]");
+                put("isFitted", "true");
+                put("isOrdered", "true");
+                put("query", "[(((name = bob) OR (prop = val2)) AND ((name = alex) OR (prop = val)))]:mixed");
+                put("index", "mixed");
+                put("index_impl", "search");
+            }};
+            assertEquals(annotations, nested.getAnnotations());
+
+            // multiple or clause satisfied by a single graph-centric query which is satisfied by union of two mixed index queries
+            newTx();
+            assertEquals(2, tx.traversal().V()
+                    .or(__.has("name", "alex"), __.has("prop", "val2"))
+                    .or(__.has("desc", Text.textContains("coding")), __.has("pet", Text.textContains("cats")))
+                    .count().next());
+            assertEquals(2, tx.traversal().V()
+                    .or(__.has("name", "alex"), __.has("prop", "val2"))
+                    .or(__.has("desc", Text.textContains("coding")), __.has("pet", Text.textContains("cats")))
+                    .toList().size());
+            final Metrics mMixedOr3 = tx.traversal().V()
+                    .or(__.has("name", "alex"), __.has("prop", "val2"))
+                    .or(__.has("desc", Text.textContains("coding")), __.has("pet", Text.textContains("cats")))
+                    .profile().next().getMetrics(0);
+            assertEquals("Or(JanusGraphStep([],[name.eq(alex)]),JanusGraphStep([],[prop.eq(val2)])).Or(JanusGraphStep([],[desc.textContains(coding)]),JanusGraphStep([],[pet.textContains(cats)]))", mMixedOr3.getName());
+            assertTrue(mMixedOr3.getDuration(TimeUnit.MICROSECONDS) > 0);
+            assertEquals(2, mMixedOr3.getNested().size());
+            nested = (Metrics) mMixedOr3.getNested().toArray()[0];
+            assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+            assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+            nested = (Metrics) mMixedOr3.getNested().toArray()[1];
+            assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+            assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+            Map<String, Object> metricsAnnotations = nested.getAnnotations();
+            assertEquals(5, metricsAnnotations.size());
+            assertEquals("(((name = alex) OR (prop = val2)) AND ((desc textContains coding) OR (pet textContains cats)))", metricsAnnotations.get("condition"));
+            assertEquals("[]", metricsAnnotations.get("orders"));
+            assertEquals("true", metricsAnnotations.get("isFitted"));
+            assertEquals("true", metricsAnnotations.get("isOrdered"));
+            assertTrue(metricsAnnotations.get("query").equals("[mixed:[(((name = alex) OR (prop = val2)))]:mixed, mi:[(((desc textContains coding) OR (pet textContains cats)))]:mi]") ||
+                metricsAnnotations.get("query").equals("[mi:[(((desc textContains coding) OR (pet textContains cats)))]:mi, mixed:[(((name = alex) OR (prop = val2)))]:mixed]"));
         }
+
+        // satisfied by two graph-centric queries, one is mixed index query and the other one is full scan
+        newTx();
+        assertEquals(3, tx.traversal().V().or(__.has("name", "bob"), __.has("age", 20)).count().next());
+        assertEquals(3, tx.traversal().V().or(__.has("name", "bob"), __.has("age", 20)).order().by("age").count().next());
+        assertEquals(3, tx.traversal().V().or(__.has("name", "bob"), __.has("age", 20)).toList().size());
+        assertEquals(190, tx.traversal().V().or(__.has("name", "bob"), __.has("age", 20)).values("height").max().next());
+        assertEquals(170, tx.traversal().V().or(__.has("name", "bob"), __.has("age", 20)).values("height").min().next());
+        assertEquals(535L, tx.traversal().V().or(__.has("name", "bob"), __.has("age", 20)).values("height").sum().next());
+        assertEquals(535.0/3, tx.traversal().V().or(__.has("name", "bob"), __.has("age", 20)).values("height").mean().next());
+        Metrics mMixedOr = tx.traversal().V().or(__.has("name", "bob"), __.has("age", 20))
+            .profile().next().getMetrics(0);
+        assertEquals("Or(JanusGraphStep([],[name.eq(bob)]),JanusGraphStep([],[age.eq(20)]))", mMixedOr.getName());
+        assertTrue(mMixedOr.getDuration(TimeUnit.MICROSECONDS) > 0);
+        assertEquals(5, mMixedOr.getNested().size());
+        Metrics nested = (Metrics) mMixedOr.getNested().toArray()[0];
+        // it first tries constructing a single graph centric query but fails (no suitable index to cover the OR condition)
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mMixedOr.getNested().toArray()[1];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mMixedOr.getNested().toArray()[2];
+        assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        String nameKey = getStringField("name");
+        Map<String, String> annotations = new HashMap() {{
+            put("condition", "(name = bob)");
+            put("orders", "[]");
+            put("isFitted", "true");
+            put("isOrdered", "true");
+            put("query", String.format("[(%s = bob)]:mixed", nameKey));
+            put("index", "mixed");
+            put("index_impl", "search");
+        }};
+        assertEquals(annotations, nested.getAnnotations());
+        nested = (Metrics) mMixedOr.getNested().toArray()[3];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mMixedOr.getNested().toArray()[4];
+        assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        annotations = new HashMap() {{
+            put("condition", "(age = 20)");
+            put("orders", "[]");
+            put("isFitted", "false");
+            put("isOrdered", "true");
+            put("query", "[]");
+        }};
+        assertEquals(annotations, nested.getAnnotations());
+        nested = (Metrics) nested.getNested().toArray()[0];
+        final Map<String, String> fullScanAnnotations = new HashMap() {{
+            put("query", "[]");
+            put("fullscan", "true");
+            put("condition", "VERTEX");
+        }};
+        assertEquals(fullScanAnnotations, nested.getAnnotations());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
 
         // satisfied by a single graph-centric query which is satisfied by a single mixed index query
         newTx();
+        assertEquals(1, tx.traversal().V().has("name", "bob").has("prop", "val").count().next());
+        assertEquals(1, tx.traversal().V().has("name", "bob").has("prop", "val").toList().size());
+        assertEquals(170, tx.traversal().V().has("name", "bob").has("prop", "val").values("height").max().next());
+        assertEquals(170, tx.traversal().V().has("name", "bob").has("prop", "val").values("height").min().next());
+        assertEquals(170L, tx.traversal().V().has("name", "bob").has("prop", "val").values("height").sum().next());
+        assertEquals(170.0, tx.traversal().V().has("name", "bob").has("prop", "val").values("height").mean().next());
+        assertEquals(174.8, (double)tx.traversal().V().has("name", "bob").values("weight").sum().next(), 0.001);
         Metrics mMixedAnd = tx.traversal().V().has("name", "bob").has("prop", "val")
             .profile().next().getMetrics(0);
         assertEquals("JanusGraphStep([],[name.eq(bob), prop.eq(val)])", mMixedAnd.getName());
         assertTrue(mMixedAnd.getDuration(TimeUnit.MICROSECONDS) > 0);
-        assertEquals(3, mMixedAnd.getNested().size());
-        Metrics nested = (Metrics) mMixedAnd.getNested().toArray()[0];
+        assertEquals(2, mMixedAnd.getNested().size());
+        nested = (Metrics) mMixedAnd.getNested().toArray()[0];
         assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
         assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
         nested = (Metrics) mMixedAnd.getNested().toArray()[1];
-        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
-        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
-        nested = (Metrics) mMixedAnd.getNested().toArray()[2];
         assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
         assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
-        String nameKey = getStringField("name");
         String propKey = getStringField("prop");
-        Map<String, String> annotations = new HashMap() {{
+        annotations = new HashMap() {{
             put("condition", "(name = bob AND prop = val)");
             put("orders", "[]");
             put("isFitted", "true");
             put("isOrdered", "true");
-            put("query", String.format("[(%s = bob AND %s = val)](1000):mixed", nameKey, propKey));
+            put("query", String.format("[(%s = bob AND %s = val)]:mixed", nameKey, propKey));
             put("index", "mixed");
             put("index_impl", "search");
+        }};
+        assertEquals(annotations, nested.getAnnotations());
+
+        // satisfied by a single graph centric query which is satisfied by union of two mixed index queries
+        newTx();
+        assertEquals(1, tx.traversal().V().has("name", "bob").has("prop", "val").count().next());
+        assertEquals(1, tx.traversal().V().has("name", "bob").has("prop", "val").toList().size());
+        assertEquals(170, tx.traversal().V().has("name", "bob").has("prop", "val").values("height").max().next());
+        assertEquals(170, tx.traversal().V().has("name", "bob").has("prop", "val").values("height").min().next());
+        assertEquals(170L, tx.traversal().V().has("name", "bob").has("prop", "val").values("height").sum().next());
+        assertEquals(170.0, tx.traversal().V().has("name", "bob").has("prop", "val").values("height").mean().next());
+        final Metrics mMixedAnd2 = tx.traversal().V().has("name", "bob").has("prop", "val")
+            .has("desc", Text.textContains("coding")).profile().next().getMetrics(0);
+        assertEquals("JanusGraphStep([],[name.eq(bob), prop.eq(val), desc.textContains(coding)])", mMixedAnd2.getName());
+        assertTrue(mMixedAnd2.getDuration(TimeUnit.MICROSECONDS) > 0);
+        assertEquals(2, mMixedAnd2.getNested().size());
+        nested = (Metrics) mMixedAnd2.getNested().toArray()[0];
+        assertEquals(QueryProfiler.CONSTRUCT_GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        nested = (Metrics) mMixedAnd2.getNested().toArray()[1];
+        assertEquals(QueryProfiler.GRAPH_CENTRIC_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        String descKey = getTextField("desc");
+        annotations = new HashMap() {{
+            put("condition", "(name = bob AND prop = val AND desc textContains coding)");
+            put("orders", "[]");
+            put("isFitted", "true");
+            put("isOrdered", "true");
+            put("query", String.format("[mixed:[(%s = bob AND %s = val)]:mixed, mi:[(%s textContains coding)]:mi]", nameKey, propKey, descKey));
         }};
         assertEquals(annotations, nested.getAnnotations());
     }
@@ -1123,9 +1409,40 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
     private long getIndexSelectResultNum(Object... settings) {
         clopen(settings);
         GraphTraversalSource g = graph.traversal();
-        Object[] metrics = g.V().has("name", "value")
-            .has("prop", "value").profile().next().getMetrics(0).getNested().toArray();
-        return ((Metrics) metrics[metrics.length - 1]).getNested().stream().filter(m -> m.getName().equals(QueryProfiler.BACKEND_QUERY)).count();
+        Metrics metrics = g.V().has("name", "value")
+            .has("prop", "value").profile().next().getMetrics(0);
+        return getBackendQueriesNum(metrics);
+    }
+
+    private long getBackendQueriesNum(Metrics metrics) {
+        if (metrics.getName().equals(QueryProfiler.BACKEND_QUERY)) return 1;
+        int sum = 0;
+        for (Metrics subMetrics : metrics.getNested()) {
+           sum += getBackendQueriesNum(subMetrics);
+        }
+        return sum;
+    }
+
+    @Test
+    public void testCompositeVsMixedIndexing() {
+        clopen(option(FORCE_INDEX_USAGE), true);
+        final PropertyKey intId = makeKey("intId", Integer.class);
+        final PropertyKey intId2 = makeKey("intId2", Integer.class);
+        final PropertyKey verboseId = makeKey("verboseId", Integer.class);
+
+        mgmt.buildIndex("composite", Vertex.class).addKey(intId).addKey(verboseId).buildCompositeIndex();
+        mgmt.buildIndex("mixed", Vertex.class).addKey(intId2).addKey(verboseId).buildMixedIndex(INDEX);
+        finishSchema();
+
+        tx.addVertex("intId", 123, "intId2", 234);
+        newTx();
+
+        // composite index requires all fields to be present
+        Exception ex = assertThrows(JanusGraphException.class, () -> tx.traversal().V().has("intId", 123).hasNext());
+        assertEquals("Could not find a suitable index to answer graph query and graph scans are disabled: [(intId = 123)]:VERTEX", ex.getMessage());
+
+        // mixed index only needs some field(s) to be present
+        assertTrue(tx.traversal().V().has("intId2", 234).hasNext());
     }
 
     @Test
@@ -1217,6 +1534,16 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
         mgmt.addIndexKey(pindex, text, getTextMapping());
         mgmt.makeEdgeLabel("knows").signature(name).make();
         mgmt.makePropertyKey("uid").dataType(String.class).signature(text).make();
+        final PropertyKey number = makeKey("number", Integer.class);
+        final PropertyKey flag = makeKey("flag", Boolean.class);
+        final PropertyKey date = makeKey("date", Date.class);
+        final PropertyKey geo = makeKey("geo", Geoshape.class);
+        final PropertyKey uuid = makeKey("uuid", UUID.class);
+        mgmt.addIndexKey(vindex, number);
+        mgmt.addIndexKey(vindex, flag);
+        mgmt.addIndexKey(vindex, date);
+        mgmt.addIndexKey(vindex, geo);
+        mgmt.addIndexKey(vindex, uuid);
         finishSchema();
         JanusGraphVertex previous = null;
         for (int i = 0; i < numV; i++) {
@@ -1350,6 +1677,249 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
         }
     }
 
+    private void checkMixedIndexCountProfiling(TraversalMetrics profile, Map<String, String> annotations) {
+        Metrics metrics = profile.getMetrics(0);
+        assertTrue(metrics.getDuration(TimeUnit.MICROSECONDS) > 0);
+        assertTrue(metrics.getName().contains(JanusGraphMixedIndexAggStep.class.getSimpleName()));
+        Metrics nested = (Metrics) metrics.getNested().toArray()[0];
+        assertEquals(QueryProfiler.MIXED_INEX_COUNT_QUERY, nested.getName());
+        assertTrue(nested.getDuration(TimeUnit.MICROSECONDS) > 0);
+        assertEquals(annotations, nested.getAnnotations());
+    }
+
+    /**
+     * Tests that if a given query can be satisfied by a single mixed index, and it is followed by a count step, then
+     * a count query will be built
+     */
+    @Test
+    public void testMixedIndexQueryFollowedByCount() {
+        final int numV = 100;
+        final String[] strings = {"Uncle Berry has a farm", "and on his farm he has five ducks", "ducks are beautiful animals", "the sky is very blue today"};
+        setupChainGraph(numV, strings, true);
+        clopen();
+
+        /* ===================================================
+        has(key, value) followed by count() can be optimized */
+
+        // vertex
+        long total = numV / strings.length * 2;
+        assertEquals(total, graph.indexQuery(VINDEX, "v.text:ducks").vertexTotals());
+        TraversalMetrics profile = graph.traversal().V().has("text", Text.textContains("ducks")).count().profile().next();
+        final String xtextKey = "xtext";
+        Map<String, String> annotations = new HashMap() {{
+            put("query", String.format("[(%s textContains ducks)]:vsearch", xtextKey));
+        }};
+        checkMixedIndexCountProfiling(profile, annotations);
+        assertEquals(total, graph.traversal().V().has("text", Text.textContains("ducks")).count().next());
+
+        // edge
+        total = numV / strings.length * 2;
+        assertEquals(total, graph.indexQuery(EINDEX, "e.text:ducks").edgeTotals());
+        profile = graph.traversal().E().has("text", Text.textContains("ducks")).count().profile().next();
+        final String textKey = getTextField("text");
+        annotations = new HashMap() {{
+            put("query", String.format("[(%s textContains ducks)]:esearch", textKey));
+        }};
+        checkMixedIndexCountProfiling(profile, annotations);
+        assertEquals(total, graph.traversal().E().has("text", Text.textContains("ducks")).count().next());
+
+        /* =====================================================================
+        has(key, value).has(key', value') followed by count() can be optimized */
+
+        // vertex
+        total = numV / strings.length;
+        assertEquals(total, graph.indexQuery(VINDEX, "v.text:farm AND v.name:\"Uncle Berry has a farm\"").vertexTotals());
+        profile = graph.traversal().V().has("text", Text.textContains("farm"))
+            .has("name", "Uncle Berry has a farm").count().profile().next();
+        final String nameKey = getStringField("name");
+        annotations = new HashMap() {{
+            put("query", String.format("[(%s textContains farm AND %s = Uncle Berry has a farm)]:vsearch", xtextKey, nameKey));
+        }};
+        checkMixedIndexCountProfiling(profile, annotations);
+        assertEquals(total, graph.traversal().V().has("text", Text.textContains("farm"))
+            .has("name", "Uncle Berry has a farm").count().next());
+
+        // edge
+        total = numV / strings.length;
+        assertEquals(total, graph.indexQuery(EINDEX, "e.text:farm AND e.name:\"Uncle Berry has a farm\"").edgeTotals());
+        profile = graph.traversal().E().has("text", Text.textContains("farm"))
+            .has("name", "Uncle Berry has a farm").count().profile().next();
+        annotations = new HashMap() {{
+            put("query", String.format("[(%s textContains farm AND %s = Uncle Berry has a farm)]:esearch", textKey, nameKey));
+        }};
+        checkMixedIndexCountProfiling(profile, annotations);
+        assertEquals(total, graph.traversal().E().has("text", Text.textContains("farm"))
+            .has("name", "Uncle Berry has a farm").count().next());
+
+        /* ==============================================================
+        has(key, P.within(values)) followed by count() can be optimized */
+
+        // vertex
+        total = numV / strings.length * 2;
+        assertEquals(total, graph.indexQuery(VINDEX, "v.name:(\"Uncle Berry has a farm\", \"ducks are beautiful animals\")").vertexTotals());
+        profile = graph.traversal().V().has("name", P.within("Uncle Berry has a farm", "ducks are beautiful animals"))
+            .count().profile().next();
+        annotations = new HashMap() {{
+            put("query", String.format("[((%s = Uncle Berry has a farm OR %s = ducks are beautiful animals))]:vsearch", nameKey, nameKey));
+        }};
+        checkMixedIndexCountProfiling(profile, annotations);
+        assertEquals(total, graph.traversal().V().has("name", P.within("Uncle Berry has a farm", "ducks are beautiful animals")).count().next());
+
+        // edge
+        total = numV / strings.length * 2;
+        assertEquals(total, graph.indexQuery(EINDEX, "e.name:(\"Uncle Berry has a farm\", \"ducks are beautiful animals\")").edgeTotals());
+        profile = graph.traversal().E().has("name", P.within("Uncle Berry has a farm", "ducks are beautiful animals"))
+            .count().profile().next();
+        assertTrue(profile.getMetrics(0).getName().contains(JanusGraphMixedIndexAggStep.class.getSimpleName()));
+        assertEquals(total, graph.traversal().E().has("name", P.within("Uncle Berry has a farm", "ducks are beautiful animals")).count().next());
+
+
+        /* ==========================================================================
+        Or(has(key, value1), has(key, value2)) followed by count() can be optimized */
+
+        // vertex
+        total = numV / strings.length * 2;
+        assertEquals(total, graph.indexQuery(VINDEX, "v.name:(\"Uncle Berry has a farm\", \"and on his farm he has five ducks\")").vertexTotals());
+        profile = graph.traversal().V().or(__.has("name", "Uncle Berry has a farm"), __.has("name", "and on his farm he has five ducks"))
+            .count().profile().next();
+        annotations = new HashMap() {{
+            put("query", String.format("[((%s = Uncle Berry has a farm OR %s = and on his farm he has five ducks))]:vsearch", nameKey, nameKey));
+        }};
+        checkMixedIndexCountProfiling(profile, annotations);
+        assertEquals(total, graph.traversal().V().or(__.has("name", "Uncle Berry has a farm"), __.has("name", "and on his farm he has five ducks"))
+            .count().next());
+
+        // edge
+        total = numV / strings.length * 2;
+        assertEquals(total, graph.indexQuery(EINDEX, "e.name:(\"Uncle Berry has a farm\", \"and on his farm he has five ducks\")").edgeTotals());
+        profile = graph.traversal().E().or(__.has("name", "Uncle Berry has a farm"), __.has("name", "and on his farm he has five ducks"))
+            .count().profile().next();
+        assertTrue(profile.getMetrics(0).getName().contains(JanusGraphMixedIndexAggStep.class.getSimpleName()));
+        assertEquals(total, graph.traversal().E().or(__.has("name", "Uncle Berry has a farm"), __.has("name", "and on his farm he has five ducks"))
+            .count().next());
+
+        /* ==========================================================================
+        Or(has(key1, value1), has(key2, value2)) followed by count() can be optimized
+        if both keys are included by a single index */
+        if (indexFeatures.supportNotQueryNormalForm()) {
+            total = numV / strings.length * 2;
+            profile = graph.traversal().V().or(__.has("name", "Uncle Berry has a farm"), __.has("text", Text.textContains("and on his farm he has five ducks")))
+                .count().profile().next();
+            annotations = new HashMap() {{
+                put("query", String.format("[((%s = Uncle Berry has a farm) OR (%s textContains and on his farm he has five ducks))]:vsearch", nameKey, xtextKey));
+            }};
+            checkMixedIndexCountProfiling(profile, annotations);
+            assertEquals(total, graph.traversal().V().or(__.has("name", "Uncle Berry has a farm"), __.has("text", Text.textContains("and on his farm he has five ducks")))
+                .count().next());
+        }
+
+        /* ==========================================================================
+        has(key, neq(value)) followed by count() can be optimized */
+        total = numV;
+        // a vertex is indexed as long as it contains a property which is part of a mixed index
+        graph.addVertex("text", "adhoc text", "number", 1, "flag", false, "date", new Date(),
+            "geo", Geoshape.point(1.0, 0.0), "uuid", UUID.randomUUID());
+        graph.tx().commit();
+        profile = graph.traversal().V().has("name", P.neq("value")).count().profile().next();
+        annotations = new HashMap() {{
+            put("query", String.format("[(%s <> value)]:vsearch", nameKey));
+        }};
+        checkMixedIndexCountProfiling(profile, annotations);
+        // "not have key = value" is semantically different from "have key != value"
+        assertEquals(total + 1, graph.traversal().V().not(__.has("name", P.eq("value"))).count().next());
+        assertEquals(total, graph.traversal().V().has("name", P.neq("value")).count().next());
+        assertEquals(total, graph.traversal().V().has("name", P.not(P.eq("value"))).count().next());
+        assertEquals(1, graph.traversal().V().has("number", P.neq(0)).count().next());
+        assertEquals(1, graph.traversal().V().has("flag", P.neq(true)).count().next());
+        assertEquals(1, graph.traversal().V().has("date", P.neq(new Date())).count().next());
+        assertEquals(1, graph.traversal().V().has("geo", P.neq(Geoshape.point(0.0, 0.0))).count().next());
+        assertEquals(1, graph.traversal().V().has("uuid", P.neq(UUID.randomUUID())).count().next());
+
+        profile = graph.traversal().V().has("name", P.neq(null)).count().profile().next();
+        annotations = new HashMap() {{
+            put("query", String.format("[(%s <> null)]:vsearch", nameKey));
+        }};
+        checkMixedIndexCountProfiling(profile, annotations);
+        assertEquals(total, graph.traversal().V().has("name", P.neq(null)).count().next());
+        graph.traversal().V().has("text", Text.textContains("adhoc")).drop().iterate();
+        graph.tx().commit();
+
+        /* ==========================================================================
+        has(key) followed by count() can be optimized */
+
+        total = numV;
+        profile = graph.traversal().V().has("name").count().profile().next();
+        annotations = new HashMap() {{
+            put("query", String.format("[(%s <> null)]:vsearch", nameKey));
+        }};
+        checkMixedIndexCountProfiling(profile, annotations);
+        assertEquals(total, graph.traversal().V().has("name").count().next());
+
+        /* ==========================================================================
+        has(key, value) followed by other steps and then count() cannot be optimized */
+
+        total = numV / strings.length;
+        profile = graph.traversal().V().has("name", "Uncle Berry has a farm").out().count().profile().next();
+        assertFalse(profile.getMetrics(0).getName().contains(JanusGraphMixedIndexAggStep.class.getSimpleName()));
+        assertTrue(profile.getMetrics(0).getName().contains(JanusGraphStep.class.getSimpleName()));
+        assertEquals(total, graph.traversal().V().has("name", "Uncle Berry has a farm").out().count().next());
+
+        /* ==========================================================================
+        has(key, value) with composite index followed by count() cannot be optimized */
+
+        final PropertyKey ageProperty = mgmt.makePropertyKey("age").dataType(Integer.class).make();
+        mgmt.buildIndex("ageidx", Vertex.class).addKey(ageProperty).buildCompositeIndex();
+        finishSchema();
+
+        for (int i = 0; i < 10; i++) {
+            tx.addVertex("age", i % 2, "name", "anonymous");
+        }
+        newTx();
+
+        profile = graph.traversal().V().has("age", 0).count().profile().next();
+        assertFalse(profile.getMetrics(0).getName().contains(JanusGraphMixedIndexAggStep.class.getSimpleName()));
+        assertTrue(profile.getMetrics(0).getName().contains(JanusGraphStep.class.getSimpleName()));
+        assertEquals(5, graph.traversal().V().has("age", 0).count().next());
+        profile = graph.traversal().V().has("age").count().profile().next();
+        assertFalse(profile.getMetrics(0).getName().contains(JanusGraphMixedIndexAggStep.class.getSimpleName()));
+        assertTrue(profile.getMetrics(0).getName().contains(JanusGraphStep.class.getSimpleName()));
+        assertEquals(10, graph.traversal().V().has("age").count().next());
+
+        /* =============================================================================
+        count() cannot be optimized if a single mixed index cannot meet all conditions */
+
+        assertEquals(10, graph.traversal().V().has("name").has("age").count().next());
+        profile = graph.traversal().V().has("name").has("age").count().profile().next();
+        assertFalse(profile.getMetrics(0).getName().contains(JanusGraphMixedIndexAggStep.class.getSimpleName()));
+        assertEquals(5, graph.traversal().V().has("name").has("age", 0).count().next());
+        profile = graph.traversal().V().has("name").has("age", 0).count().profile().next();
+        assertFalse(profile.getMetrics(0).getName().contains(JanusGraphMixedIndexAggStep.class.getSimpleName()));
+        profile = graph.traversal().V().has("age").has("name").count().profile().next();
+        assertFalse(profile.getMetrics(0).getName().contains(JanusGraphMixedIndexAggStep.class.getSimpleName()));
+
+        /* ==========================
+        verify other special cases */
+
+        // cannot convert to JanusGraphMixedIndexAggStep if the first JanusGraphStep is not the start step
+        assertEquals((numV + 10) * numV, graph.traversal().V().V().has("text").count().next());
+        assertEquals(graph.traversal().withoutStrategies(JanusGraphMixedIndexCountStrategy.class).V().V().has("text").count().next(),
+            graph.traversal().V().V().has("text").count().next());
+
+        // count() step can be followed by another count step
+        assertEquals(1, graph.traversal().V().has("name").count().count().next());
+        assertEquals(graph.traversal().withoutStrategies(JanusGraphMixedIndexCountStrategy.class).V().has("name").count().count().next(),
+            graph.traversal().V().has("name").count().count().next());
+
+        // barrier() steps will be ignored
+        assertEquals(numV, graph.traversal().V().barrier().has("text").count().next());
+        assertEquals(graph.traversal().withoutStrategies(JanusGraphMixedIndexCountStrategy.class).V().barrier().has("text").count().next(),
+            graph.traversal().V().barrier().has("text").count().next());
+
+        // identity() steps will be ignored
+        assertEquals(numV, graph.traversal().V().has("text").identity().count().barrier().identity().next());
+        assertEquals(graph.traversal().withoutStrategies(JanusGraphMixedIndexCountStrategy.class).V().has("text").identity().count().barrier().identity().next(), graph.traversal().V().has("text").identity().count().barrier().identity().next());
+    }
+
     /**
      * Tests index parameters (mapping and names) with raw indexQuery
      */
@@ -1368,12 +1938,14 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
         assertCount(numV / strings.length * 2, graph.indexQuery(VINDEX, "v.text:(beautiful are ducks)").vertexStream());
         assertCount(numV / strings.length * 2 - 10, graph.indexQuery(VINDEX, "v.text:(beautiful are ducks)").offset(10).vertexStream());
         long total = graph.indexQuery(VINDEX, "v.\"text\":(beautiful are ducks)").limit(Integer.MAX_VALUE).vertexStream().count();
-        assertCount(10, graph.indexQuery(VINDEX, "v.\"text\":(beautiful are ducks)").limit(10).vertexStream());
-        assertEquals(total, (long) graph.indexQuery(VINDEX, "v.\"text\":(beautiful are ducks)").limit(10).vertexTotals());
-        assertCount(10, graph.indexQuery(VINDEX, "v.\"text\":(beautiful are ducks)").limit(10).offset(10).vertexStream());
-        assertEquals(total, (long) graph.indexQuery(VINDEX, "v.\"text\":(beautiful are ducks)").limit(10).offset(10).vertexTotals());
-        assertCount(0, graph.indexQuery(VINDEX, "v.\"text\":(beautiful are ducks)").limit(10).offset(numV).vertexStream());
-        assertEquals(total, (long) graph.indexQuery(VINDEX, "v.\"text\":(beautiful are ducks)").limit(10).offset(numV).vertexTotals());
+        int limit = 10;
+        long expectedLimitedCount = Math.min(total, limit);
+        assertCount(expectedLimitedCount, graph.indexQuery(VINDEX, "v.\"text\":(beautiful are ducks)").limit(limit).vertexStream());
+        assertEquals(expectedLimitedCount, (long) graph.indexQuery(VINDEX, "v.\"text\":(beautiful are ducks)").limit(limit).vertexTotals());
+        assertCount(expectedLimitedCount, graph.indexQuery(VINDEX, "v.\"text\":(beautiful are ducks)").limit(limit).offset(10).vertexStream());
+        assertEquals(expectedLimitedCount, (long) graph.indexQuery(VINDEX, "v.\"text\":(beautiful are ducks)").limit(limit).offset(10).vertexTotals());
+        assertCount(0, graph.indexQuery(VINDEX, "v.\"text\":(beautiful are ducks)").limit(limit).offset(numV).vertexStream());
+        assertEquals(0, (long) graph.indexQuery(VINDEX, "v.\"text\":(beautiful are ducks)").limit(limit).offset(numV).vertexTotals());
         //Test name mapping
         assertCount(numV / strings.length * 2, graph.indexQuery(VINDEX, "xtext:ducks").vertexStream());
         assertCount(0, graph.indexQuery(VINDEX, "text:ducks").vertexStream());
@@ -1384,36 +1956,38 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
         //Same queries for edges
         assertCount(numV / strings.length * 2, graph.indexQuery(EINDEX, "e.text:ducks").edgeStream());
         total = graph.indexQuery(EINDEX, "e.text:ducks").limit(Integer.MAX_VALUE).edgeStream().count();
+        expectedLimitedCount = Math.min(total, limit);
         assertEquals(total, (long) numV / strings.length * 2, graph.indexQuery(EINDEX, "e.text:ducks").edgeTotals());
         assertCount(numV / strings.length * 2, graph.indexQuery(EINDEX, "e.text:(farm uncle berry)").edgeStream());
         assertCount(numV / strings.length, graph.indexQuery(EINDEX, "e.text:(farm uncle berry) AND e.name:\"Uncle Berry has a farm\"").edgeStream());
         assertCount(numV / strings.length * 2, graph.indexQuery(EINDEX, "e.text:(beautiful are ducks)").edgeStream());
         assertCount(numV / strings.length * 2 - 10, graph.indexQuery(EINDEX, "e.text:(beautiful are ducks)").offset(10).edgeStream());
         total = graph.indexQuery(EINDEX, "e.\"text\":(beautiful are ducks)").limit(Integer.MAX_VALUE).edgeStream().count();
-        assertCount(10, graph.indexQuery(EINDEX, "e.\"text\":(beautiful are ducks)").limit(10).edgeStream());
-        assertEquals(total, (long) graph.indexQuery(EINDEX, "e.\"text\":(beautiful are ducks)").limit(10).edgeTotals());
-        assertCount(10, graph.indexQuery(EINDEX, "e.\"text\":(beautiful are ducks)").limit(10).offset(10).edgeStream());
-        assertEquals(total, (long) graph.indexQuery(EINDEX, "e.\"text\":(beautiful are ducks)").limit(10).offset(10).edgeTotals());
-        assertCount(0, graph.indexQuery(EINDEX, "e.\"text\":(beautiful are ducks)").limit(10).offset(numV).edgeStream());
-        assertEquals(total, (long) graph.indexQuery(EINDEX, "e.\"text\":(beautiful are ducks)").limit(10).offset(numV).edgeTotals());
+        assertCount(expectedLimitedCount, graph.indexQuery(EINDEX, "e.\"text\":(beautiful are ducks)").limit(limit).edgeStream());
+        assertEquals(expectedLimitedCount, (long) graph.indexQuery(EINDEX, "e.\"text\":(beautiful are ducks)").limit(limit).edgeTotals());
+        assertCount(expectedLimitedCount, graph.indexQuery(EINDEX, "e.\"text\":(beautiful are ducks)").limit(limit).offset(10).edgeStream());
+        assertEquals(expectedLimitedCount, (long) graph.indexQuery(EINDEX, "e.\"text\":(beautiful are ducks)").limit(limit).offset(10).edgeTotals());
+        assertCount(0, graph.indexQuery(EINDEX, "e.\"text\":(beautiful are ducks)").limit(limit).offset(numV).edgeStream());
+        assertEquals(0, (long) graph.indexQuery(EINDEX, "e.\"text\":(beautiful are ducks)").limit(limit).offset(numV).edgeTotals());
         //Test name mapping
         assertCount(numV / strings.length * 2, graph.indexQuery(EINDEX, "text:ducks").edgeStream());
 
         //Same queries for properties
         assertCount(numV / strings.length * 2, graph.indexQuery(PINDEX, "p.text:ducks").propertyStream());
         total = graph.indexQuery(PINDEX, "p.text:ducks").limit(Integer.MAX_VALUE).propertyStream().count();
+        expectedLimitedCount = Math.min(total, limit);
         assertEquals(total, (long) numV / strings.length * 2, graph.indexQuery(PINDEX, "p.text:ducks").propertyTotals());
         assertCount(numV / strings.length * 2, graph.indexQuery(PINDEX, "p.text:(farm uncle berry)").propertyStream());
         assertCount(numV / strings.length, graph.indexQuery(PINDEX, "p.text:(farm uncle berry) AND p.name:\"Uncle Berry has a farm\"").propertyStream());
         assertCount(numV / strings.length * 2, graph.indexQuery(PINDEX, "p.text:(beautiful are ducks)").propertyStream());
         assertCount(numV / strings.length * 2 - 10, graph.indexQuery(PINDEX, "p.text:(beautiful are ducks)").offset(10).propertyStream());
         total = graph.indexQuery(PINDEX, "p.\"text\":(beautiful are ducks)").limit(Integer.MAX_VALUE).propertyStream().count();
-        assertCount(10, graph.indexQuery(PINDEX, "p.\"text\":(beautiful are ducks)").limit(10).propertyStream());
-        assertEquals(total, (long) graph.indexQuery(PINDEX, "p.\"text\":(beautiful are ducks)").limit(10).propertyTotals());
-        assertCount(10, graph.indexQuery(PINDEX, "p.\"text\":(beautiful are ducks)").limit(10).offset(10).propertyStream());
-        assertEquals(total, (long) graph.indexQuery(PINDEX, "p.\"text\":(beautiful are ducks)").limit(10).offset(10).propertyTotals());
-        assertCount(0, graph.indexQuery(PINDEX, "p.\"text\":(beautiful are ducks)").limit(10).offset(numV).propertyStream());
-        assertEquals(total, (long) graph.indexQuery(PINDEX, "p.\"text\":(beautiful are ducks)").limit(10).offset(numV).propertyTotals());
+        assertCount(expectedLimitedCount, graph.indexQuery(PINDEX, "p.\"text\":(beautiful are ducks)").limit(limit).propertyStream());
+        assertEquals(expectedLimitedCount, (long) graph.indexQuery(PINDEX, "p.\"text\":(beautiful are ducks)").limit(limit).propertyTotals());
+        assertCount(expectedLimitedCount, graph.indexQuery(PINDEX, "p.\"text\":(beautiful are ducks)").limit(limit).offset(10).propertyStream());
+        assertEquals(expectedLimitedCount, (long) graph.indexQuery(PINDEX, "p.\"text\":(beautiful are ducks)").limit(limit).offset(10).propertyTotals());
+        assertCount(0, graph.indexQuery(PINDEX, "p.\"text\":(beautiful are ducks)").limit(limit).offset(numV).propertyStream());
+        assertEquals(0, (long) graph.indexQuery(PINDEX, "p.\"text\":(beautiful are ducks)").limit(limit).offset(numV).propertyTotals());
         //Test name mapping
         assertCount(numV / strings.length * 2, graph.indexQuery(PINDEX, "text:ducks").propertyStream());
     }
@@ -1509,6 +2083,15 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
                 1, new boolean[]{true, true}, "mixed");
         evaluateQuery(tx.query().has("name", Text.CONTAINS_FUZZY, "Midle"), ElementCategory.VERTEX,
                 1, new boolean[]{true, true}, "mixed");
+        evaluateQuery(tx.query().orderBy("name", asc), ElementCategory.VERTEX,
+                3, new boolean[]{false, false}, tx.getPropertyKey("name"), Order.ASC);
+        evaluateQuery(tx.query().orderBy("name", desc), ElementCategory.VERTEX,
+                3, new boolean[]{false, false}, tx.getPropertyKey("name"), Order.DESC);
+        evaluateQuery(tx.query().has("name", Text.CONTAINS, "Long").orderBy("name", asc), ElementCategory.VERTEX,
+                2, new boolean[]{true, true}, tx.getPropertyKey("name"), Order.ASC, "mixed");
+        evaluateQuery(tx.query().has("name", Text.CONTAINS, "Long").orderBy("name", desc), ElementCategory.VERTEX,
+                2, new boolean[]{true, true}, tx.getPropertyKey("name"), Order.DESC, "mixed");
+
         for (final Vertex u : tx.getVertices()) {
             final String n = u.value("name");
             if (n.endsWith("Don")) {
@@ -1606,7 +2189,8 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
         assertEquals(4, recoveryStats[1]); //all 4 index transaction had provoked errors in the indexing backend
     }
 
-    @Test
+    // flaky test: https://github.com/JanusGraph/janusgraph/issues/2272
+    @RepeatedIfExceptionsTest(repeats = 3)
     public void testIndexUpdatesWithoutReindex() throws InterruptedException, ExecutionException {
         final Object[] settings = new Object[]{option(LOG_SEND_DELAY, MANAGEMENT_LOG), Duration.ofMillis(0),
                 option(KCVSLog.LOG_READ_LAG_TIME, MANAGEMENT_LOG), Duration.ofMillis(50),
@@ -1664,12 +2248,16 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
         addVertex(defTime, defText, defHeight, defPhones);
         tx.commit();
         //Should not yet be able to enable since not yet registered
-        assertNull(mgmt.updateIndex(mgmt.getGraphIndex("theIndex"), SchemaAction.ENABLE_INDEX));
+        mgmt.updateIndex(mgmt.getGraphIndex("theIndex"), SchemaAction.ENABLE_INDEX);
+        assertFalse(ManagementSystem.awaitGraphIndexStatus(graph, "theIndex")
+            .status(SchemaStatus.ENABLED)
+            .call()
+            .getSucceeded());
         //This call is redundant and just here to make sure it doesn't mess anything up
         mgmt.updateIndex(mgmt.getGraphIndex("theIndex"), SchemaAction.REGISTER_INDEX).get();
         mgmt.commit();
 
-        ManagementSystem.awaitGraphIndexStatus(graph, "theIndex").timeout(10L, ChronoUnit.SECONDS).call();
+        ManagementSystem.awaitGraphIndexStatus(graph, "theIndex").call();
 
         finishSchema();
         mgmt.updateIndex(mgmt.getGraphIndex("theIndex"), SchemaAction.ENABLE_INDEX).get();
@@ -2047,16 +2635,11 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
         // approach might implement different methods/assertions depending on
         // whether the store is capable of deadlocking or detecting conflicting
         // writes and aborting a transaction.
-        Backend b = null;
-        try {
-            b = graph.getConfiguration().getBackend();
+        try (Backend b = graph.getConfiguration().getBackend()) {
             if (b.getStoreFeatures().hasTxIsolation()) {
                 log.info("Skipping " + getClass().getSimpleName() + "." + testInfo.getTestMethod().toString());
                 return;
             }
-        } finally {
-            if (null != b)
-                b.close();
         }
 
         final String propName = "foo";
@@ -2111,7 +2694,7 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
         }
         StandardJanusGraphTx queryTx = (StandardJanusGraphTx) graph.newTransaction();
         for (JanusGraphVertex v : vertices) {
-            if (!graph.edgeQuery(v.longId(), graph.vertexExistenceQuery, queryTx.getTxHandle()).isEmpty()) {
+            if (!graph.edgeQuery(v.id(), graph.vertexExistenceQuery, queryTx.getTxHandle()).isEmpty()) {
                 queryTx.rollback();
                 return false;
             }
@@ -2616,4 +3199,863 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
 
     }
 
+    // flaky test: https://github.com/JanusGraph/janusgraph/issues/3976
+    @RepeatedIfExceptionsTest(repeats = 3)
+    public void shouldUpdateIndexFieldsAfterIndexModification() throws InterruptedException, ExecutionException {
+        clopen(option(FORCE_INDEX_USAGE), true, option(LOG_READ_INTERVAL, MANAGEMENT_LOG), Duration.ofMillis(5000));
+        String key1 = "testKey1";
+        String key2 = "testKey2";
+        String key3 = "testKey3";
+        String vertexL = "testVertexLabel";
+        String indexName = "mixed";
+
+        PropertyKey p1 = mgmt.makePropertyKey(key1).dataType(Long.class).make();
+        PropertyKey p2 = mgmt.makePropertyKey(key2).dataType(Long.class).make();
+        mgmt.makeVertexLabel(vertexL).make();
+
+        JanusGraphIndex index = mgmt.buildIndex(indexName, Vertex.class)
+            .indexOnly(mgmt.getVertexLabel(vertexL))
+            .addKey(mgmt.getPropertyKey(key1))
+            .addKey(mgmt.getPropertyKey(key2))
+            .buildMixedIndex(INDEX);
+        if (index.getIndexStatus(p1) == SchemaStatus.INSTALLED) {
+            mgmt.updateIndex(mgmt.getGraphIndex(indexName), SchemaAction.REGISTER_INDEX).get();
+            mgmt.updateIndex(mgmt.getGraphIndex(indexName), SchemaAction.ENABLE_INDEX).get();
+        } else if (index.getIndexStatus(p1) == SchemaStatus.REGISTERED) {
+            mgmt.updateIndex(mgmt.getGraphIndex(indexName), SchemaAction.ENABLE_INDEX).get();
+        }
+        mgmt.commit();
+
+        JanusGraphVertex vertex = graph.addVertex(vertexL);
+        vertex.property(key1, 111L);
+        vertex.property(key2, 222L);
+
+        graph.tx().commit();
+        //By default ES indexes documents each second. By sleeping here we guarantee that documents are indexed.
+        // It is just for testing. A better approach is to use Refresh API.
+        Thread.sleep(1500L);
+
+        // we open an implicit transaction and do not commit/rollback it by intention, so that we can ensure
+        // adding new property to the index wouldn't cause existing transactions to fail
+        assertEquals(1, graph.traversal().V().hasLabel(vertexL).has(key1, 111L).count().next());
+        assertEquals(1, graph.traversal().V().hasLabel(vertexL).has(key1, 111L).toList().size());
+
+        JanusGraph graph2 = JanusGraphFactory.open(config);
+        assertEquals(1, graph2.traversal().V().hasLabel(vertexL).has(key1, 111L).count().next());
+        assertEquals(1, graph2.traversal().V().hasLabel(vertexL).has(key1, 111L).toList().size());
+
+        mgmt = graph.openManagement();
+        PropertyKey testKey3 = mgmt.makePropertyKey(key3).dataType(Long.class).make();
+        mgmt.addIndexKey(mgmt.getGraphIndex(indexName), testKey3);
+        mgmt.commit();
+
+        ManagementSystem.awaitGraphIndexStatus(graph, indexName).status(SchemaStatus.REGISTERED, SchemaStatus.ENABLED).call();
+
+        mgmt = graph.openManagement();
+        mgmt.updateIndex(mgmt.getGraphIndex(indexName), SchemaAction.REINDEX).get();
+        mgmt.commit();
+
+        graph.addVertex(T.label, vertexL, key1, 1L, key2, 2L, key3, 3L);
+        graph.tx().commit();
+        assertTrue(graph.traversal().V().hasLabel(vertexL).has(key3, 3L).hasNext());
+
+        try {
+            graph2.addVertex(T.label, vertexL, key1, 1L, key2, 2L, key3, 3L);
+            // this assertion might be flaky which is why we mark this test as RepeatedIfExceptionsTest.
+            // the reason is, we cannot make sure when the schema update broadcast will be received by the graph2
+            // instance.
+            JanusGraphException ex = assertThrows(JanusGraphException.class, () -> graph2.tx().commit());
+            assertEquals("testKey3 is not available in mixed index mixed", ex.getCause().getMessage());
+
+            // graph2 needs some time to read from ManagementLogger asynchronously and updates cache
+            // LOG_READ_INTERVAL is 5 seconds, so we wait for the same time here to ensure periodic read is triggered
+            Thread.sleep(5000);
+            graph2.tx().commit();
+            assertTrue(graph2.traversal().V().hasLabel(vertexL).has(key3, 3L).hasNext());
+        } finally {
+            graph2.close();
+        }
+    }
+
+    private void testMultipleOrClauses() {
+        if (indexFeatures.supportNotQueryNormalForm()) {
+            clopen(option(FORCE_INDEX_USAGE), true);
+        }
+
+        Vertex v1 = tx.traversal().addV("test").property("a", true).property("b", true).property("c", true).property("d", true).next();
+        Vertex v2 = tx.traversal().addV("test").property("a", true).property("b", false).property("c", true).property("d", false).next();
+        Vertex v3 = tx.traversal().addV("test").property("a", false).property("b", true).property("c", false).property("d", true).next();
+        Vertex v4 = tx.traversal().addV("test").property("a", false).property("b", false).property("c", true).property("d", false).next();
+
+        newTx();
+
+        List<Vertex> vertices = tx.traversal().V()
+            .or(__.has("a", true), __.has("b", true))
+            .or(__.has("c", false), __.has("d", true))
+            .toList();
+
+        assertTrue(vertices.contains(v1));
+        assertFalse(vertices.contains(v2));
+        assertTrue(vertices.contains(v3));
+        assertFalse(vertices.contains(v4));
+        assertEquals(2, vertices.size());
+    }
+
+    @Test
+    public void testMultipleOrClausesMixed() {
+        final PropertyKey a = makeKey("a", Boolean.class);
+        final PropertyKey b = makeKey("b", Boolean.class);
+        final PropertyKey c = makeKey("c", Boolean.class);
+        final PropertyKey d = makeKey("d", Boolean.class);
+
+        mgmt.buildIndex("mixed", Vertex.class)
+            .addKey(a)
+            .addKey(b)
+            .addKey(c)
+            .addKey(d)
+            .buildMixedIndex(INDEX);
+        finishSchema();
+
+        testMultipleOrClauses();
+    }
+
+    @Test
+    public void testMultipleOrClausesMultipleMixed() {
+        final PropertyKey a = makeKey("a", Boolean.class);
+        final PropertyKey b = makeKey("b", Boolean.class);
+        final PropertyKey c = makeKey("c", Boolean.class);
+        final PropertyKey d = makeKey("d", Boolean.class);
+
+        mgmt.buildIndex("mixed", Vertex.class)
+            .addKey(a)
+            .addKey(b)
+            .buildMixedIndex(INDEX);
+
+        mgmt.buildIndex("mi", Vertex.class)
+            .addKey(c)
+            .addKey(d)
+            .buildMixedIndex(INDEX);
+        finishSchema();
+
+        testMultipleOrClauses();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testStaleGraphIndexForceRemoveVertex(boolean withLabelConstraint) throws BackendException {
+        clopen();
+        String namePropKeyStr = "name";
+        String indexName = "mixed";
+        String nameValue = "testValue";
+        PropertyKey nameProp = mgmt.makePropertyKey(namePropKeyStr).dataType(String.class).cardinality(Cardinality.SINGLE).make();
+        JanusGraphManagement.IndexBuilder indexBuilder = mgmt.buildIndex(indexName, Vertex.class)
+            .addKey(nameProp, getStringMapping());
+        String vertexLabelName;
+        if(withLabelConstraint){
+            vertexLabelName = "testVertexLabel";
+            VertexLabel vertexLabel = mgmt.makeVertexLabel(vertexLabelName).make();
+            indexBuilder = indexBuilder.indexOnly(vertexLabel);
+        } else {
+            vertexLabelName = null;
+        }
+        indexBuilder.buildMixedIndex(INDEX);
+        finishSchema();
+
+        if(vertexLabelName == null){
+            tx.addVertex().property(namePropKeyStr, nameValue);
+        } else {
+            tx.addVertex(vertexLabelName).property(namePropKeyStr, nameValue);
+        }
+        newTx();
+
+        Vertex testVertex = getV(namePropKeyStr, nameValue, vertexLabelName).next();
+
+        ManagementSystem managementSystem = (ManagementSystem) graph.openManagement();
+        JanusGraphIndex janusGraphIndex = managementSystem.getGraphIndex(indexName);
+        JanusGraphSchemaVertex indexChangeVertex = managementSystem.getSchemaVertex(janusGraphIndex);
+        MixedIndexType index = (MixedIndexType) indexChangeVertex.asIndexType();
+
+        JanusGraphVertexProperty indexedProperty = (JanusGraphVertexProperty) testVertex.property(namePropKeyStr);
+        long propertyId = indexedProperty.longId();
+        PropertyKey propertyKey = indexedProperty.propertyKey();
+        IndexRecordEntry[] record = new IndexRecordEntry[]{new IndexRecordEntry(propertyId, nameValue, propertyKey)};
+
+        getV(namePropKeyStr, nameValue, vertexLabelName).drop().iterate();
+        newTx();
+
+        JanusGraphElement element = new CacheVertex((StandardJanusGraphTx) tx, testVertex.id(), ElementLifeCycle.New);
+
+        IndexUpdate<String, IndexEntry> update = IndexRecordUtil.getMixedIndexUpdate(
+            element,
+            propertyKey,
+            nameValue,
+            index,
+            IndexMutationType.ADD
+        );
+
+        BackendTransaction transaction = ((StandardJanusGraphTx) tx).getTxHandle();
+        IndexTransaction indexTransaction = transaction.getIndexTransaction(index.getBackingIndexName());
+
+        // Adds index entry of the non-existing vertex to the index. I.e. this line corrupts index.
+        // This is a possible situation of a stale index being introduced.
+        indexTransaction.add(index.getStoreName(), update.getKey(), update.getEntry(), true);
+        newTx();
+
+        assertFalse(tx.traversal().V(testVertex.id()).hasNext());
+        assertTrue(getV(namePropKeyStr, nameValue, vertexLabelName).hasNext());
+
+        // Check that if we try to remove non-existent vertex we receive an exception
+        assertThrows(Exception.class, () -> getV(namePropKeyStr, nameValue, vertexLabelName).drop().next());
+
+        newTx();
+        assertFalse(tx.traversal().V(testVertex.id()).hasNext());
+        // Check that even when we tried to remove vertex - it wasn't removed.
+        // Thus, we got a stale index which won't be fixed by itself.
+        assertTrue(getV(namePropKeyStr, nameValue, vertexLabelName).hasNext());
+
+        StaleIndexRecordUtil.forceRemoveElementFromGraphIndex(
+            element,
+            record,
+            graph,
+            indexName
+        );
+
+        newTx();
+
+        assertFalse(tx.traversal().V(testVertex.id()).hasNext());
+        assertFalse(getV(namePropKeyStr, nameValue, vertexLabelName).hasNext());
+    }
+
+    @Test
+    public void testStaleMixedIndexForceFullVertexRemove() throws BackendException {
+        clopen();
+        String namePropKeyStr = "name";
+        String agePropKeyStr = "age";
+        String indexName = "mixed";
+        PropertyKey nameProp = mgmt.makePropertyKey(namePropKeyStr).dataType(String.class).cardinality(Cardinality.SINGLE).make();
+        PropertyKey ageProp = mgmt.makePropertyKey(agePropKeyStr).dataType(Integer.class).cardinality(Cardinality.SINGLE).make();
+        mgmt.buildIndex(indexName, Vertex.class).addKey(nameProp, getStringMapping()).addKey(ageProp).buildMixedIndex(INDEX);
+        finishSchema();
+
+        tx.traversal().addV().property(namePropKeyStr, "vertex2").property(agePropKeyStr, 123).iterate();
+        newTx();
+
+        Vertex vertex2 = tx.traversal().V().has(namePropKeyStr, "vertex2").has(agePropKeyStr, 123).next();
+
+        ManagementSystem managementSystem = (ManagementSystem) graph.openManagement();
+        JanusGraphIndex janusGraphIndex = managementSystem.getGraphIndex(indexName);
+        JanusGraphSchemaVertex indexChangeVertex = managementSystem.getSchemaVertex(janusGraphIndex);
+        MixedIndexType index = (MixedIndexType) indexChangeVertex.asIndexType();
+
+        JanusGraphVertexProperty indexedNameProperty = (JanusGraphVertexProperty) vertex2.property(namePropKeyStr);
+        PropertyKey namePropertyKey = indexedNameProperty.propertyKey();
+        JanusGraphVertexProperty indexedAgeProperty = (JanusGraphVertexProperty) vertex2.property(agePropKeyStr);
+        PropertyKey agePropertyKey = indexedAgeProperty.propertyKey();
+
+        tx.traversal().V().has(namePropKeyStr, "vertex2").has(agePropKeyStr, 123).drop().iterate();
+        newTx();
+
+        JanusGraphElement element = new CacheVertex((StandardJanusGraphTx) tx, vertex2.id(), ElementLifeCycle.New);
+
+        IndexUpdate<String, IndexEntry> nameUpdate = IndexRecordUtil.getMixedIndexUpdate(
+            element,
+            namePropertyKey,
+            "vertex2",
+            index,
+            IndexMutationType.ADD
+        );
+        IndexUpdate<String, IndexEntry> ageUpdate = IndexRecordUtil.getMixedIndexUpdate(
+            element,
+            agePropertyKey,
+            123,
+            index,
+            IndexMutationType.ADD
+        );
+
+        BackendTransaction transaction = ((StandardJanusGraphTx) tx).getTxHandle();
+        IndexTransaction indexTransaction = transaction.getIndexTransaction(index.getBackingIndexName());
+
+        // Adds index entry of the non-existing vertex to the index. I.e. this line corrupts index.
+        // This is a possible situation of a stale index being introduced.
+        indexTransaction.add(index.getStoreName(), nameUpdate.getKey(), nameUpdate.getEntry(), true);
+        indexTransaction.add(index.getStoreName(), ageUpdate.getKey(), ageUpdate.getEntry(), true);
+        newTx();
+
+        assertFalse(tx.traversal().V(vertex2.id()).hasNext());
+        assertTrue(tx.traversal().V().has(namePropKeyStr, "vertex2").hasNext());
+        assertTrue(tx.traversal().V().has(agePropKeyStr, 123).hasNext());
+        assertTrue(tx.traversal().V().has(namePropKeyStr, "vertex2").has(agePropKeyStr, 123).hasNext());
+
+        // Check that if we try to remove non-existent vertex we receive an exception
+        assertThrows(Exception.class, () -> tx.traversal().V().has(namePropKeyStr, "vertex2").has(agePropKeyStr, 123).drop().next());
+
+        newTx();
+        assertFalse(tx.traversal().V(vertex2.id()).hasNext());
+        // Check that even when we tried to remove vertex - it wasn't removed.
+        // Thus, we got a stale index which won't be fixed by itself.
+        assertTrue(tx.traversal().V().has(namePropKeyStr, "vertex2").hasNext());
+        assertTrue(tx.traversal().V().has(agePropKeyStr, 123).hasNext());
+        assertTrue(tx.traversal().V().has(namePropKeyStr, "vertex2").has(agePropKeyStr, 123).hasNext());
+
+        StaleIndexRecordUtil.forceRemoveElementFromMixedIndex(
+            element.id(),
+            graph,
+            indexName
+        );
+
+        newTx();
+
+        assertFalse(tx.traversal().V(vertex2.id()).hasNext());
+        assertFalse(tx.traversal().V().has(namePropKeyStr, "vertex2").hasNext());
+        assertFalse(tx.traversal().V().has(agePropKeyStr, 123).hasNext());
+        assertFalse(tx.traversal().V().has(namePropKeyStr, "vertex2").has(agePropKeyStr, 123).hasNext());
+    }
+
+    @Test
+    public void testStaleMixedIndexForcePartialEdgeRemove() throws BackendException {
+        clopen();
+        String namePropKeyStr = "name";
+        String agePropKeyStr = "age";
+        String edgeKeyStr = "testEdge";
+        String indexName = "mixed";
+        PropertyKey nameProp = mgmt.makePropertyKey(namePropKeyStr).dataType(String.class).cardinality(Cardinality.SINGLE).make();
+        PropertyKey ageProp = mgmt.makePropertyKey(agePropKeyStr).dataType(Integer.class).cardinality(Cardinality.SINGLE).make();
+        mgmt.makeEdgeLabel(edgeKeyStr).make();
+        mgmt.buildIndex(indexName, Edge.class).addKey(nameProp, getStringMapping()).addKey(ageProp).buildMixedIndex(INDEX);
+        finishSchema();
+
+        Vertex vertex1 = tx.traversal().addV().next();
+        Vertex vertex2 = tx.traversal().addV().next();
+
+        tx.traversal().addE("testEdge").from(vertex1).to(vertex2)
+            .property(namePropKeyStr, "vertex2").property(agePropKeyStr, 123).iterate();
+        newTx();
+
+        Edge edge = tx.traversal().E().has(namePropKeyStr, "vertex2").has(agePropKeyStr, 123).next();
+
+        tx.traversal().E().has(namePropKeyStr, "vertex2").has(agePropKeyStr, 123).drop().iterate();
+        newTx();
+        graph.tx().rollback();
+
+        ManagementSystem managementSystem = (ManagementSystem) graph.openManagement();
+        JanusGraphIndex janusGraphIndex = managementSystem.getGraphIndex(indexName);
+        JanusGraphSchemaVertex indexChangeVertex = managementSystem.getSchemaVertex(janusGraphIndex);
+        MixedIndexType index = (MixedIndexType) indexChangeVertex.asIndexType();
+
+        BackendTransaction transaction = ((StandardJanusGraphTx) tx).getTxHandle();
+        IndexTransaction indexTransaction = transaction.getIndexTransaction(index.getBackingIndexName());
+
+        String elementIndexId = IndexRecordUtil.element2String(edge.id());
+        String nameIndexField = IndexRecordUtil.key2Field(index, managementSystem.getPropertyKey(namePropKeyStr));
+        String ageIndexField = IndexRecordUtil.key2Field(index, managementSystem.getPropertyKey(agePropKeyStr));
+
+        assertEquals(0, graph.indexQuery(indexName, nameIndexField+":vertex2").edgeTotals());
+        assertEquals(0, graph.indexQuery(indexName, ageIndexField+":123").edgeTotals());
+        assertEquals(0, graph.indexQuery(indexName, nameIndexField+":vertex2 AND "+ageIndexField+":123").edgeTotals());
+
+        // Adds index entry of the non-existing vertex to the index. I.e. this line corrupts index.
+        // This is a possible situation of a stale index being introduced.
+        indexTransaction.add(index.getStoreName(), elementIndexId, nameIndexField, "vertex2", true);
+        indexTransaction.add(index.getStoreName(), elementIndexId, ageIndexField, 123, true);
+        newTx();
+        graph.tx().rollback();
+
+        assertFalse(tx.traversal().E(edge.id()).hasNext());
+        assertEquals(1, graph.indexQuery(indexName, nameIndexField+":vertex2").edgeTotals());
+        assertEquals(1, graph.indexQuery(indexName, ageIndexField+":123").edgeTotals());
+        assertEquals(1, graph.indexQuery(indexName, nameIndexField+":vertex2 AND "+ageIndexField+":123").edgeTotals());
+
+        // Check that if we try to remove non-existent edge we receive an exception
+        assertThrows(Exception.class, () -> tx.traversal().E().has(namePropKeyStr, "vertex2").has(agePropKeyStr, 123).drop().next());
+
+        newTx();
+        graph.tx().rollback();
+
+        assertFalse(tx.traversal().E(edge.id()).hasNext());
+        // Check that even when we tried to remove the edge - it wasn't removed.
+        // Thus, we got a stale index which won't be fixed by itself.
+        assertEquals(1, graph.indexQuery(indexName, nameIndexField+":vertex2").edgeTotals());
+        assertEquals(1, graph.indexQuery(indexName, ageIndexField+":123").edgeTotals());
+        assertEquals(1, graph.indexQuery(indexName, nameIndexField+":vertex2 AND "+ageIndexField+":123").edgeTotals());
+
+        newTx();
+        graph.tx().rollback();
+
+        managementSystem = (ManagementSystem) graph.openManagement();
+        nameProp = managementSystem.getPropertyKey(namePropKeyStr);
+        IndexRecordEntry[] record = new IndexRecordEntry[]{
+            new IndexRecordEntry(nameProp.longId(), "vertex2", nameProp)
+        };
+
+        StaleIndexRecordUtil.forceRemoveElementFromMixedIndex(
+            edge.id(),
+            record,
+            graph,
+            indexName
+        );
+
+        managementSystem.rollback();
+        graph.tx().rollback();
+        newTx();
+
+        assertFalse(tx.traversal().E(edge.id()).hasNext());
+        assertEquals(0, graph.indexQuery(indexName, nameIndexField+":vertex2").edgeTotals());
+        assertEquals(0, graph.indexQuery(indexName, nameIndexField+":vertex2 AND "+ageIndexField+":123").edgeTotals());
+        // Check that the age record wasn't removed
+        assertEquals(1, graph.indexQuery(indexName, ageIndexField+":123").edgeTotals());
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testStaleGraphIndexForcePartialVertexRemoveByPropertyMap(boolean useMixedIndexMethod) throws BackendException {
+        clopen();
+        String namePropKeyStr = "name";
+        String agePropKeyStr = "age";
+        String indexName = "mixed";
+        PropertyKey nameProp = mgmt.makePropertyKey(namePropKeyStr).dataType(String.class).cardinality(Cardinality.SINGLE).make();
+        PropertyKey ageProp = mgmt.makePropertyKey(agePropKeyStr).dataType(Integer.class).cardinality(Cardinality.SINGLE).make();
+        mgmt.buildIndex(indexName, Vertex.class).addKey(nameProp, getStringMapping()).addKey(ageProp).buildMixedIndex(INDEX);
+        finishSchema();
+
+        tx.traversal().addV().property(namePropKeyStr, "vertex2").property(agePropKeyStr, 123).iterate();
+        newTx();
+
+        Vertex vertex2 = tx.traversal().V().has(namePropKeyStr, "vertex2").has(agePropKeyStr, 123).next();
+
+        ManagementSystem managementSystem = (ManagementSystem) graph.openManagement();
+        JanusGraphIndex janusGraphIndex = managementSystem.getGraphIndex(indexName);
+        JanusGraphSchemaVertex indexChangeVertex = managementSystem.getSchemaVertex(janusGraphIndex);
+        MixedIndexType index = (MixedIndexType) indexChangeVertex.asIndexType();
+
+        JanusGraphVertexProperty indexedNameProperty = (JanusGraphVertexProperty) vertex2.property(namePropKeyStr);
+        PropertyKey namePropertyKey = indexedNameProperty.propertyKey();
+        JanusGraphVertexProperty indexedAgeProperty = (JanusGraphVertexProperty) vertex2.property(agePropKeyStr);
+        PropertyKey agePropertyKey = indexedAgeProperty.propertyKey();
+
+        tx.traversal().V().has(namePropKeyStr, "vertex2").has(agePropKeyStr, 123).drop().iterate();
+        newTx();
+
+        JanusGraphElement element = new CacheVertex((StandardJanusGraphTx) tx, vertex2.id(), ElementLifeCycle.New);
+
+        IndexUpdate<String, IndexEntry> nameUpdate = IndexRecordUtil.getMixedIndexUpdate(
+            element,
+            namePropertyKey,
+            "vertex2",
+            index,
+            IndexMutationType.ADD
+        );
+        IndexUpdate<String, IndexEntry> ageUpdate = IndexRecordUtil.getMixedIndexUpdate(
+            element,
+            agePropertyKey,
+            123,
+            index,
+            IndexMutationType.ADD
+        );
+
+        BackendTransaction transaction = ((StandardJanusGraphTx) tx).getTxHandle();
+        IndexTransaction indexTransaction = transaction.getIndexTransaction(index.getBackingIndexName());
+
+        // Adds index entry of the non-existing vertex to the index. I.e. this line corrupts index.
+        // This is a possible situation of a stale index being introduced.
+        indexTransaction.add(index.getStoreName(), nameUpdate.getKey(), nameUpdate.getEntry(), true);
+        indexTransaction.add(index.getStoreName(), ageUpdate.getKey(), ageUpdate.getEntry(), true);
+        newTx();
+
+        assertFalse(tx.traversal().V(vertex2.id()).hasNext());
+        assertTrue(tx.traversal().V().has(namePropKeyStr, "vertex2").hasNext());
+        assertTrue(tx.traversal().V().has(agePropKeyStr, 123).hasNext());
+        assertTrue(tx.traversal().V().has(namePropKeyStr, "vertex2").has(agePropKeyStr, 123).hasNext());
+
+        // Check that if we try to remove non-existent vertex we receive an exception
+        assertThrows(Exception.class, () -> tx.traversal().V().has(namePropKeyStr, "vertex2").has(agePropKeyStr, 123).drop().next());
+
+        newTx();
+        assertFalse(tx.traversal().V(vertex2.id()).hasNext());
+        // Check that even when we tried to remove vertex - it wasn't removed.
+        // Thus, we got a stale index which won't be fixed by itself.
+        assertTrue(tx.traversal().V().has(namePropKeyStr, "vertex2").hasNext());
+        assertTrue(tx.traversal().V().has(agePropKeyStr, 123).hasNext());
+        assertTrue(tx.traversal().V().has(namePropKeyStr, "vertex2").has(agePropKeyStr, 123).hasNext());
+
+        if(useMixedIndexMethod){
+            StaleIndexRecordUtil.forceRemoveElementFromMixedIndex(
+                element.id(),
+                Collections.singletonMap(namePropertyKey.name(), "vertex2"),
+                graph,
+                indexName
+            );
+        } else {
+            StaleIndexRecordUtil.forceRemoveVertexFromGraphIndex(
+                (Long) element.id(),
+                Collections.singletonMap(namePropertyKey.name(), "vertex2"),
+                graph,
+                indexName
+            );
+        }
+
+        newTx();
+
+        assertFalse(tx.traversal().V(vertex2.id()).hasNext());
+        assertFalse(tx.traversal().V().has(namePropKeyStr, "vertex2").hasNext());
+        assertFalse(tx.traversal().V().has(namePropKeyStr, "vertex2").has(agePropKeyStr, 123).hasNext());
+        // Check that the age record wasn't removed
+        assertTrue(tx.traversal().V().has(agePropKeyStr, 123).hasNext());
+    }
+
+    @Test
+    public void testForceRemoveElementFromMixedIndexShouldFailOnCompositeIndex() {
+        clopen();
+        String namePropKeyStr = "name";
+        String indexName = "mixed";
+        PropertyKey nameProp = mgmt.makePropertyKey(namePropKeyStr).dataType(String.class).cardinality(Cardinality.SINGLE).make();
+        mgmt.buildIndex(indexName, Vertex.class).addKey(nameProp).buildCompositeIndex();
+        finishSchema();
+
+        assertThrows(IllegalArgumentException.class, () ->
+            StaleIndexRecordUtil.forceRemoveElementFromMixedIndex(
+                123L,
+                graph,
+                indexName
+            )
+        );
+    }
+
+    @Test
+    public void testForceRemoveElementFromMixedIndexShouldFailOnWrongPropertiesUsed() throws BackendException {
+        clopen();
+        String fooPropKeyStr = "foo";
+        String barPropKeyStr = "bar";
+        String foobarPropKeyStr = "foobar";
+        String indexName = "mixed";
+        PropertyKey fooProp = mgmt.makePropertyKey(fooPropKeyStr).dataType(Integer.class).cardinality(Cardinality.SINGLE).make();
+        PropertyKey barProp = mgmt.makePropertyKey(barPropKeyStr).dataType(Integer.class).cardinality(Cardinality.SINGLE).make();
+        mgmt.makePropertyKey(foobarPropKeyStr).dataType(Integer.class).cardinality(Cardinality.SINGLE).make();
+        mgmt.buildIndex(indexName, Vertex.class).addKey(fooProp).addKey(barProp).buildMixedIndex(INDEX);
+        finishSchema();
+
+        // Tests force mixed index record removal works for indexed property
+        StaleIndexRecordUtil.forceRemoveElementFromMixedIndex(
+            123L,
+            Collections.singletonMap(fooPropKeyStr, 123),
+            graph,
+            indexName
+        );
+
+        // Tests force mixed index record removal fails for non-indexed property
+        assertThrows(IllegalArgumentException.class, () ->
+            StaleIndexRecordUtil.forceRemoveElementFromMixedIndex(
+                123L,
+                Collections.singletonMap(foobarPropKeyStr, 123),
+                graph,
+                indexName
+            )
+        );
+
+        // Tests force mixed index record removal works for indexed property
+        StaleIndexRecordUtil.forceRemoveElementFromMixedIndex(
+            123L,
+            Collections.singletonMap(barPropKeyStr, 123),
+            graph,
+            indexName
+        );
+    }
+
+    private GraphTraversal<Vertex, Vertex> getV(String propertyName, Object value, String vertexLabel){
+        GraphTraversal<Vertex, Vertex> traversal = tx.traversal().V();
+        if(vertexLabel != null){
+            traversal = traversal.hasLabel(vertexLabel);
+        }
+        return traversal.has(propertyName, value);
+    }
+
+    @Test
+    public void testDisableAndDiscardManuallyAndDropEnabledIndex() throws Exception {
+        clopen(option(LOG_SEND_DELAY, MANAGEMENT_LOG), Duration.ZERO,
+            option(KCVSLog.LOG_READ_LAG_TIME, MANAGEMENT_LOG), Duration.ofMillis(50),
+            option(LOG_READ_INTERVAL, MANAGEMENT_LOG), Duration.ofMillis(250),
+            option(FORCE_INDEX_USAGE), true
+        );
+
+        String indexName = "mixed";
+        String propertyName = "prop";
+
+        makeKey(propertyName, String.class);
+        finishSchema();
+
+        //Never create new indexes while a transaction is active
+        graph.getOpenTransactions().forEach(JanusGraphTransaction::rollback);
+        mgmt = graph.openManagement();
+
+        registerIndex(indexName, Vertex.class, propertyName);
+        enableIndex(indexName);
+        disableIndex(indexName);
+        markIndexDiscarded(indexName);
+        dropIndex(indexName);
+
+        // try to register index again to ensure that it was properly deleted
+        registerIndex(indexName, Vertex.class, propertyName);
+        enableIndex(indexName);
+    }
+
+    @Test
+    public void testDiscardManuallyAndDropRegisteredIndex() throws Exception {
+        clopen(option(LOG_SEND_DELAY, MANAGEMENT_LOG), Duration.ZERO,
+            option(KCVSLog.LOG_READ_LAG_TIME, MANAGEMENT_LOG), Duration.ofMillis(50),
+            option(LOG_READ_INTERVAL, MANAGEMENT_LOG), Duration.ofMillis(250),
+            option(FORCE_INDEX_USAGE), true
+        );
+
+        String indexName = "mixed";
+        String propertyName = "prop";
+
+        makeKey(propertyName, String.class);
+        finishSchema();
+
+        //Never create new indexes while a transaction is active
+        graph.getOpenTransactions().forEach(JanusGraphTransaction::rollback);
+        mgmt = graph.openManagement();
+
+        registerIndex(indexName, Vertex.class, propertyName);
+        markIndexDiscarded(indexName);
+        dropIndex(indexName);
+
+        // try to register index again to ensure that it was properly deleted
+        registerIndex(indexName, Vertex.class, propertyName);
+        enableIndex(indexName);
+    }
+
+    @Test
+    public void testDiscardAndDropRegisteredIndex() throws ExecutionException, InterruptedException {
+        clopen(option(LOG_SEND_DELAY, MANAGEMENT_LOG), Duration.ZERO,
+            option(KCVSLog.LOG_READ_LAG_TIME, MANAGEMENT_LOG), Duration.ofMillis(50),
+            option(LOG_READ_INTERVAL, MANAGEMENT_LOG), Duration.ofMillis(250),
+            option(FORCE_INDEX_USAGE), true
+        );
+
+        String indexName = "mixed";
+        String propertyName = "prop";
+
+        makeKey(propertyName, String.class);
+        finishSchema();
+
+        //Never create new indexes while a transaction is active
+        graph.getOpenTransactions().forEach(JanusGraphTransaction::rollback);
+        mgmt = graph.openManagement();
+
+        registerIndex(indexName, Vertex.class, propertyName);
+        discardIndex(indexName);
+        dropIndex(indexName);
+
+        // try to register index again to ensure that it was properly deleted
+        registerIndex(indexName, Vertex.class, propertyName);
+        enableIndex(indexName);
+    }
+
+    @Test
+    public void testReenableDisabledIndex() throws ExecutionException, InterruptedException {
+        clopen(option(LOG_SEND_DELAY, MANAGEMENT_LOG), Duration.ZERO,
+            option(KCVSLog.LOG_READ_LAG_TIME, MANAGEMENT_LOG), Duration.ofMillis(50),
+            option(LOG_READ_INTERVAL, MANAGEMENT_LOG), Duration.ofMillis(250),
+            option(FORCE_INDEX_USAGE), true
+        );
+
+        String indexName = "mixed";
+        String propertyName = "prop";
+        String propertyValue = "value";
+
+        makeKey(propertyName, String.class);
+        finishSchema();
+
+        //Never create new indexes while a transaction is active
+        graph.getOpenTransactions().forEach(JanusGraphTransaction::rollback);
+        mgmt = graph.openManagement();
+
+        registerIndex(indexName, Vertex.class, propertyName);
+        enableIndex(indexName);
+
+        graph.addVertex(propertyName, propertyValue);
+        graph.tx().commit();
+
+        disableIndex(indexName);
+
+        graph.addVertex(propertyName, propertyValue);
+        graph.tx().commit();
+
+        enableIndex(indexName);
+
+        // verify that vertices are not picked up by the index when they are inserted while the index was disabled
+        assertEquals(1, graph.traversal().V().has(propertyName, Text.textContains(propertyValue)).count().next());
+
+        graph.addVertex(propertyName, propertyValue);
+        graph.tx().commit();
+
+        // verify that the index picks up vertices after re-enabling
+        assertEquals(2, graph.traversal().V().has(propertyName, Text.textContains(propertyValue)).count().next());
+    }
+
+    @Test
+    public void testCreateMixedIndexThatPreviouslyExisted() throws ExecutionException, InterruptedException {
+        clopen(option(LOG_SEND_DELAY, MANAGEMENT_LOG), Duration.ZERO,
+            option(KCVSLog.LOG_READ_LAG_TIME, MANAGEMENT_LOG), Duration.ofMillis(50),
+            option(LOG_READ_INTERVAL, MANAGEMENT_LOG), Duration.ofMillis(250),
+            option(FORCE_INDEX_USAGE), true
+        );
+
+        String indexName = "mixed";
+        String propertyName = "prop";
+        String propertyValue = "value";
+
+        makeKey(propertyName, String.class);
+        finishSchema();
+
+        //Never create new indexes while a transaction is active
+        graph.getOpenTransactions().forEach(JanusGraphTransaction::rollback);
+        mgmt = graph.openManagement();
+
+        registerIndex(indexName, Vertex.class, propertyName);
+        enableIndex(indexName);
+
+        // verify that no vertex is found initially
+        assertFalse(graph.traversal().V().has(propertyName, Text.textContains(propertyValue)).hasNext());
+
+        graph.addVertex(propertyName, propertyValue);
+        graph.tx().commit();
+
+        disableIndex(indexName);
+        discardIndex(indexName);
+        dropIndex(indexName);
+        registerIndex(indexName, Vertex.class, propertyName);
+        enableIndex(indexName);
+
+        // verify that old vertex is not found anymore
+        assertFalse(graph.traversal().V().has(propertyName, Text.textContains(propertyValue)).hasNext());
+
+        // verify that index gets updated for new vertices
+        graph.addVertex(propertyName, propertyValue);
+        graph.tx().commit();
+        assertTrue(graph.traversal().V().has(propertyName, Text.textContains(propertyValue)).hasNext());
+    }
+
+    protected void registerIndex(String indexName, Class<? extends Element> type, String... propertyNames) throws InterruptedException {
+        JanusGraphManagement.IndexBuilder builder = mgmt.buildIndex(indexName, type);
+        for (String prop : propertyNames) {
+            builder.addKey(mgmt.getPropertyKey(prop));
+        }
+        builder.buildMixedIndex(INDEX);
+        mgmt.commit();
+        assertTrue(ManagementSystem
+            .awaitGraphIndexStatus(graph, indexName)
+            .status(SchemaStatus.REGISTERED)
+            .call()
+            .getSucceeded()
+        );
+        mgmt = graph.openManagement();
+    }
+
+    @Test
+    public void testStaleEdgesAreSkippedFromMixedIndex() {
+        clopen();
+        String namePropKeyStr = "name";
+        String edgeKeyStr = "testEdge";
+        String indexName = "mixed";
+        PropertyKey nameProp = mgmt.makePropertyKey(namePropKeyStr).dataType(String.class).cardinality(Cardinality.SINGLE).make();
+        mgmt.makeEdgeLabel(edgeKeyStr).multiplicity(Multiplicity.MULTI).make();
+        mgmt.buildIndex(indexName, Edge.class).addKey(nameProp, getStringMapping()).buildMixedIndex(INDEX);
+        finishSchema();
+        String nameValue = "NameTestValue";
+
+        Vertex vertex1 = tx.traversal().addV().next();
+        Vertex vertex2 = tx.traversal().addV().next();
+
+        tx.traversal()
+            .addE("testEdge").from(vertex1).to(vertex2).property(namePropKeyStr, nameValue)
+            .iterate();
+        newTx();
+
+        Edge edge = tx.traversal().E().has(namePropKeyStr, nameValue).next();
+        Object edgeId = edge.id();
+        edge.remove();
+        newTx();
+        graph.tx().rollback();
+
+        ManagementSystem managementSystem = (ManagementSystem) graph.openManagement();
+        JanusGraphIndex janusGraphIndex = managementSystem.getGraphIndex(indexName);
+        JanusGraphSchemaVertex indexChangeVertex = managementSystem.getSchemaVertex(janusGraphIndex);
+        MixedIndexType index = (MixedIndexType) indexChangeVertex.asIndexType();
+
+        BackendTransaction transaction = ((StandardJanusGraphTx) tx).getTxHandle();
+        IndexTransaction indexTransaction = transaction.getIndexTransaction(index.getBackingIndexName());
+
+        String elementIndexId = IndexRecordUtil.element2String(edgeId);
+        String nameIndexField = IndexRecordUtil.key2Field(index, managementSystem.getPropertyKey(namePropKeyStr));
+
+        assertEquals(0, graph.indexQuery(indexName, nameIndexField+":"+nameValue).edgeTotals());
+
+        // Adds index entry of the non-existing vertex to the index. I.e. this line corrupts index.
+        // This is a possible situation of a stale index being introduced.
+        indexTransaction.add(index.getStoreName(), elementIndexId, nameIndexField, nameValue, true);
+        newTx();
+        graph.tx().rollback();
+
+        // Add another edge, so that a new index record is applied after a stale index record
+        tx.traversal()
+            .addE("testEdge").from(tx.traversal().V(vertex1).next()).to(tx.traversal().V(vertex2).next())
+            .property(namePropKeyStr, nameValue)
+            .iterate();
+        newTx();
+        graph.tx().rollback();
+
+        assertFalse(tx.traversal().E(edgeId).hasNext());
+        // Check that direct mixed query returns a stale edge as well as a new edge
+        assertEquals(2, graph.indexQuery(indexName, nameIndexField+":"+nameValue).edgeTotals());
+        // Check that Gremlin query doesn't return a stale edge and doesn't skip edges after a stale one
+        assertEquals(1, tx.traversal().E().has(namePropKeyStr, nameValue).toList().size());
+    }
+
+    @Test
+    public void testMixedIndexAggregatedCountReturnsCorrectResult() {
+        clopen();
+        String namePropKeyStr = "name";
+        String indexName = "mixed";
+        PropertyKey nameProp = mgmt.makePropertyKey(namePropKeyStr).dataType(String.class).cardinality(Cardinality.SINGLE).make();
+        mgmt.buildIndex(indexName, Vertex.class).addKey(nameProp, getStringMapping()).buildMixedIndex(INDEX);
+        finishSchema();
+        String nameValue = "NameTestValue";
+        int addedVerticesAmount = 10;
+
+        for(int i=0; i<addedVerticesAmount; i++){
+            tx.traversal().addV().property(namePropKeyStr, nameValue).iterate();
+        }
+
+        tx.commit();
+
+        long countWithoutOptimization = graph.traversal().withoutStrategies(JanusGraphMixedIndexCountStrategy.class)
+            .V().has(namePropKeyStr, nameValue).count().next();
+
+        assertEquals(addedVerticesAmount, countWithoutOptimization);
+
+        long countWithOptimization = graph.traversal().V().has(namePropKeyStr, nameValue).count().next();
+
+        assertEquals(addedVerticesAmount, countWithOptimization);
+
+        for(int i=0; i<addedVerticesAmount; i++){
+            assertEquals(
+                i,
+                graph.traversal().V().has(namePropKeyStr, nameValue).limit(i).count().next()
+            );
+        }
+
+        for(Long limit : Arrays.asList(
+            (long)addedVerticesAmount,
+            (long) (addedVerticesAmount+1),
+            (long) (addedVerticesAmount+2),
+            (long) (addedVerticesAmount*2),
+            Long.MAX_VALUE,
+            -1L)){
+            assertEquals(
+                addedVerticesAmount,
+                graph.traversal().V().has(namePropKeyStr, nameValue).limit(limit).count().next()
+            );
+        }
+    }
 }

@@ -15,11 +15,21 @@
 package org.janusgraph.graphdb.query;
 
 import com.google.common.collect.Iterators;
-import org.apache.tinkerpop.gremlin.process.traversal.util.Metrics;
+import org.apache.tinkerpop.gremlin.process.traversal.P;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversal;
+import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
+import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
+import org.apache.tinkerpop.gremlin.process.traversal.util.Metrics;
 import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalMetrics;
+import org.apache.tinkerpop.gremlin.structure.Edge;
+import org.apache.tinkerpop.gremlin.structure.T;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
-import org.janusgraph.core.*;
+import org.janusgraph.core.Cardinality;
+import org.janusgraph.core.JanusGraph;
+import org.janusgraph.core.JanusGraphFactory;
+import org.janusgraph.core.JanusGraphTransaction;
+import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.core.PropertyKey;
 import org.janusgraph.core.attribute.Contain;
 import org.janusgraph.core.attribute.Text;
 import org.janusgraph.core.schema.JanusGraphIndex;
@@ -38,10 +48,14 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
+import static org.apache.tinkerpop.gremlin.process.traversal.P.not;
 import static org.janusgraph.testutil.JanusGraphAssert.assertBackendHit;
 import static org.janusgraph.testutil.JanusGraphAssert.assertCount;
 import static org.janusgraph.testutil.JanusGraphAssert.assertNoBackendHit;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -86,29 +100,90 @@ public class QueryTest {
 
         for (int i = 0; i < 20; i++) {
             tx.addVertex().property("prop1", "prop1val").element().property("prop2", "prop2val")
-                .element().property("prop3", "prop3val" + i % 2).element().property("prop4", "prop4val" + i % 2);
+                .element().property("prop3", "prop3val").element().property("prop4", "prop4val");
         }
         tx.commit();
 
         // Single condition, fully met by index prop1_idx. No need to adjust backend query limit.
         assertCount(5, graph.traversal().V().has("prop1", "prop1val").limit(5));
-        assertEquals("multiKSQ[1]@5", getQueryAnnotation(graph.traversal().V().has("prop1", "prop1val").limit(5)
-                .profile().next()));
+        assertEquals("multiKSQ[1]@5{KeySliceQuery(0x0A89A070726F70317661EC)[0x00,0xFF)}",
+            getQueryAnnotation(graph.traversal().V().has("prop1", "prop1val").limit(5).profile().next()));
 
         // Two conditions, fully met by index props_idx. No need to adjust backend query limit.
         assertCount(5, graph.traversal().V().has("prop1", "prop1val").has("prop2", "prop2val").limit(5));
-        assertEquals("multiKSQ[1]@5", getQueryAnnotation(graph.traversal().V().has("prop1", "prop1val").has("prop2", "prop2val").limit(5)
+        assertEquals("multiKSQ[1]@5{KeySliceQuery(0x0C89A070726F70317661ECA070726F70327661EC)[0x00,0xFF)}", getQueryAnnotation(graph.traversal().V().has("prop1", "prop1val").has("prop2", "prop2val").limit(5)
             .profile().next()));
 
         // Two conditions, one of which met by index prop1_idx. Multiply original limit by two for sake of in-memory filtering.
-        assertCount(5, graph.traversal().V().has("prop1", "prop1val").has("prop3", "prop3val0").limit(5));
-        assertEquals("multiKSQ[1]@10", getQueryAnnotation(graph.traversal().V().has("prop1", "prop1val").has("prop3", "prop3val0").limit(5)
+        assertCount(5, graph.traversal().V().has("prop1", "prop1val").has("prop3", "prop3val").limit(5));
+        assertEquals("multiKSQ[1]@10{KeySliceQuery(0x0A89A070726F70317661EC)[0x00,0xFF)}", getQueryAnnotation(graph.traversal().V().has("prop1", "prop1val").has("prop3", "prop3val").limit(5)
             .profile().next()));
 
         // Three conditions, one of which met by index prop1_idx. Multiply original limit by four for sake of in-memory filtering.
-        assertCount(5, graph.traversal().V().has("prop1", "prop1val").has("prop3", "prop3val0").has("prop4", "prop4val0").limit(5));
-        assertEquals("multiKSQ[1]@20", getQueryAnnotation(graph.traversal().V().has("prop1", "prop1val").has("prop3", "prop3val0").has("prop4", "prop4val0").limit(5)
+        assertCount(5, graph.traversal().V().has("prop1", "prop1val").has("prop3", "prop3val").has("prop4", "prop4val").limit(5));
+        assertEquals("multiKSQ[1]@20{KeySliceQuery(0x0A89A070726F70317661EC)[0x00,0xFF)}", getQueryAnnotation(graph.traversal().V().has("prop1", "prop1val").has("prop3", "prop3val").has("prop4", "prop4val").limit(5)
             .profile().next()));
+    }
+
+    @Test
+    public void testIdLookUpQuery() {
+        Vertex v1 = tx.addVertex("pos", 0, "age", 30);
+        Vertex v2 = tx.addVertex("age", 20);
+        Edge e = v1.addEdge("connects", v2, "prop", "val");
+        Object vId = v1.id();
+        Object v2Id = v2.id();
+        Object eId = e.id();
+        tx.commit();
+
+        tx = graph.newTransaction();
+
+        // edges
+        assertTrue(tx.traversal().E(eId).hasNext());
+        assertFalse(tx.traversal().E(eId).hasId("wrong-id").hasNext());
+        assertFalse(tx.traversal().E("wrong-id").hasId(eId).hasNext());
+        assertFalse(tx.traversal().E(eId).has("prop", "non").hasNext());
+        assertTrue(tx.traversal().E(eId).has("prop", "val").hasNext());
+        assertTrue(tx.traversal().E().hasId(eId).hasNext());
+        assertFalse(tx.traversal().E().hasId(eId).has("prop", "non").hasNext());
+        assertTrue(tx.traversal().E().hasId(eId).has("prop", "val").hasNext());
+        assertEquals(tx.traversal().E(eId).next(), tx.traversal().E().hasId(eId).next());
+        assertEquals(tx.traversal().E(eId).next(), tx.traversal().E(eId).hasId(eId).next());
+
+        // vertices
+        assertTrue(tx.traversal().V(vId).hasNext());
+        assertFalse(tx.traversal().V(vId).hasId(123).hasNext());
+        assertFalse(tx.traversal().V(123).hasId(vId).hasNext());
+        assertFalse(tx.traversal().V(vId).has("pos", 1).hasNext());
+        assertTrue(tx.traversal().V(vId).has("pos", 0).hasNext());
+        assertTrue(tx.traversal().V().hasId(vId).hasNext());
+        assertFalse(tx.traversal().V().hasId(vId).has("pos", 1).hasNext());
+        assertTrue(tx.traversal().V().hasId(vId).has("pos", 0).hasNext());
+        assertEquals(tx.traversal().V(vId).next(), tx.traversal().V().hasId(vId).next());
+        assertEquals(tx.traversal().V(vId).next(), tx.traversal().V(vId).hasId(vId).next());
+
+        // vertices lookup followed by limit step
+        assertEquals(1, tx.traversal().V(vId, v2Id).limit(1).count().next());
+        assertEquals(1, tx.traversal().V(vId, v2Id).limit(1).toList().size());
+        assertEquals(1, tx.traversal().V().hasId(vId, v2Id).limit(1).count().next());
+        assertEquals(0, tx.traversal().V().hasId(vId, v2Id).limit(0).count().next());
+        assertEquals(1, tx.traversal().V().has(T.id, P.within(vId, v2Id)).limit(1).count().next());
+        assertEquals(0, tx.traversal().V().has(T.id, P.within(vId, v2Id)).limit(0).count().next());
+
+        // vertices lookup followed by order step
+        assertEquals(Arrays.asList(20, 30), tx.traversal().V().order().by("age").values("age").toList());
+        assertEquals(Arrays.asList(20, 30), tx.traversal().V().has(T.id, P.within(vId, v2Id)).order().by("age").values("age").toList());
+        assertEquals(Arrays.asList(20, 30), tx.traversal().V().has(T.id, P.within(vId, v2Id)).order().by("age").values("age").toList());
+        assertEquals(Arrays.asList(20, 30), tx.traversal().V().hasId(vId, v2Id).order().by("age").values("age").toList());
+        assertEquals(Arrays.asList(20, 30), tx.traversal().V().hasId(vId, v2Id).order().by("age").values("age").toList());
+
+        // FIXME: vertices lookup in Or query
+        // assertEquals(1, tx.traversal().V().or(__.hasId(vId), __.has("pos", 100)).count().next());
+        // assertEquals(2, tx.traversal().V().or(__.has(T.id, vId), __.has(T.id, v2Id)).count().next());
+        // assertEquals(2, tx.traversal().V().or(__.hasId(vId, v2Id), __.has("pos", 100)).count().next());
+        // assertEquals(1, tx.traversal().V().or(__.hasId(vId, v2Id).limit(1), __.has("pos", 100)).count().next());
+        // assertEquals(1, tx.traversal().V().or(__.hasId(vId, v2Id).limit(0), __.has("pos")).count().next());
+        // assertEquals(1, tx.traversal().V().or(__.hasId(vId, v2Id).limit(1), __.has("pos")).count().next());
+        // assertEquals(2, tx.traversal().V().or(__.hasId(vId, v2Id).limit(1), __.has("age")).count().next());
     }
 
     @Test
@@ -351,5 +426,95 @@ public class QueryTest {
         assertEquals(0, graph.traversal().V().has("name", Text.textContainsFuzzy("valuable")).count().next());
     }
 
-}
+    @Test
+    public void testTextContainsPhraseWithoutIndex() {
+        JanusGraphManagement mgmt = graph.openManagement();
+        PropertyKey name = mgmt.makePropertyKey("name").dataType(String.class).make();
+        mgmt.commit();
 
+        tx.addVertex().property("name", "some value");
+        tx.addVertex().property("name", "other value");
+        tx.commit();
+
+        assertEquals(2, graph.traversal().V().has("name", Text.textContainsPhrase("value")).count().next());
+        assertEquals(1, graph.traversal().V().has("name", Text.textContainsPhrase("other value")).count().next());
+        assertEquals(0, graph.traversal().V().has("name", Text.textContainsPhrase("final value")).count().next());
+    }
+
+    @Test
+    public void testTextNegatedWithoutIndex() {
+        JanusGraphManagement mgmt = graph.openManagement();
+        PropertyKey name = mgmt.makePropertyKey("name").dataType(String.class).make();
+        mgmt.commit();
+
+        tx.addVertex().property("name", "some value");
+        tx.addVertex().property("name", "other value");
+        tx.commit();
+
+        // Text.textNotFuzzy
+        assertEquals(1, graph.traversal().V().has("name", Text.textNotFuzzy("other values")).count().next());
+        assertEquals(2, graph.traversal().V().has("name", Text.textNotFuzzy("final values")).count().next());
+
+        // Text.textNotRegex
+        assertEquals(0, graph.traversal().V().has("name", Text.textNotRegex(".*value")).count().next());
+        assertEquals(1, graph.traversal().V().has("name", Text.textNotRegex("other.*")).count().next());
+        assertEquals(2, graph.traversal().V().has("name", Text.textNotRegex("final.*")).count().next());
+
+        // Text.textNotPrefix
+        assertEquals(1, graph.traversal().V().has("name", Text.textNotPrefix("other")).count().next());
+        assertEquals(2, graph.traversal().V().has("name", Text.textNotPrefix("final")).count().next());
+
+        // Text.textNotContains
+        assertEquals(0, graph.traversal().V().has("name", Text.textNotContains("value")).count().next());
+        assertEquals(1, graph.traversal().V().has("name", Text.textNotContains("other")).count().next());
+        assertEquals(2, graph.traversal().V().has("name", Text.textNotContains("final")).count().next());
+
+        // Text.textNotContainsFuzzy
+        assertEquals(0, graph.traversal().V().has("name", Text.textNotContainsFuzzy("values")).count().next());
+        assertEquals(1, graph.traversal().V().has("name", Text.textNotContainsFuzzy("others")).count().next());
+        assertEquals(2, graph.traversal().V().has("name", Text.textNotContainsFuzzy("final")).count().next());
+
+        // Text.textNotContainsRegex
+        assertEquals(0, graph.traversal().V().has("name", Text.textNotContainsRegex("val.*")).count().next());
+        assertEquals(1, graph.traversal().V().has("name", Text.textNotContainsRegex("oth.*")).count().next());
+        assertEquals(2, graph.traversal().V().has("name", Text.textNotContainsRegex("fin.*")).count().next());
+
+        // Text.textNotContainsPrefix
+        assertEquals(0, graph.traversal().V().has("name", Text.textNotContainsPrefix("val")).count().next());
+        assertEquals(1, graph.traversal().V().has("name", Text.textNotContainsPrefix("oth")).count().next());
+        assertEquals(2, graph.traversal().V().has("name", Text.textNotContainsPrefix("final")).count().next());
+
+        // Text.textNotContainsPhrase
+        assertEquals(0, graph.traversal().V().has("name", Text.textNotContainsPhrase("value")).count().next());
+        assertEquals(1, graph.traversal().V().has("name", Text.textNotContainsPhrase("other value")).count().next());
+        assertEquals(2, graph.traversal().V().has("name", Text.textNotContainsPhrase("final value")).count().next());
+    }
+
+    @Test
+    public void testComplexConditions() {
+        GraphTraversalSource g = graph.traversal();
+        Vertex bob = g.addV("person").property("name", "Bob").next();
+        Vertex alice = g.addV("person").property("name", "Alice").next();
+        Vertex book = g.addV("book").property("name", "book1").next();
+
+        g.addE("knows").from(bob).to(alice).next();
+        Edge edge2 = g.addE("write").from(alice).to(book).next();
+        g.E(edge2).property("duration", new Double(0.2d)).iterate();
+
+        // vertex centric queries
+        assertFalse(g.E().inV().outE("write").has("duration", P.eq(0d).or(P.outside(0.1d, 0.3d))).hasNext());
+        assertTrue(g.E().inV().outE("write").has("duration", P.eq(0.2d).or(P.outside(0.1d, 0.3d))).hasNext());
+        assertTrue(g.E().inV().outE("write").or(__.has("duration", P.eq(0d)), __.has("duration", not(P.outside(0.1d, 0.3d)))).hasNext());
+        assertTrue(g.E().inV().outE("write").has("duration", P.eq(0d).or(not(P.outside(0.1d, 0.3d)))).hasNext());
+        assertTrue(g.E().inV().outE("write").has("duration", P.eq(0.2d).or(not(P.outside(0.3d, 0.4d)))).hasNext());
+        assertFalse(g.E().inV().outE("write").has("duration", P.eq(0d).or(not(P.outside(0.3d, 0.4d)))).hasNext());
+
+        // graph centric queries
+        assertFalse(g.E().has("duration", P.eq(0d).or(P.outside(0.1d, 0.3d))).hasNext());
+        assertTrue(g.E().has("duration", P.eq(0.2d).or(P.outside(0.1d, 0.3d))).hasNext());
+        assertTrue(g.E().or(__.has("duration", P.eq(0d)), __.has("duration", not(P.outside(0.1d, 0.3d)))).hasNext());
+        assertTrue(g.E().has("duration", P.eq(0d).or(not(P.outside(0.1d, 0.3d)))).hasNext());
+        assertTrue(g.E().has("duration", P.eq(0.2d).or(not(P.outside(0.3d, 0.4d)))).hasNext());
+        assertFalse(g.E().has("duration", P.eq(0d).or(not(P.outside(0.3d, 0.4d)))).hasNext());
+    }
+}

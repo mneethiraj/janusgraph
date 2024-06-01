@@ -92,9 +92,18 @@ the `ConfigurationManagementGraph`.
     data.
 
 !!! important
-    To ensure all graph representations are consistent across all JanusGraph nodes in your cluster, this removes the graph from the `JanusGraphManager` graph cache on every node in the cluster, assuming each node has been properly configured to use the `JanusGraphManager`. Learn more about this feature and how to configure your server to use said feature [here](./dynamic-graphs.md#graph-reference-consistency).
+    To ensure all graph representations are consistent across all JanusGraph 
+    nodes in your cluster, this removes the graph from the `JanusGraphManager` 
+    graph cache on every node in the cluster, assuming each node has been 
+    properly configured to use the `JanusGraphManager`. Learn more about this 
+    feature and how to configure your server to use said feature [here](./dynamic-graphs.md#graph-reference-consistency).
 
 ## Configuring JanusGraph Server for ConfiguredGraphFactory
+
+!!! note
+    Starting with JanusGraph v0.6.0, every JanusGraph Server is started with 
+    the JanusGraphManager, if `ConfigurationManagementGraph`is configured in 
+    the `graphs` section and the default GraphManager is not overwritten.
 
 To be able to use the `ConfiguredGraphFactory`, you must configure your
 server to use the `ConfigurationManagementGraph` APIs. To do this, you
@@ -240,7 +249,11 @@ g1 = ConfiguredGraphFactory.open("graph1");
 map = new HashMap();
 map.put("storage.hostname", "10.0.0.1");
 ConfiguredGraphFactory.updateConfiguration("graph1",
-map);
+new MapConfiguration(map));
+
+// We can verify the configuration was updated by
+// retrieving the configuration for this graph
+ConfiguredGraphFactory.getConfiguration("graph1");
 
 // We are now guaranteed to use the updated configuration
 g1 = ConfiguredGraphFactory.open("graph1");
@@ -263,7 +276,11 @@ map.put("index.search.backend", "elasticsearch");
 map.put("index.search.hostname", "127.0.0.1");
 map.put("index.search.elasticsearch.transport-scheme", "http");
 ConfiguredGraphFactory.updateConfiguration("graph1",
-map);
+new MapConfiguration(map));
+
+// We can verify the configuration was updated by
+// retrieving the configuration for this graph
+ConfiguredGraphFactory.getConfiguration("graph1");
 
 // We are now guaranteed to use the updated configuration
 g1 = ConfiguredGraphFactory.open("graph1");
@@ -293,7 +310,10 @@ ConfiguredGraphFactory.removeConfiguration("graph1");
 
 // Recreate
 ConfiguredGraphFactory.create("graph1");
-// Now this graph's configuration is guaranteed to be updated
+
+// Now this graph's configuration is guaranteed to be updated.
+// We can verify it by retrieving the configuration for this graph
+ConfiguredGraphFactory.getConfiguration("graph1");
 ```
 
 ## JanusGraphManager
@@ -347,11 +367,11 @@ the property `graph.graphname`, then these graphs will be stored in the
 JanusGraphManager and thus bound in your gremlin script executions as
 `graph1` and `graph2`, respectively.
 
-### Important
+### Automatic Separation of Graphs in Backends
 
 For convenience, if your configuration used to open a graph specifies
 `graph.graphname`, but does not specify the backend’s storage directory,
-tablename, or keyspacename, then the relevant parameter will
+table name, keyspace name, or index name, then the relevant parameter will
 automatically be set to the value of `graph.graphname`. However, if you
 supply one of those parameters, that value will always take precedence.
 And if you supply neither, they default to the configuration option’s
@@ -433,7 +453,7 @@ It is recommended to use a sessioned connection when creating a
 Configured Graph Factory template. If a sessioned connection is not used
 the Configured Graph Factory Template creation must be sent to the
 server as a single line using semi-colons. See details on sessions can
-be found in [Connecting to Gremlin Server](../interactions/connecting/index.md).
+be found in [Connecting to Gremlin Server](../basics/connecting/index.md).
 
 ```groovy
 gremlin> :remote connect tinkerpop.server conf/remote.yaml session

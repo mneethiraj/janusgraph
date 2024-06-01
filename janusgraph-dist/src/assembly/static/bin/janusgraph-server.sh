@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# This file is based on the work of TinkerPop's gremlin-server.sh, see 
+# This file is based on the work of TinkerPop's gremlin-server.sh, see
 # https://github.com/apache/tinkerpop/blob/master/gremlin-server/src/main/bin/gremlin-server.sh.
 
 ### BEGIN INIT INFO
@@ -63,20 +63,31 @@ if [[ -z "$PID_DIR" ]] ; then
 fi
 
 if [[ -z "$PID_FILE" ]]; then
-  PID_FILE=$PID_DIR/janusgraph.pid
+  PID_FILE="$PID_DIR/janusgraph.pid"
 fi
 
-if [[ -z "$JANUSGRAPH_YAML" ]]; then
-  JANUSGRAPH_YAML=$JANUSGRAPH_CONF/gremlin-server/gremlin-server.yaml
-fi
-
-if [[ ! -r "$JANUSGRAPH_YAML" ]]; then
-  # try relative to conf
-  JANUSGRAPH_YAML="$JANUSGRAPH_CONF/gremlin-server/gremlin-server.yaml"
-  if [[ ! -r "$JANUSGRAPH_YAML" ]]; then
-    echo WARNING: $JANUSGRAPH_YAML is unreadable
+setValidConfiguration() {
+  if [[ -r "$1" ]]; then
+    JANUSGRAPH_YAML="$1"
+  elif [[ -r "$JANUSGRAPH_HOME/$1" ]] ; then
+    JANUSGRAPH_YAML="$JANUSGRAPH_HOME/$1"
+  elif [[ -r "$JANUSGRAPH_CONF/$1" ]] ; then
+    JANUSGRAPH_YAML="$JANUSGRAPH_CONF/$1"
+  else
+    echo ERROR: $1 is unreadable
+    exit 1;
   fi
-fi
+}
+
+useGremlinServerConfiguration(){
+    if [[ -n "$1" ]] ; then
+      setValidConfiguration "$1"
+    elif [[ -z "$JANUSGRAPH_YAML" ]]; then
+      setValidConfiguration "gremlin-server/gremlin-server.yaml"
+    elif [[ -r "$JANUSGRAPH_YAML" ]]; then
+      setValidConfiguration "$JANUSGRAPH_YAML"
+    fi
+}
 
 # Set $JANUSGRAPH_LIB to $JANUSGRAPH_HOME/lib if unset
 if [[ -z "$JANUSGRAPH_LIB" ]]; then
@@ -84,7 +95,7 @@ if [[ -z "$JANUSGRAPH_LIB" ]]; then
 fi
 
 # absolute file path requires 'file:'
-LOG4J_CONF="file:$JANUSGRAPH_CONF/log4j-server.properties"
+LOG4J_CONF="file:$JANUSGRAPH_CONF/log4j2-server.xml"
 
 # Find Java
 if [[ "$JAVA_HOME" = "" ]] ; then
@@ -97,16 +108,22 @@ COLLECTED_JAVA_OPTIONS_FILE=""
 
 # Read user-defined JVM options from jvm.options file
 if [[ -z "$JAVA_OPTIONS_FILE" ]]; then
-  JAVA_OPTIONS_FILE=$JANUSGRAPH_CONF/jvm.options
+  jver=$($JAVA -version 2>&1 | grep 'version' 2>&1 | awk -F\" '{ split($2,a,"."); print a[1]"."a[2]}')
+  if [[ $jver == "1.8" ]]; then                
+    JAVA_OPTIONS_FILE="$JANUSGRAPH_CONF/jvm-8.options"
+  else
+    JAVA_OPTIONS_FILE="$JANUSGRAPH_CONF/jvm-11.options"
+  fi
 fi
 if [[ -f "$JAVA_OPTIONS_FILE" ]]; then
-  for opt in `grep "^-" $JAVA_OPTIONS_FILE`
+  for opt in "$(grep '^-' $JAVA_OPTIONS_FILE)"
   do
-    COLLECTED_JAVA_OPTIONS_FILE="$JAVA_OPTIONS_FILE_CURATED $opt"
+    opt=$(echo "$opt" | xargs)
+    COLLECTED_JAVA_OPTIONS_FILE="$COLLECTED_JAVA_OPTIONS_FILE $opt"
   done
 fi
 
-JAVA_OPTIONS="$COLLECTED_JAVA_OPTIONS_FILE $JAVA_OPTIONS -javaagent:$JANUSGRAPH_LIB/jamm-0.3.0.jar"
+JAVA_OPTIONS="$COLLECTED_JAVA_OPTIONS_FILE $JAVA_OPTIONS -javaagent:$JANUSGRAPH_LIB/jamm-0.3.3.jar"
 
 # Build Java CLASSPATH
 if [[ -z "$CP" ]];then
@@ -128,7 +145,6 @@ fi
 CLASSPATH="${CLASSPATH:-}:$CP"
 
 JANUSGRAPH_SERVER_CMD=org.janusgraph.graphdb.server.JanusGraphServer
-
 
 isRunning() {
   if [[ -r "$PID_FILE" ]] ; then
@@ -176,6 +192,8 @@ start() {
     exit 1
   fi
 
+  echo "$JANUSGRAPH_YAML will be used to start JanusGraph Server in background"
+
   if [[ -z "$RUNAS" ]]; then
 
     mkdir -p "$LOG_DIR" &>/dev/null
@@ -190,7 +208,7 @@ start() {
       exit 1
     fi
 
-    $JAVA -Dlog4j.configuration=$LOG4J_CONF $JAVA_OPTIONS -cp $CP:$CLASSPATH $JANUSGRAPH_SERVER_CMD "$JANUSGRAPH_YAML" >> "$LOG_FILE" 2>&1 &
+    $JAVA -Dlog4j2.configurationFile=$LOG4J_CONF $JAVA_OPTIONS -cp $CLASSPATH $JANUSGRAPH_SERVER_CMD "$JANUSGRAPH_YAML" >> "$LOG_FILE" 2>&1 &
     PID=$!
     disown $PID
     echo $PID > "$PID_FILE"
@@ -208,7 +226,7 @@ start() {
       exit 1
     fi
 
-    su -c "$JAVA -Dlog4j.configuration=$LOG4J_CONF $JAVA_OPTIONS -cp $CP:$CLASSPATH $JANUSGRAPH_SERVER_CMD \"$JANUSGRAPH_YAML\" >> \"$LOG_FILE\" 2>&1 & echo \$! "  "$RUNAS" > "$PID_FILE"
+    su -c "$JAVA -Dlog4j2.configurationFile=$LOG4J_CONF $JAVA_OPTIONS -cp $CLASSPATH $JANUSGRAPH_SERVER_CMD \"$JANUSGRAPH_YAML\" >> \"$LOG_FILE\" 2>&1 & echo \$! "  "$RUNAS" > "$PID_FILE"
     chown "$RUNAS" "$PID_FILE"
   fi
 
@@ -233,27 +251,42 @@ startForeground() {
   fi
 
   if [[ -z "$RUNAS" ]]; then
-    $JAVA -Dlog4j.configuration=$LOG4J_CONF $JAVA_OPTIONS -cp $CP:$CLASSPATH $JANUSGRAPH_SERVER_CMD "$JANUSGRAPH_YAML"
+    echo "$JANUSGRAPH_YAML will be used to start JanusGraph Server in foreground"
+    exec $JAVA -Dlog4j2.configurationFile=$LOG4J_CONF $JAVA_OPTIONS -cp $CLASSPATH $JANUSGRAPH_SERVER_CMD "$JANUSGRAPH_YAML"
     exit 0
   else
     echo Starting in foreground not supported with RUNAS
     exit 1
   fi
-
 }
+
+printConfig() {
+    echo "JANUSGRAPH_HOME: ${JANUSGRAPH_HOME}"
+    echo "JANUSGRAPH_YAML: ${JANUSGRAPH_YAML}"
+    echo "JANUSGRAPH_SERVER_CMD: ${JANUSGRAPH_SERVER_CMD}"
+    echo "LOG_DIR: ${LOG_DIR}"
+    echo "PID_FILE: ${PID_FILE}"
+    echo "JAVA_OPTIONS: ${JAVA_OPTIONS}"
+}
+
 printUsage() {
-  echo "Usage: $0 {start|stop|restart|status|console <group> <artifact> <version>|<conf file>}"
+  echo "Usage: $0 {start [conf file]|stop|restart [conf file]|status|console|config [conf file]|usage <group> <artifact> <version>|<conf file>}"
   echo
-  echo "    start           Start the server in the background using conf/gremlin-server/gremlin-server.yaml as the"
-  echo "                    default configuration file"
+  echo "    start           Start the server in the background. Configuration file can be specified as a second argument
+                    or as JANUSGRAPH_YAML environment variable. If configuration file is not specified
+                    or has invalid path than JanusGraph server will try to use the default configuration file
+                    at relative location conf/gremlin-server/gremlin-server.yaml"
   echo "    stop            Stop the server"
-  echo "    restart         Stop and start the server"
+  echo "    restart         Stop and start the server. To use previously used configuration it should be specified again
+                    as described in \"start\" command"
   echo "    status          Check if the server is running"
-  echo "    console         Start the server in the foreground using conf/gremlin-server/gremlin-server.yaml as the"
-  echo "                    default configuration file"
+  echo "    console         Start the server in the foreground. Same rules are applied for configurations as described
+                    in \"start\" command"
+  echo "    config          Print out internal script variable to debug config"
+  echo "    usage           Print out this help message"
   echo
-  echo "If using a custom YAML configuration file then specify it as the only argument for a JanusGraph"
-  echo "Server to run in the foreground or specify it via the JANUSGRAPH_YAML environment variable."
+  echo "In case command is not specified and the configuration is specified as the first argument, JanusGraph Server will
+ be started in the foreground using the specified configuration (same as with \"console\" command)."
   echo
 }
 
@@ -262,16 +295,23 @@ case "$1" in
     status
     ;;
   restart)
+    useGremlinServerConfiguration "$2"
     stop
     start
     ;;
   start)
+    useGremlinServerConfiguration "$2"
     start
+    ;;
+  config)
+    useGremlinServerConfiguration "$2"
+    printConfig
     ;;
   stop)
     stop
     ;;
   console)
+    useGremlinServerConfiguration "$2"
     startForeground
     ;;
   help|usage)
@@ -280,14 +320,8 @@ case "$1" in
     ;;
   *)
     if [[ -n "$1" ]] ; then
-      if [[ -r "$1" ]]; then
-        JANUSGRAPH_YAML="$1"
-        startForeground
-      elif [[ -r "$JANUSGRAPH_HOME/$1" ]] ; then
-        JANUSGRAPH_YAML="$JANUSGRAPH_HOME/$1"
-        startForeground
-      fi
-      echo Configuration file not found.
+      setValidConfiguration "$1"
+      startForeground
     fi
     printUsage
     exit 1

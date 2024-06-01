@@ -14,12 +14,12 @@
 
 package org.janusgraph.graphdb.tinkerpop;
 
-import org.janusgraph.diskstorage.keycolumnvalue.StoreFeatures;
-import org.janusgraph.graphdb.database.StandardJanusGraph;
-import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
 import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 import org.apache.tinkerpop.gremlin.structure.util.StringFactory;
+import org.janusgraph.diskstorage.keycolumnvalue.StoreFeatures;
+import org.janusgraph.graphdb.database.StandardJanusGraph;
+import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
 
 /**
  * Blueprint's features of a JanusGraph.
@@ -144,6 +144,11 @@ public class JanusGraphFeatures implements Graph.Features {
         public boolean supportsUuidIds() {
             return false;
         }
+
+        @Override
+        public boolean supportsNullPropertyValues() {
+            return false;
+        }
     }
 
     private static class JanusGraphEdgePropertyFeatures extends JanusGraphDataTypeFeatures implements EdgePropertyFeatures {
@@ -192,12 +197,17 @@ public class JanusGraphFeatures implements Graph.Features {
         @Override
         public boolean supportsStringIds()
         {
-            return false;
+            return JanusGraphFeatures.this.graph.getConfiguration().allowCustomVertexIdType();
         }
 
         @Override
         public boolean supportsCustomIds()
         {
+            return false;
+        }
+
+        @Override
+        public boolean supportsNullPropertyValues() {
             return false;
         }
     }
@@ -235,6 +245,11 @@ public class JanusGraphFeatures implements Graph.Features {
         @Override
         public boolean supportsStringIds()
         {
+            return false;
+        }
+
+        @Override
+        public boolean supportsNullPropertyValues() {
             return false;
         }
     }

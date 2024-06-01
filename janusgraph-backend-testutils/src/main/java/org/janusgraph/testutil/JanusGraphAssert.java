@@ -14,11 +14,6 @@
 
 package org.janusgraph.testutil;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
@@ -39,10 +34,17 @@ import org.janusgraph.graphdb.query.profile.QueryProfiler;
 import java.lang.reflect.Array;
 import java.util.Collection;
 import java.util.Iterator;
-import java.util.stream.IntStream;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -103,15 +105,11 @@ public class JanusGraphAssert {
     }
 
     public static void assertBackendHit(TraversalMetrics profile) {
-        assertTrue(profile.getMetrics().stream().anyMatch(metrics -> {
-            return hasBackendHit(metrics);
-        }));
+        assertTrue(profile.getMetrics().stream().anyMatch(JanusGraphAssert::hasBackendHit));
     }
 
     public static void assertNoBackendHit(TraversalMetrics profile) {
-        assertFalse(profile.getMetrics().stream().anyMatch(metrics -> {
-            return hasBackendHit(metrics);
-        }));
+        assertFalse(profile.getMetrics().stream().anyMatch(JanusGraphAssert::hasBackendHit));
     }
 
     private static boolean isEmpty(Object obj) {
@@ -179,5 +177,63 @@ public class JanusGraphAssert {
     public static boolean queryProfilerAnnotationIsPresent(Traversal t, String queryProfilerAnnotation) {
         TraversalMetrics metrics = t.asAdmin().getSideEffects().get("~metrics");
         return metrics.toString().contains(queryProfilerAnnotation + "=true");
+    }
+
+    public static void assertContains(Metrics metrics, String annotationKey, Object annotationValue){
+        Map<String, Object> annotations = metrics.getAnnotations();
+        assertTrue(annotations.containsKey(annotationKey));
+        assertEquals(annotationValue, annotations.get(annotationKey));
+    }
+
+    public static void assertNotContains(Metrics metrics, String annotationKey, Object annotationValue){
+        Map<String, Object> annotations = metrics.getAnnotations();
+        if(annotations.containsKey(annotationKey)){
+            assertNotEquals(annotationValue, annotations.get(annotationKey));
+        }
+    }
+
+    public static Metrics getStepMetrics(TraversalMetrics traversalMetrics, Class<? extends Step> stepClass){
+        String stepMetricsName = stepClass.getSimpleName();
+        for(Metrics metrics : traversalMetrics.getMetrics()){
+            if(metrics.getName().startsWith(stepMetricsName)){
+                return metrics;
+            }
+        }
+        return null;
+    }
+
+
+    /**
+     * Checks that the amount of steps of given type is equal to the provided amount.
+     */
+    public static void assertStepExists(Traversal traversal, Class<? extends Step> expectedStepType, int stepsCount) {
+
+        String traversalString = traversal.toString();
+
+        int lastStepIndex = traversalString.indexOf(expectedStepType.getSimpleName());
+
+        if(stepsCount <= 0){
+            assertEquals(-1, lastStepIndex);
+        }
+
+        int stepsFound = 0;
+
+        while (lastStepIndex != -1){
+            ++stepsFound;
+            lastStepIndex = traversalString.indexOf(expectedStepType.getSimpleName(), lastStepIndex+1);
+        }
+
+        assertEquals(stepsCount, stepsFound);
+    }
+
+    public static Metrics getLastStepMetrics(TraversalMetrics traversalMetrics, Class<? extends Step> stepClass){
+        String stepMetricsName = stepClass.getSimpleName();
+        Metrics metricsToReturn = null;
+        for(Metrics metrics : traversalMetrics.getMetrics()){
+            if(metrics.getName().startsWith(stepMetricsName)){
+                metricsToReturn = metrics;
+            }
+        }
+        return metricsToReturn;
     }
 }

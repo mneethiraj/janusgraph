@@ -15,8 +15,10 @@
 package org.janusgraph.graphdb.types;
 
 import com.google.common.base.Preconditions;
-import org.janusgraph.core.schema.SchemaStatus;
 import org.apache.tinkerpop.gremlin.structure.Direction;
+import org.janusgraph.core.schema.SchemaStatus;
+
+import java.util.List;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -31,7 +33,7 @@ public interface SchemaSource {
 
     TypeDefinitionMap getDefinition();
 
-    Iterable<Entry> getRelated(TypeDefinitionCategory def, Direction dir);
+    List<Entry> getRelated(TypeDefinitionCategory def, Direction dir);
 
     /**
      * Resets the internal caches used to speed up lookups on this schema source.

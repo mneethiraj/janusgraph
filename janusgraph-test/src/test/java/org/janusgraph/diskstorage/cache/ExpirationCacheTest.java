@@ -15,6 +15,7 @@
 package org.janusgraph.diskstorage.cache;
 
 import com.google.common.collect.Lists;
+import io.github.artsok.RepeatedIfExceptionsTest;
 import org.janusgraph.diskstorage.EntryList;
 import org.janusgraph.diskstorage.StaticBuffer;
 import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStore;
@@ -26,14 +27,12 @@ import org.janusgraph.diskstorage.keycolumnvalue.cache.ExpirationKCVSCache;
 import org.janusgraph.diskstorage.keycolumnvalue.cache.KCVSCache;
 import org.janusgraph.diskstorage.util.BufferUtil;
 
-
-import org.junit.jupiter.api.Test;
-
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
@@ -53,8 +52,8 @@ public class ExpirationCacheTest extends KCVSCacheTest {
         return new ExpirationKCVSCache(store,METRICS_STRING,expirationTime.toMillis(),graceWait.toMillis(),CACHE_SIZE);
     }
 
-
-    @Test
+    // flaky test: https://github.com/JanusGraph/janusgraph/issues/2934
+    @RepeatedIfExceptionsTest(repeats = 3)
     public void testExpiration() throws Exception {
         testExpiration(Duration.ofMillis(200));
         testExpiration(Duration.ofSeconds(4));
@@ -98,7 +97,8 @@ public class ExpirationCacheTest extends KCVSCacheTest {
         verifyResults(key, keys, query, 4);
     }
 
-    @Test
+    // flaky test: https://github.com/JanusGraph/janusgraph/issues/3352
+    @RepeatedIfExceptionsTest(repeats = 3)
     public void testGracePeriod() throws Exception {
         testGracePeriod(Duration.ofMillis(200));
         testGracePeriod(Duration.ZERO);

@@ -14,7 +14,6 @@
 
 package org.janusgraph.graphdb.tinkerpop.optimize.strategy;
 
-import java.util.List;
 import org.apache.tinkerpop.gremlin.process.traversal.Compare;
 import org.apache.tinkerpop.gremlin.process.traversal.P;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
@@ -25,6 +24,8 @@ import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalHelper;
 import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.T;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
+
+import java.util.List;
 
 import static org.janusgraph.graphdb.types.system.ImplicitKey.ADJACENT_ID;
 
@@ -46,7 +47,7 @@ public class AdjacentVertexHasIdOptimizerStrategy
     @Override
     public void apply(final Traversal.Admin<?, ?> traversal) {
         TraversalHelper.getStepsOfClass(HasStep.class, traversal)
-            .forEach(step -> optimizeStep(step));
+            .forEach(this::optimizeStep);
     }
 
     private P<?> parsePredicate(HasStep<?> hasStep) {
@@ -56,7 +57,7 @@ public class AdjacentVertexHasIdOptimizerStrategy
             return null; // TODO does it make sense to allow steps with >1 containers here?
         }
 
-        HasContainer hc = hasStep.getHasContainers().get(0);
+        HasContainer hc = hasContainers.get(0);
         if (hc.getKey().equals(T.id.getAccessor())) {
             return hc.getPredicate();
         } else {
@@ -83,6 +84,6 @@ public class AdjacentVertexHasIdOptimizerStrategy
     @Override
     protected FilterStep<Edge> makeFilterByAdjacentIdStep(Traversal.Admin<?, ?> traversal, HasStep<?> originalStep) {
         HasContainer hc = new HasContainer(ADJACENT_ID.name(), P.eq(parsePredicate(originalStep).getValue()));
-        return new HasStep<Edge>(traversal, hc);
+        return new HasStep<>(traversal, hc);
     }
 }

@@ -14,28 +14,25 @@
 
 package org.janusgraph.diskstorage.locking;
 
-import java.time.Duration;
-import java.time.Instant;
-import java.util.Iterator;
-import java.util.Map;
-
-import org.janusgraph.diskstorage.TemporaryBackendException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import com.google.common.base.Preconditions;
-
-
-import org.janusgraph.diskstorage.util.time.TimestampProvider;
-import org.janusgraph.diskstorage.util.time.TimestampProviders;
 import org.janusgraph.diskstorage.StaticBuffer;
+import org.janusgraph.diskstorage.TemporaryBackendException;
 import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
 import org.janusgraph.diskstorage.locking.consistentkey.ConsistentKeyLockStatus;
 import org.janusgraph.diskstorage.locking.consistentkey.ConsistentKeyLocker;
 import org.janusgraph.diskstorage.locking.consistentkey.ConsistentKeyLockerSerializer;
 import org.janusgraph.diskstorage.util.KeyColumn;
+import org.janusgraph.diskstorage.util.time.TimestampProvider;
+import org.janusgraph.diskstorage.util.time.TimestampProviders;
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
 import org.janusgraph.util.stats.MetricManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Iterator;
+import java.util.Map;
 
 /**
  * Abstract base class for building lockers. Implements locking between threads
@@ -116,7 +113,7 @@ public abstract class AbstractLocker<S extends LockStatus> implements Locker {
      * @param <S> The concrete type of {@link LockStatus}
      * @param <B> The concrete type of the subclass extending this builder
      */
-    public static abstract class Builder<S, B extends Builder<S, B>> {
+    public abstract static class Builder<S, B extends Builder<S, B>> {
 
         protected StaticBuffer rid;
         protected TimestampProvider times;

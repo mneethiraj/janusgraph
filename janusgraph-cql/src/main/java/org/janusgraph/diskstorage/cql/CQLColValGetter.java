@@ -14,15 +14,18 @@
 
 package org.janusgraph.diskstorage.cql;
 
+import com.datastax.oss.driver.api.core.cql.Row;
+import io.vavr.Tuple3;
 import org.janusgraph.diskstorage.EntryMetaData;
 import org.janusgraph.diskstorage.StaticBuffer;
+import org.janusgraph.diskstorage.util.StaticArrayBuffer;
 import org.janusgraph.diskstorage.util.StaticArrayEntry.GetColVal;
 
-import com.datastax.oss.driver.api.core.cql.Row;
+import java.nio.ByteBuffer;
 
-import io.vavr.Tuple3;
+public class CQLColValGetter implements GetColVal<Tuple3<StaticBuffer, StaticBuffer, Row>, StaticBuffer> {
 
-class CQLColValGetter implements GetColVal<Tuple3<StaticBuffer, StaticBuffer, Row>, StaticBuffer> {
+    private static final StaticArrayBuffer EMPTY_KEY = StaticArrayBuffer.of(new byte[0]);
 
     private final EntryMetaData[] schema;
 
@@ -52,6 +55,9 @@ class CQLColValGetter implements GetColVal<Tuple3<StaticBuffer, StaticBuffer, Ro
                 return tuple._3.getLong(CQLKeyColumnValueStore.WRITETIME_COLUMN_NAME);
             case TTL:
                 return tuple._3.getInt(CQLKeyColumnValueStore.TTL_COLUMN_NAME);
+            case ROW_KEY:
+                ByteBuffer rawKey = tuple._3.getByteBuffer(CQLKeyColumnValueStore.KEY_COLUMN_NAME);
+                return rawKey == null ? EMPTY_KEY : StaticArrayBuffer.of(rawKey);
             default:
                 throw new UnsupportedOperationException("Unsupported meta data: " + metaData);
         }

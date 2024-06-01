@@ -16,12 +16,18 @@ package org.janusgraph.diskstorage.inmemory;
 
 import com.google.common.base.Preconditions;
 import org.janusgraph.diskstorage.BackendException;
-import org.janusgraph.diskstorage.StaticBuffer;
 import org.janusgraph.diskstorage.BaseTransactionConfig;
+import org.janusgraph.diskstorage.StaticBuffer;
 import org.janusgraph.diskstorage.StoreMetaData;
 import org.janusgraph.diskstorage.common.AbstractStoreTransaction;
 import org.janusgraph.diskstorage.configuration.Configuration;
-import org.janusgraph.diskstorage.keycolumnvalue.*;
+import org.janusgraph.diskstorage.keycolumnvalue.KCVMutation;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStore;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStoreManager;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyRange;
+import org.janusgraph.diskstorage.keycolumnvalue.StandardStoreFeatures;
+import org.janusgraph.diskstorage.keycolumnvalue.StoreFeatures;
+import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
 
 import java.io.File;
@@ -63,18 +69,6 @@ public class InMemoryStoreManager implements KeyColumnValueStoreManager {
             .optimisticLocking(true)
             .keyConsistent(GraphDatabaseConfiguration.buildGraphConfiguration())
             .build();
-
-//        features = new StoreFeatures();
-//        features.supportsOrderedScan = true;
-//        features.supportsUnorderedScan = true;
-//        features.supportsBatchMutation = false;
-//        features.supportsTxIsolation = false;
-//        features.supportsConsistentKeyOperations = true;
-//        features.supportsLocking = false;
-//        features.isDistributed = false;
-//        features.supportsMultiQuery = false;
-//        features.isKeyOrdered = true;
-//        features.hasLocalKeyPartition = false;
     }
 
     @Override

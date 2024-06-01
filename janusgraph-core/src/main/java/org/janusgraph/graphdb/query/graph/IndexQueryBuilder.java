@@ -16,16 +16,19 @@ package org.janusgraph.graphdb.query.graph;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.tinkerpop.gremlin.process.traversal.Order;
-import org.janusgraph.core.*;
+import org.apache.tinkerpop.gremlin.structure.Element;
+import org.janusgraph.core.JanusGraphEdge;
+import org.janusgraph.core.JanusGraphElement;
+import org.janusgraph.core.JanusGraphIndexQuery;
+import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.core.JanusGraphVertexProperty;
 import org.janusgraph.core.schema.Parameter;
 import org.janusgraph.graphdb.database.IndexSerializer;
 import org.janusgraph.graphdb.internal.ElementCategory;
 import org.janusgraph.graphdb.query.BaseQuery;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
-import org.janusgraph.graphdb.util.StreamIterable;
-import org.apache.tinkerpop.gremlin.structure.Element;
-import org.apache.commons.lang.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -213,16 +216,9 @@ public class IndexQueryBuilder extends BaseQuery implements JanusGraphIndexQuery
     private Long executeTotals(ElementCategory resultType) {
         Preconditions.checkNotNull(indexName);
         Preconditions.checkNotNull(query);
-        this.setLimit(0);
         if (tx.hasModifications())
             log.warn("Modifications in this transaction might not be accurately reflected in this index query: {}",query);
         return serializer.executeTotals(this,resultType,tx.getTxHandle(),tx);
-    }
-
-    @Deprecated
-    @Override
-    public Iterable<Result<JanusGraphVertex>> vertices() {
-        return new StreamIterable<>(vertexStream());
     }
 
     @Override
@@ -231,22 +227,10 @@ public class IndexQueryBuilder extends BaseQuery implements JanusGraphIndexQuery
         return execute(ElementCategory.VERTEX, JanusGraphVertex.class);
     }
 
-    @Deprecated
-    @Override
-    public Iterable<Result<JanusGraphEdge>> edges() {
-        return new StreamIterable<>(edgeStream());
-    }
-
     @Override
     public Stream<Result<JanusGraphEdge>> edgeStream() {
         setPrefixInternal(EDGE_PREFIX);
         return execute(ElementCategory.EDGE, JanusGraphEdge.class);
-    }
-
-    @Deprecated
-    @Override
-    public Iterable<Result<JanusGraphVertexProperty>> properties() {
-        return new StreamIterable<>(propertyStream());
     }
 
     @Override

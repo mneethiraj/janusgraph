@@ -16,8 +16,8 @@ package org.janusgraph.graphdb.transaction.indexcache;
 
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Iterables;
-import org.janusgraph.core.PropertyKey;
 import org.janusgraph.core.JanusGraphVertexProperty;
+import org.janusgraph.core.PropertyKey;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -44,5 +44,10 @@ public class SimpleIndexCache implements IndexCache {
     @Override
     public Iterable<JanusGraphVertexProperty> get(final Object value, final PropertyKey key) {
         return Iterables.filter(map.get(value), janusgraphProperty -> janusgraphProperty.propertyKey().equals(key));
+    }
+
+    @Override
+    public void close() {
+        map.clear();
     }
 }

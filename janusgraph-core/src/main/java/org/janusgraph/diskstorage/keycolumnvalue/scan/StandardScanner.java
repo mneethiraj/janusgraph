@@ -15,15 +15,16 @@
 package org.janusgraph.diskstorage.keycolumnvalue.scan;
 
 import com.google.common.base.Preconditions;
-import org.janusgraph.core.schema.JanusGraphManagement;
+import org.apache.commons.lang3.StringUtils;
 import org.janusgraph.diskstorage.BackendException;
-import org.janusgraph.diskstorage.configuration.*;
+import org.janusgraph.diskstorage.configuration.Configuration;
+import org.janusgraph.diskstorage.configuration.MergedConfiguration;
 import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStore;
 import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStoreManager;
 import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
 import org.janusgraph.diskstorage.util.StandardBaseTransactionConfig;
 import org.janusgraph.diskstorage.util.time.TimestampProvider;
-import org.apache.commons.lang.StringUtils;
+import org.janusgraph.util.datastructures.ExceptionWrapper;
 
 import java.util.HashSet;
 import java.util.Map;
@@ -32,6 +33,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+
+import static org.janusgraph.util.system.ExecuteUtil.executeWithCatching;
+import static org.janusgraph.util.system.ExecuteUtil.throwIfException;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -59,11 +63,15 @@ public class StandardScanner  {
 
     public void close() throws BackendException {
         //Interrupt running jobs
+        ExceptionWrapper exceptionWrapper = new ExceptionWrapper();
         for (StandardScannerExecutor exe : runningJobs.values()) {
             if (exe.isCancelled() || exe.isDone()) continue;
-            exe.cancel(true);
+            executeWithCatching(() -> exe.cancel(true), exceptionWrapper);
         }
-        for (KeyColumnValueStore kcvs : openStores) kcvs.close();
+        for (KeyColumnValueStore kcvs : openStores) {
+            executeWithCatching(kcvs::close, exceptionWrapper);
+        }
+        throwIfException(exceptionWrapper);
     }
 
     private void addJob(Object jobId, StandardScannerExecutor executor) {
@@ -76,7 +84,7 @@ public class StandardScanner  {
         Preconditions.checkArgument(runningJobs.putIfAbsent(jobId, executor) == null,"Another job with the same id is already running: %s",jobId);
     }
 
-    public JanusGraphManagement.IndexJobFuture getRunningJob(Object jobId) {
+    public ScanJobFuture getRunningJob(Object jobId) {
         return runningJobs.get(jobId);
     }
 
@@ -163,7 +171,7 @@ public class StandardScanner  {
             return this;
         }
 
-        public JanusGraphManagement.IndexJobFuture execute() throws BackendException {
+        public ScanJobFuture execute() throws BackendException {
             Preconditions.checkNotNull(job,"Need to specify a job to execute");
             Preconditions.checkArgument(StringUtils.isNotBlank(dbName),"Need to specify a database to execute against");
             Preconditions.checkNotNull(times,"Need to configure the timestamp provider for this job");
@@ -179,21 +187,6 @@ public class StandardScanner  {
             if (null != scanConfig) {
                 txBuilder.customOptions(scanConfig);
             }
-
-//            if (!txOptions.isEmpty()) {
-//                ModifiableConfiguration writeConf = GraphDatabaseConfiguration.buildConfiguration();
-//                for (Map.Entry<String,Object> confEntry : txOptions.entrySet()) {
-//                    writeConf.set(
-//                            (ConfigOption<Object>) ConfigElement.parse(ROOT_NS, confEntry.getKey()).element,
-//                            confEntry.getValue());
-//                }
-//                Configuration customConf = writeConf;
-//                if (configuration!=Configuration.EMPTY) {
-//                    customConf = new MergedConfiguration(writeConf, configuration);
-//
-//                }
-//                txBuilder.customOptions(customConf);
-//            }
 
             StoreTransaction storeTx = manager.beginTransaction(txBuilder.build());
             KeyColumnValueStore kcvs = manager.openDatabase(dbName);

@@ -15,19 +15,20 @@
 package org.janusgraph.diskstorage.indexing;
 
 import com.google.common.base.Preconditions;
-
-import org.janusgraph.diskstorage.*;
+import org.janusgraph.diskstorage.BackendException;
+import org.janusgraph.diskstorage.BaseTransaction;
+import org.janusgraph.diskstorage.BaseTransactionConfig;
+import org.janusgraph.diskstorage.LoggableTransaction;
 import org.janusgraph.diskstorage.util.BackendOperation;
 import org.janusgraph.graphdb.database.idhandling.VariableLong;
 import org.janusgraph.graphdb.database.serialize.DataOutput;
-import org.janusgraph.graphdb.util.StreamIterable;
+import org.janusgraph.graphdb.tinkerpop.optimize.step.Aggregation;
 
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -91,29 +92,24 @@ public class IndexTransaction implements BaseTransaction, LoggableTransaction {
         return m;
     }
 
+    public void clearStorage() throws BackendException {
+        index.clearStorage();
+    }
+
+    public void clearStore(String storeName) throws BackendException {
+        index.clearStore(storeName);
+    }
 
     public void register(String store, String key, KeyInformation information) throws BackendException {
         index.register(store,key,information,indexTx);
-    }
-
-    /**
-     * @deprecated use {@link #queryStream(IndexQuery query)} instead.
-     */
-    @Deprecated
-    public List<String> query(IndexQuery query) throws BackendException {
-        return queryStream(query).collect(Collectors.toList());
     }
 
     public Stream<String> queryStream(IndexQuery query) throws BackendException {
         return index.query(query, keyInformation, indexTx);
     }
 
-    /**
-     * @deprecated use {@link #queryStream(RawQuery query)} instead.
-     */
-    @Deprecated
-    public Iterable<RawQuery.Result<String>> query(RawQuery query) throws BackendException {
-        return new StreamIterable<>(index.query(query, keyInformation,indexTx));
+    public Number queryAggregation(IndexQuery query, Aggregation aggregation) throws BackendException {
+        return index.queryAggregation(query, keyInformation, indexTx, aggregation);
     }
 
     public Stream<RawQuery.Result<String>> queryStream(RawQuery query) throws BackendException {
@@ -191,4 +187,7 @@ public class IndexTransaction implements BaseTransaction, LoggableTransaction {
         out.writeClassAndObject(entry.value);
     }
 
+    public void invalidate(String store) {
+        keyInformation.invalidate(store);
+    }
 }

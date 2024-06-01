@@ -16,7 +16,6 @@ package org.janusgraph.diskstorage.es.rest;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-
 import org.apache.http.HttpEntity;
 import org.apache.http.entity.ByteArrayEntity;
 import org.apache.http.entity.ContentType;
@@ -48,10 +47,12 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -90,7 +91,7 @@ public class RestElasticSearchClient implements ElasticSearchClient {
         mapWriter = mapper.writerWithView(Map.class);
     }
 
-    private static final ElasticMajorVersion DEFAULT_VERSION = ElasticMajorVersion.SEVEN;
+    private static final ElasticMajorVersion DEFAULT_VERSION = ElasticMajorVersion.EIGHT;
 
     private static final Function<StringBuilder, StringBuilder> APPEND_OP = sb -> sb.append(sb.length() == 0 ? REQUEST_PARAM_BEGINNING : REQUEST_PARAM_SEPARATOR);
 
@@ -112,13 +113,27 @@ public class RestElasticSearchClient implements ElasticSearchClient {
 
     private final String retryOnConflictKey;
 
-    public RestElasticSearchClient(RestClient delegate, int scrollKeepAlive, boolean useMappingTypesForES7) {
+    private final int retryAttemptLimit;
+
+    private final Set<Integer> retryOnErrorCodes;
+
+    private final long retryInitialWaitMs;
+
+    private final long retryMaxWaitMs;
+
+public RestElasticSearchClient(RestClient delegate, int scrollKeepAlive, boolean useMappingTypesForES7,
+                               int retryAttemptLimit, Set<Integer> retryOnErrorCodes, long retryInitialWaitMs,
+                               long retryMaxWaitMs) {
         this.delegate = delegate;
         majorVersion = getMajorVersion();
         this.scrollKeepAlive = scrollKeepAlive+"s";
         esVersion7 = ElasticMajorVersion.SEVEN.equals(majorVersion);
         useMappingTypes = majorVersion.getValue() < 7 || (useMappingTypesForES7 && esVersion7);
         retryOnConflictKey = majorVersion.getValue() >= 7 ? "retry_on_conflict" : "_retry_on_conflict";
+        this.retryAttemptLimit = retryAttemptLimit;
+        this.retryOnErrorCodes = Collections.unmodifiableSet(retryOnErrorCodes);
+        this.retryInitialWaitMs = retryInitialWaitMs;
+        this.retryMaxWaitMs = retryMaxWaitMs;
     }
 
     @Override
@@ -358,6 +373,14 @@ public class RestElasticSearchClient implements ElasticSearchClient {
     }
 
     @Override
+    public void clearStore(String indexName, String storeName) throws IOException {
+        String name = indexName + "_" + storeName;
+        if (indexExists(name)) {
+            performRequest(REQUEST_TYPE_DELETE, REQUEST_SEPARATOR + indexName + "_" + storeName, null);
+        }
+    }
+
+    @Override
     public void bulkRequest(List<ElasticSearchMutation> requests, String ingestPipeline) throws IOException {
         final ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
         for (final ElasticSearchMutation request : requests) {
@@ -411,6 +434,7 @@ public class RestElasticSearchClient implements ElasticSearchClient {
     public void setRetryOnConflict(Integer retryOnConflict) {
             this.retryOnConflict = retryOnConflict;
     }
+
     @Override
     public long countTotal(String indexName, Map<String, Object> requestData) throws IOException {
 
@@ -425,6 +449,70 @@ public class RestElasticSearchClient implements ElasticSearchClient {
         try (final InputStream inputStream = response.getEntity().getContent()) {
             return mapper.readValue(inputStream, RestCountResponse.class).getCount();
         }
+    }
+
+    /**
+     * Execute the aggregation request using Elasticsearch index.
+     * Elasticsearch uses double values to hold and represent numeric data. As a result, aggregations on long numbers
+     * greater than 2^53 are approximate.
+     * <a href="https://www.elastic.co/guide/en/elasticsearch/reference/7.17/search-aggregations.html#limits-for-long-values">Elasticsearch, limits for long values</a>
+     *
+     * @param indexName the name of the ElasticSearch index on which the aggregation is executed
+     * @param requestData the filter query
+     * @param agg the name of the aggregation operation (min, max, avg, sum)
+     * @param fieldName the name of the field on which the aggregation is computed
+     * @return the result of the aggregation
+     * @throws IOException
+     */
+    private double executeAggs(String indexName, Map<String, Object> requestData, String agg, String fieldName) throws IOException {
+
+        final Request request = new Request(REQUEST_TYPE_GET, REQUEST_SEPARATOR + indexName + REQUEST_SEPARATOR + "_search");
+
+        requestData.put("aggs", ImmutableMap.of("agg_result", ImmutableMap.of(agg, ImmutableMap.of("field", fieldName))));
+        final byte[] requestDataBytes = mapper.writeValueAsBytes(requestData);
+        if (log.isDebugEnabled()) {
+            log.debug("Elasticsearch request: " + mapper.writerWithDefaultPrettyPrinter().writeValueAsString(requestData));
+        }
+
+        final Response response = performRequest(request, requestDataBytes);
+        try (final InputStream inputStream = response.getEntity().getContent()) {
+            return mapper.readValue(inputStream, RestAggResponse.class).getAggregations().getAggResult().getValue();
+        }
+    }
+
+    private Number adaptNumberType(double value, Class<? extends Number> expectedType) {
+        if (expectedType == null) return value;
+        else if (Byte.class.isAssignableFrom(expectedType)) return (byte)value;
+        else if (Short.class.isAssignableFrom(expectedType)) return (short)value;
+        else if (Integer.class.isAssignableFrom(expectedType)) return (int)value;
+        else if (Long.class.isAssignableFrom(expectedType)) return (long)value;
+        else if (Float.class.isAssignableFrom(expectedType)) return (float)value;
+        else return value;
+    }
+
+    @Override
+    public Number min(String indexName, Map<String, Object> requestData, String fieldName, Class<? extends Number> expectedType) throws IOException {
+        return adaptNumberType(executeAggs(indexName, requestData, "min", fieldName), expectedType);
+    }
+
+    @Override
+    public Number max(String indexName, Map<String, Object> requestData, String fieldName, Class<? extends Number> expectedType) throws IOException {
+        return adaptNumberType(executeAggs(indexName, requestData, "max", fieldName), expectedType);
+    }
+
+    @Override
+    public double avg(String indexName, Map<String, Object> requestData, String fieldName) throws IOException {
+        return executeAggs(indexName, requestData, "avg", fieldName);
+    }
+
+    @Override
+    public Number sum(String indexName, Map<String, Object> requestData, String fieldName, Class<? extends Number> expectedType) throws IOException {
+        Class<? extends Number> returnType;
+        double sum = executeAggs(indexName, requestData, "sum", fieldName);
+        if (Float.class.isAssignableFrom(expectedType) || Double.class.isAssignableFrom(expectedType))
+            return sum;
+        else
+            return (long)sum;
     }
 
     @Override
@@ -474,13 +562,35 @@ public class RestElasticSearchClient implements ElasticSearchClient {
         return performRequest(new Request(method, path), requestData);
     }
 
+    private Response performRequestWithRetry(Request request) throws IOException {
+        int retryCount = 0;
+        while (true) {
+            try {
+                return delegate.performRequest(request);
+            } catch (ResponseException e) {
+                if (!retryOnErrorCodes.contains(e.getResponse().getStatusLine().getStatusCode()) || retryCount >= retryAttemptLimit) {
+                    throw e;
+                }
+                //Wait before trying again
+                long waitDurationMs = Math.min((long) (retryInitialWaitMs * Math.pow(10, retryCount)), retryMaxWaitMs);
+                log.warn("Retrying Elasticsearch request in {} ms. Attempt {} of {}", waitDurationMs, retryCount, retryAttemptLimit);
+                try {
+                    Thread.sleep(waitDurationMs);
+                } catch (InterruptedException interruptedException) {
+                    throw new RuntimeException(String.format("Thread interrupted while waiting for retry attempt %d of %d", retryCount, retryAttemptLimit), interruptedException);
+                }
+            }
+            retryCount++;
+        }
+    }
+
     private Response performRequest(Request request, byte[] requestData) throws IOException {
 
         final HttpEntity entity = requestData != null ? new ByteArrayEntity(requestData, ContentType.APPLICATION_JSON) : null;
 
         request.setEntity(entity);
 
-        final Response response = delegate.performRequest(request);
+        final Response response = performRequestWithRetry(request);
 
         if (response.getStatusLine().getStatusCode() >= 400) {
             throw new IOException("Error executing request: " + response.getStatusLine().getReasonPhrase());

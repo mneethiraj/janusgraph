@@ -15,26 +15,44 @@
 package org.janusgraph.graphdb;
 
 import com.google.common.collect.Iterables;
-import org.janusgraph.TestCategory;
-import org.janusgraph.core.*;
-import org.janusgraph.core.schema.EdgeLabelMaker;
-import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
-import org.janusgraph.testutil.JUnitBenchmarkProvider;
-import org.janusgraph.testutil.RandomGenerator;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.Edge;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
-import org.junit.jupiter.api.*;
-import org.junit.Rule;
-import org.junit.rules.TestRule;
+import org.janusgraph.TestCategory;
+import org.janusgraph.core.Cardinality;
+import org.janusgraph.core.EdgeLabel;
+import org.janusgraph.core.JanusGraphEdge;
+import org.janusgraph.core.JanusGraphTransaction;
+import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.core.PropertyKey;
+import org.janusgraph.core.RelationType;
+import org.janusgraph.core.schema.EdgeLabelMaker;
+import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
+import org.janusgraph.testutil.RandomGenerator;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.Random;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.SCRIPT_EVAL_ENABLED;
 import static org.janusgraph.testutil.JanusGraphAssert.assertCount;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -44,9 +62,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @Tag(TestCategory.PERFORMANCE_TESTS)
 public abstract class JanusGraphConcurrentTest extends JanusGraphBaseTest {
-
-    @Rule
-    public TestRule benchmark = JUnitBenchmarkProvider.get();
 
     // Parallelism settings
     private static final int THREAD_COUNT = getThreadCount();
@@ -107,7 +122,7 @@ public abstract class JanusGraphConcurrentTest extends JanusGraphBaseTest {
         super.tearDown();
     }
 
-    @Test
+    @RepeatedTest(10)
     public void concurrentTxRead() throws Exception {
         final int numTypes = 20;
         final int numThreads = 100;
@@ -123,9 +138,10 @@ public abstract class JanusGraphConcurrentTest extends JanusGraphBaseTest {
         finishSchema();
         clopen();
 
-        Thread[] threads = new Thread[numThreads];
+        ExecutorService pool = Executors.newFixedThreadPool(numThreads);
+        Future[] futures = new Future[numThreads];
         for (int t = 0; t < numThreads; t++) {
-            threads[t] = new Thread(() -> {
+            futures[t] = pool.submit(() -> {
                 JanusGraphTransaction tx = graph.newTransaction();
                 for (int i = 0; i < numTypes; i++) {
                     RelationType type = tx.getRelationType("test" + i);
@@ -134,11 +150,11 @@ public abstract class JanusGraphConcurrentTest extends JanusGraphBaseTest {
                 }
                 tx.commit();
             });
-            threads[t].start();
         }
         for (int t = 0; t < numThreads; t++) {
-            threads[t].join();
+            futures[t].get();
         }
+        pool.shutdown();
     }
 
 
@@ -149,7 +165,7 @@ public abstract class JanusGraphConcurrentTest extends JanusGraphBaseTest {
      *
      * @throws Exception
      */
-    @Test
+    @RepeatedTest(10)
     public void concurrentReadsOnSingleTransaction() throws Exception {
         initializeGraph();
 
@@ -168,6 +184,39 @@ public abstract class JanusGraphConcurrentTest extends JanusGraphBaseTest {
     }
 
     /**
+     * Different threads should not be able to read uncommitted changes made by other threads
+     * when using a script engine
+     * @throws Exception
+     */
+    @Test
+    public void concurrentReadCommittedOnlyWithScriptEngine() throws Exception {
+        clopen(option(SCRIPT_EVAL_ENABLED), true);
+        makeVertexIndexedKey("uid", Integer.class);
+        finishSchema();
+        int verticesPerThread = 10;
+        int numThreads = 100;
+
+        Future[] futures = new Future[numThreads];
+        ExecutorService executorService = Executors.newFixedThreadPool(numThreads);
+        for (int t = 0; t < numThreads; t++) {
+            futures[t] = executorService.submit(() -> {
+                for (int i = 0; i < verticesPerThread; i++) {
+                    assertEquals(0L, graph.eval(String.format("g.V().has('uid', %d).count().next()", i), false));
+                    assertEquals(0L, graph.traversal().V().has("uid", i).count().next());
+                    graph.traversal().addV().property("uid", i).next();
+                    assertEquals(0L, graph.eval(String.format("g.V().has('uid', %d).count().next()", i), false));
+                    assertEquals(1L, graph.traversal().V().has("uid", i).count().next());
+                }
+                assertEquals(0L, graph.eval("g.V().count().next()", false));
+                assertEquals(10L, graph.traversal().V().count().next());
+            });
+        }
+        for (int t = 0; t < numThreads; t++) {
+            futures[t].get();
+        }
+    }
+
+    /**
      * Tail many readers, as in {@link #concurrentReadsOnSingleTransaction()},
      * but also start some threads that add and remove relationships and
      * properties while the readers are working; all tasks share a common
@@ -178,7 +227,7 @@ public abstract class JanusGraphConcurrentTest extends JanusGraphBaseTest {
      *
      * @throws Exception
      */
-    @Test
+    @RepeatedTest(10)
     public void concurrentReadWriteOnSingleTransaction() throws Exception {
         initializeGraph();
 
@@ -208,7 +257,7 @@ public abstract class JanusGraphConcurrentTest extends JanusGraphBaseTest {
         relFuture.cancel(true);
     }
 
-    @Test
+    @RepeatedTest(10)
     public void concurrentIndexReadWriteTest() throws Exception {
         clopen(option(GraphDatabaseConfiguration.ADJUST_LIMIT),false);
 
@@ -291,7 +340,7 @@ public abstract class JanusGraphConcurrentTest extends JanusGraphBaseTest {
      * @throws ExecutionException
      * @throws InterruptedException
      */
-    @Test
+    @RepeatedTest(10)
     public void testStandardIndexVertexPropertyReads() throws InterruptedException, ExecutionException {
         testStandardIndexVertexPropertyReadsLogic();
     }
@@ -377,20 +426,17 @@ public abstract class JanusGraphConcurrentTest extends JanusGraphBaseTest {
 
         @Override
         public void run() {
-            while (true) {
+            do {
                 // Make or break relType between two (possibly same) random nodes
                 final JanusGraphVertex source = Iterables.getOnlyElement(tx.query().has(idKey, 0).vertices());
                 final JanusGraphVertex sink = Iterables.getOnlyElement(tx.query().has(idKey, 1).vertices());
-                for (Object o : source.query().direction(Direction.OUT).labels(edgeLabel).edges()) {
-                    Edge r = (Edge) o;
-                    if (getId(r.inVertex()) == getId(sink)) {
-                        r.remove();
+                for (Edge o : source.query().direction(Direction.OUT).labels(edgeLabel).edges()) {
+                    if (getId(o.inVertex()) == getId(sink)) {
+                        o.remove();
                     }
                 }
                 source.addEdge(edgeLabel, sink);
-                if (Thread.interrupted())
-                    break;
-            }
+            } while (!Thread.interrupted());
         }
 
     }
@@ -418,8 +464,8 @@ public abstract class JanusGraphConcurrentTest extends JanusGraphBaseTest {
 
             for (int i = 0; i < nodeTraversalCount; i++) {
                 assertCount(expectedEdges, v.query().labels(label2Traverse).direction(Direction.BOTH).edges());
-                for (Object r : v.query().direction(Direction.OUT).labels(label2Traverse).edges()) {
-                    v = ((JanusGraphEdge) r).vertex(Direction.IN);
+                for (JanusGraphEdge r : v.query().direction(Direction.OUT).labels(label2Traverse).edges()) {
+                    v = r.vertex(Direction.IN);
                 }
             }
         }

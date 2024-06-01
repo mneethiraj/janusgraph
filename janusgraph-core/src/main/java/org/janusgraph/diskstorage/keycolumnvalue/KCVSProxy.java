@@ -19,6 +19,7 @@ import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.Entry;
 import org.janusgraph.diskstorage.EntryList;
 import org.janusgraph.diskstorage.StaticBuffer;
+
 import java.util.List;
 import java.util.Map;
 
@@ -84,5 +85,10 @@ public class KCVSProxy implements KeyColumnValueStore {
     @Override
     public Map<StaticBuffer,EntryList> getSlice(List<StaticBuffer> keys, SliceQuery query, StoreTransaction txh) throws BackendException {
         return store.getSlice(keys, query, unwrapTx(txh));
+    }
+
+    @Override
+    public Map<SliceQuery, Map<StaticBuffer, EntryList>> getMultiSlices(MultiKeysQueryGroups<StaticBuffer, SliceQuery> multiKeysQueryGroups, StoreTransaction txh) throws BackendException {
+        return store.getMultiSlices(multiKeysQueryGroups, unwrapTx(txh));
     }
 }

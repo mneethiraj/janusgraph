@@ -19,6 +19,7 @@ import org.janusgraph.graphdb.internal.InternalRelation;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -32,6 +33,14 @@ public interface AddedRelationsContainer {
 
     Iterable<InternalRelation> getView(Predicate<InternalRelation> filter);
 
+    Iterable<InternalRelation> getViewOfProperties(Predicate<InternalRelation> filter);
+
+    List<InternalRelation> getViewOfProperties(String... keys);
+
+    List<InternalRelation> getViewOfProperties(String key, Object value);
+
+    Iterable<InternalRelation> getViewOfPreviousRelations(long id);
+
     boolean isEmpty();
 
     /**
@@ -39,8 +48,13 @@ public interface AddedRelationsContainer {
      * of the transaction after there are no additional changes. Otherwise the behavior is non deterministic.
      * @return
      */
-    Collection<InternalRelation> getAll();
+    Collection<InternalRelation> getAllUnsafe();
 
+    /**
+     * Clears the container which releases allocated memory.
+     * Calling any of the other methods after clearing the container has undetermined behavior.
+     */
+    void clear();
 
     AddedRelationsContainer EMPTY = new AddedRelationsContainer() {
         @Override
@@ -59,13 +73,38 @@ public interface AddedRelationsContainer {
         }
 
         @Override
+        public Iterable<InternalRelation> getViewOfProperties(Predicate<InternalRelation> filter) {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public List<InternalRelation> getViewOfProperties(String... keys) {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public List<InternalRelation> getViewOfProperties(String key, Object value) {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public Iterable<InternalRelation> getViewOfPreviousRelations(long id) {
+            return Collections.emptyList();
+        }
+
+        @Override
         public boolean isEmpty() {
             return true;
         }
 
         @Override
-        public Collection<InternalRelation> getAll() {
+        public Collection<InternalRelation> getAllUnsafe() {
             return Collections.emptyList();
+        }
+
+        @Override
+        public void clear() {
+            // nothing to clear
         }
     };
 

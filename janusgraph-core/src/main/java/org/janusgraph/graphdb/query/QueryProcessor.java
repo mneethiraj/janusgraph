@@ -16,12 +16,17 @@ package org.janusgraph.graphdb.query;
 
 import com.google.common.base.Preconditions;
 import org.apache.tinkerpop.gremlin.structure.util.CloseableIterator;
-import org.janusgraph.core.QueryException;
 import org.janusgraph.core.JanusGraphElement;
+import org.janusgraph.core.QueryException;
 import org.janusgraph.graphdb.query.profile.QueryProfiler;
 import org.janusgraph.graphdb.util.CloseableIteratorUtils;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
 
 /**
  * Executes a given {@link ElementQuery} against a provided {@link QueryExecutor} to produce the result set of elements.
@@ -196,7 +201,7 @@ public class QueryProcessor<Q extends ElementQuery<R, B>, R extends JanusGraphEl
 
         @Override
         public Iterator<R> getNewIterator(int newLimit) {
-            if (!backendQuery.hasLimit() || newLimit>backendQuery.getLimit())
+            if (newLimit>backendQuery.getLimit())
                 backendQuery = backendQuery.updateLimit(newLimit);
             return executor.execute(query, backendQuery, executionInfo, profiler);
         }

@@ -14,12 +14,7 @@
 
 package org.janusgraph.graphdb.tinkerpop.gremlin.server.auth;
 
-import static org.apache.tinkerpop.gremlin.groovy.jsr223.dsl.credential.CredentialGraphTokens.PROPERTY_USERNAME;
-import static org.apache.tinkerpop.gremlin.server.auth.SimpleAuthenticator.CONFIG_CREDENTIALS_DB;
-
-import java.net.InetAddress;
-import java.util.Map;
-
+import com.google.common.base.Preconditions;
 import org.apache.tinkerpop.gremlin.groovy.jsr223.dsl.credential.CredentialTraversalSource;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversal;
 import org.apache.tinkerpop.gremlin.server.auth.Authenticator;
@@ -35,12 +30,16 @@ import org.janusgraph.graphdb.database.management.ManagementSystem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.base.Preconditions;
+import java.net.InetAddress;
+import java.util.Map;
+
+import static org.apache.tinkerpop.gremlin.groovy.jsr223.dsl.credential.CredentialGraphTokens.PROPERTY_USERNAME;
+import static org.apache.tinkerpop.gremlin.server.auth.SimpleAuthenticator.CONFIG_CREDENTIALS_DB;
 
 /**
  * An abstract class to handle the initial setup of indexes for authentication.
  */
-abstract public class JanusGraphAbstractAuthenticator implements Authenticator {
+public abstract class JanusGraphAbstractAuthenticator implements Authenticator {
 
     private static final Logger logger = LoggerFactory.getLogger(JanusGraphAbstractAuthenticator.class);
 
@@ -67,7 +66,7 @@ abstract public class JanusGraphAbstractAuthenticator implements Authenticator {
     }
 
     @Override
-    abstract public SaslNegotiator newSaslNegotiator(final InetAddress remoteAddress);
+    public abstract SaslNegotiator newSaslNegotiator(final InetAddress remoteAddress);
 
     public CredentialTraversalSource createCredentials(JanusGraph graph) {
         return graph.traversal(CredentialTraversalSource.class);
@@ -80,16 +79,16 @@ abstract public class JanusGraphAbstractAuthenticator implements Authenticator {
     @Override
     public void setup(final Map<String,Object> config) {
         logger.info("Initializing authentication with the {}", this.getClass().getName());
-        Preconditions.checkArgument(config != null, String.format(
+        Preconditions.checkArgument(config != null,
                     "Could not configure a %s - provide a 'config' in the 'authentication' settings",
-                    this.getClass().getName()));
+                    this.getClass().getName());
 
-        Preconditions.checkState(config.containsKey(CONFIG_CREDENTIALS_DB), String.format(
-            "Credential configuration missing the %s key that points to a graph config file or graph name", CONFIG_CREDENTIALS_DB));
-        Preconditions.checkState(config.containsKey(CONFIG_DEFAULT_USER), String.format(
-            "Credential configuration missing the %s key for the default user", CONFIG_DEFAULT_USER));
-        Preconditions.checkState(config.containsKey(CONFIG_DEFAULT_PASSWORD), String.format(
-            "Credential configuration missing the %s key for the default password", CONFIG_DEFAULT_PASSWORD));
+        Preconditions.checkState(config.containsKey(CONFIG_CREDENTIALS_DB),
+            "Credential configuration missing the %s key that points to a graph config file or graph name", CONFIG_CREDENTIALS_DB);
+        Preconditions.checkState(config.containsKey(CONFIG_DEFAULT_USER),
+            "Credential configuration missing the %s key for the default user", CONFIG_DEFAULT_USER);
+        Preconditions.checkState(config.containsKey(CONFIG_DEFAULT_PASSWORD),
+            "Credential configuration missing the %s key for the default password", CONFIG_DEFAULT_PASSWORD);
 
         final JanusGraph graph = openGraph(config.get(CONFIG_CREDENTIALS_DB).toString());
         credentials = createCredentials(graph);

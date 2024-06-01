@@ -15,7 +15,6 @@
 package org.janusgraph.diskstorage.configuration;
 
 import com.google.common.base.Preconditions;
-
 import org.janusgraph.core.schema.JanusGraphConfiguration;
 
 import java.lang.reflect.Array;
@@ -115,6 +114,16 @@ public class UserModifiableConfiguration implements JanusGraphConfiguration {
             value = convertBasic(value,option.getDatatype());
         }
         config.set(option,value,pp.umbrellaElements);
+        return this;
+    }
+
+    @Override
+    public JanusGraphConfiguration remove(String path) {
+        ConfigElement.PathIdentifier pp = ConfigElement.parse(config.getRootNamespace(),path);
+        Preconditions.checkArgument(pp.element.isOption(),"Need to provide configuration option - not namespace: %s",path);
+        ConfigOption option = (ConfigOption)pp.element;
+        verifier.verifyModification(option);
+        config.remove(option, pp.umbrellaElements);
         return this;
     }
 

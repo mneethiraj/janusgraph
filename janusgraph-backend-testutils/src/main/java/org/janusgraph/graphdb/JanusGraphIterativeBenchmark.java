@@ -17,23 +17,34 @@ package org.janusgraph.graphdb;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Stopwatch;
 import com.google.common.collect.Iterators;
-import org.janusgraph.core.PropertyKey;
+import org.apache.tinkerpop.gremlin.structure.VertexProperty;
+import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.Tag;
+import org.janusgraph.TestCategory;
 import org.janusgraph.core.JanusGraphEdge;
 import org.janusgraph.core.JanusGraphTransaction;
 import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.core.PropertyKey;
 import org.janusgraph.diskstorage.Backend;
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.Entry;
-import org.janusgraph.diskstorage.keycolumnvalue.*;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStore;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStoreManager;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyIterator;
+import org.janusgraph.diskstorage.keycolumnvalue.SliceQuery;
+import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
 import org.janusgraph.diskstorage.util.BufferUtil;
 import org.janusgraph.diskstorage.util.RecordIterator;
 import org.janusgraph.diskstorage.util.StandardBaseTransactionConfig;
 import org.janusgraph.diskstorage.util.time.TimestampProviders;
 import org.janusgraph.graphdb.types.StandardEdgeLabelMaker;
-import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 
 import java.util.Random;
-import java.util.concurrent.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -48,14 +59,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  *
  * @author Matthias Broecheler (me@matthiasb.com)
  */
+@Tag(TestCategory.PERFORMANCE_TESTS)
 public abstract class JanusGraphIterativeBenchmark extends JanusGraphBaseTest {
 
     private static final Random random = new Random();
 
-
     public abstract KeyColumnValueStoreManager openStorageManager() throws BackendException;
 
-    //@Test
+    @RepeatedTest(10)
     public void testDataSequential() throws Exception {
         loadData(200000,2);
         close();
@@ -82,11 +93,10 @@ public abstract class JanusGraphIterativeBenchmark extends JanusGraphBaseTest {
 
     }
 
-    //@Test
+    @RepeatedTest(10)
     public void testLoadData() throws Exception {
         loadData(100000,2);
     }
-
 
     public void loadData(final int numVertices, final int numThreads) throws Exception {
         makeKey("w",Integer.class);
@@ -124,7 +134,4 @@ public abstract class JanusGraphIterativeBenchmark extends JanusGraphBaseTest {
         if (!exe.isTerminated()) System.err.println("Could not load data in time");
         System.out.println("Loaded "+numVertices+"vertices");
     }
-
-
-
 }

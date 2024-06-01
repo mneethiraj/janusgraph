@@ -23,7 +23,12 @@ import org.janusgraph.diskstorage.util.StaticArrayEntry;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.*;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.ASSIGN_TIMESTAMP;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_BATCH;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_TRANSACTIONAL;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORE_META_TIMESTAMPS;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORE_META_TTL;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORE_META_VISIBILITY;
 
 /**
  * Abstract Store Manager used as the basis for concrete StoreManager implementations.
@@ -37,6 +42,7 @@ public abstract class AbstractStoreManager implements StoreManager {
     protected final boolean transactional;
     protected final boolean batchLoading;
     protected final Configuration storageConfig;
+    protected final boolean assignTimestamp;
 
     public AbstractStoreManager(Configuration storageConfig) {
         batchLoading = storageConfig.get(STORAGE_BATCH);
@@ -44,6 +50,7 @@ public abstract class AbstractStoreManager implements StoreManager {
         if (batchLoading) {
             transactional = false;
         }
+        assignTimestamp = storageConfig.get(ASSIGN_TIMESTAMP);
         this.transactional = transactional;
         this.storageConfig = storageConfig;
     }
@@ -66,4 +73,7 @@ public abstract class AbstractStoreManager implements StoreManager {
         return schemaBuilder.toArray(new EntryMetaData[schemaBuilder.size()]);
     }
 
+    public boolean isAssignTimestamp() {
+        return this.assignTimestamp;
+    }
 }

@@ -51,8 +51,23 @@ public class JanusGraphServerTest {
 
         assertFalse(start.isCompletedExceptionally());
 
-        Settings settings = server.getGremlinSettings();
-        assertEquals(5, settings.serializers.size());
+        Settings settings = server.getJanusGraphSettings();
+        assertEquals(3, settings.serializers.size());
+
+        CompletableFuture<Void> stop = server.stop();
+        CompletableFuture.allOf(start, stop).join();
+    }
+
+    @Test
+    public void testGrpcServerIsEnabled() {
+        final JanusGraphServer server = new JanusGraphServer("src/test/resources/janusgraph-server-with-grpc.yaml");
+
+        CompletableFuture<Void> start = server.start();
+
+        assertFalse(start.isCompletedExceptionally());
+
+        JanusGraphSettings settings = server.getJanusGraphSettings();
+        assertTrue(settings.getGrpcServer().isEnabled());
 
         CompletableFuture<Void> stop = server.stop();
         CompletableFuture.allOf(start, stop).join();

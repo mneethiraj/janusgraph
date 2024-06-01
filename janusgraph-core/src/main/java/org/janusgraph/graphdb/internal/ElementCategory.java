@@ -15,16 +15,20 @@
 package org.janusgraph.graphdb.internal;
 
 import com.google.common.base.Preconditions;
-import org.janusgraph.core.*;
+import org.apache.tinkerpop.gremlin.structure.Edge;
+import org.apache.tinkerpop.gremlin.structure.Element;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.janusgraph.core.JanusGraphEdge;
+import org.janusgraph.core.JanusGraphElement;
+import org.janusgraph.core.JanusGraphTransaction;
+import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.core.JanusGraphVertexProperty;
 import org.janusgraph.core.schema.JanusGraphSchemaType;
 import org.janusgraph.graphdb.relations.RelationIdentifier;
 import org.janusgraph.graphdb.relations.RelationIdentifierUtils;
 import org.janusgraph.graphdb.types.VertexLabelVertex;
 import org.janusgraph.graphdb.types.vertices.EdgeLabelVertex;
 import org.janusgraph.graphdb.types.vertices.PropertyKeyVertex;
-import org.apache.tinkerpop.gremlin.structure.Edge;
-import org.apache.tinkerpop.gremlin.structure.Element;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
 
 /**
 * @author Matthias Broecheler (me@matthiasb.com)
@@ -90,13 +94,13 @@ public enum ElementCategory {
         Preconditions.checkArgument(elementId!=null,"Must provide elementId");
         switch (this) {
             case VERTEX:
-                Preconditions.checkArgument(elementId instanceof Long);
+                Preconditions.checkArgument(elementId instanceof Long, "elementId [%s] must be of type Long", elementId);
                 return tx.getVertex((Long) elementId);
             case EDGE:
-                Preconditions.checkArgument(elementId instanceof RelationIdentifier);
+                Preconditions.checkArgument(elementId instanceof RelationIdentifier, "elementId [%s] must be of type RelationIdentifier", elementId);
                 return RelationIdentifierUtils.findEdge(((RelationIdentifier)elementId), tx);
             case PROPERTY:
-                Preconditions.checkArgument(elementId instanceof RelationIdentifier);
+                Preconditions.checkArgument(elementId instanceof RelationIdentifier, "elementId [%s] must be of type RelationIdentifier", elementId);
                 return RelationIdentifierUtils.findProperty(((RelationIdentifier)elementId), tx);
             default: throw new IllegalArgumentException();
         }

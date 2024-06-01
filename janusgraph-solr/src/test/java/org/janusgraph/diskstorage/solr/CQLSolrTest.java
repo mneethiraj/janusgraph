@@ -14,11 +14,14 @@
 
 package org.janusgraph.diskstorage.solr;
 
+import io.github.artsok.RepeatedIfExceptionsTest;
 import org.janusgraph.JanusGraphCassandraContainer;
 import org.janusgraph.diskstorage.configuration.ModifiableConfiguration;
-import org.janusgraph.diskstorage.configuration.WriteConfiguration;
+import org.junit.jupiter.api.Test;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+
+import static org.junit.Assert.assertThrows;
 
 @Testcontainers
 public class CQLSolrTest extends SolrJanusGraphIndexTest {
@@ -34,6 +37,25 @@ public class CQLSolrTest extends SolrJanusGraphIndexTest {
     @Override
     public boolean supportsWildcardQuery() {
         return false;
+    }
+
+    // flaky test: https://github.com/JanusGraph/janusgraph/issues/3356
+    @RepeatedIfExceptionsTest(repeats = 3)
+    @Override
+    public void testSetIndexing() {
+        super.testSetIndexing();
+    }
+
+    @Test
+    @Override
+    public void testDiscardAndDropRegisteredIndex() {
+        assertThrows(UnsupportedOperationException.class, super::testDiscardAndDropRegisteredIndex);
+    }
+
+    @Test
+    @Override
+    public void testCreateMixedIndexThatPreviouslyExisted() {
+        assertThrows(UnsupportedOperationException.class, super::testCreateMixedIndexThatPreviouslyExisted);
     }
 
 }

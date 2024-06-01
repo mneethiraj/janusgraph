@@ -17,15 +17,19 @@ package org.janusgraph.diskstorage;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
-
-import org.janusgraph.diskstorage.keycolumnvalue.*;
+import org.janusgraph.diskstorage.keycolumnvalue.KCVMutation;
+import org.janusgraph.diskstorage.keycolumnvalue.KCVSUtil;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStore;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStoreManager;
+import org.janusgraph.diskstorage.keycolumnvalue.KeySliceQuery;
+import org.janusgraph.diskstorage.keycolumnvalue.StoreManager;
+import org.janusgraph.diskstorage.keycolumnvalue.StoreTransaction;
 import org.janusgraph.diskstorage.keycolumnvalue.cache.CacheTransaction;
 import org.janusgraph.diskstorage.keycolumnvalue.cache.KCVEntryMutation;
 import org.janusgraph.diskstorage.keycolumnvalue.cache.KCVSCache;
 import org.janusgraph.diskstorage.keycolumnvalue.cache.NoKCVSCache;
 import org.janusgraph.diskstorage.util.StaticArrayBuffer;
 import org.janusgraph.diskstorage.util.StaticArrayEntry;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,16 +37,25 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
-import java.util.*;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
 
-import static org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStore.*;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStore.NO_ADDITIONS;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 public abstract class MultiWriteKeyColumnValueStoreTest extends AbstractKCVSTest {
 
     private final Logger log = LoggerFactory.getLogger(MultiWriteKeyColumnValueStoreTest.class);
 
     final int bufferSize = 20;
+
+    final int numMutationsParallelThreshold = 20;
 
     protected final String storeName1 = "testStore1";
     private KCVSCache store1;
@@ -73,7 +86,7 @@ public abstract class MultiWriteKeyColumnValueStoreTest extends AbstractKCVSTest
 
     public void open() throws BackendException {
         manager = openStorageManager();
-        tx = new CacheTransaction(manager.beginTransaction(getTxConfig()), manager, bufferSize, Duration.ofMillis(100), true);
+        tx = new CacheTransaction(manager.beginTransaction(getTxConfig()), manager, bufferSize, numMutationsParallelThreshold, Duration.ofMillis(100), true);
         store1 = new NoKCVSCache(manager.openDatabase(storeName1));
         store2 = new NoKCVSCache(manager.openDatabase(storeName2));
 
@@ -93,7 +106,7 @@ public abstract class MultiWriteKeyColumnValueStoreTest extends AbstractKCVSTest
 
     public void newTx() throws BackendException {
         if (tx!=null) tx.commit();
-        tx = new CacheTransaction(manager.beginTransaction(getTxConfig()), manager, bufferSize, Duration.ofMillis(100), true);
+        tx = new CacheTransaction(manager.beginTransaction(getTxConfig()), manager, bufferSize, numMutationsParallelThreshold, Duration.ofMillis(100), true);
     }
 
     @Test

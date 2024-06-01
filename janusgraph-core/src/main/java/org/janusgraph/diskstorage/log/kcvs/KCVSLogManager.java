@@ -15,11 +15,14 @@
 package org.janusgraph.diskstorage.log.kcvs;
 
 import com.google.common.base.Preconditions;
+import org.apache.commons.lang3.ArrayUtils;
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.StoreMetaData;
 import org.janusgraph.diskstorage.configuration.ConfigOption;
 import org.janusgraph.diskstorage.configuration.Configuration;
-import org.janusgraph.diskstorage.keycolumnvalue.*;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStore;
+import org.janusgraph.diskstorage.keycolumnvalue.KeyColumnValueStoreManager;
+import org.janusgraph.diskstorage.keycolumnvalue.StoreFeatures;
 import org.janusgraph.diskstorage.keycolumnvalue.ttl.TTLKCVSManager;
 import org.janusgraph.diskstorage.log.Log;
 import org.janusgraph.diskstorage.log.LogManager;
@@ -27,16 +30,24 @@ import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
 import org.janusgraph.graphdb.configuration.PreInitializeConfigOptions;
 import org.janusgraph.graphdb.database.idassigner.placement.PartitionIDRange;
 import org.janusgraph.graphdb.database.serialize.StandardSerializer;
+import org.janusgraph.util.datastructures.ExceptionWrapper;
 import org.janusgraph.util.encoding.ConversionHelper;
 import org.janusgraph.util.stats.NumberUtil;
 import org.janusgraph.util.system.IOUtils;
-import org.apache.commons.lang.ArrayUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
-import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.*;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.CLUSTER_MAX_PARTITIONS;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.LOG_NS;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.LOG_STORE_TTL;
+import static org.janusgraph.util.system.ExecuteUtil.executeWithCatching;
+import static org.janusgraph.util.system.ExecuteUtil.throwIfException;
 
 /**
  * Implementation of {@link LogManager} against an arbitrary {@link KeyColumnValueStoreManager}. Issues {@link Log} instances
@@ -235,10 +246,12 @@ public class KCVSLogManager implements LogManager {
          * The path to ConcurrentModificationException in the absence of a copy is
          * log.close() -> manager.closedLog(log) -> openLogs.remove(log.getName()).
          */
+        ExceptionWrapper exceptionWrapper = new ExceptionWrapper();
         for (KCVSLog log : new ArrayList<>(openLogs.values())) {
-            log.close();
+            executeWithCatching(log::close, exceptionWrapper);
         }
         IOUtils.closeQuietly(serializer);
+        throwIfException(exceptionWrapper);
     }
 
 }

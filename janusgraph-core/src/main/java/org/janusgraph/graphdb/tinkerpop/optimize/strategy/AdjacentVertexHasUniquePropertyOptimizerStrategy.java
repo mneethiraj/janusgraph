@@ -14,7 +14,9 @@
 
 package org.janusgraph.graphdb.tinkerpop.optimize.strategy;
 
-import org.apache.tinkerpop.gremlin.process.traversal.*;
+import org.apache.tinkerpop.gremlin.process.traversal.Compare;
+import org.apache.tinkerpop.gremlin.process.traversal.P;
+import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.DefaultGraphTraversal;
 import org.apache.tinkerpop.gremlin.process.traversal.step.filter.FilterStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.filter.HasStep;
@@ -24,20 +26,20 @@ import org.apache.tinkerpop.gremlin.process.traversal.step.map.IdStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.util.HasContainer;
 import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalHelper;
 import org.apache.tinkerpop.gremlin.structure.Edge;
-import org.apache.tinkerpop.gremlin.structure.Graph;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.janusgraph.core.Cardinality;
 import org.janusgraph.core.JanusGraphElement;
 import org.janusgraph.graphdb.database.StandardJanusGraph;
 import org.janusgraph.graphdb.query.JanusGraphPredicateUtils;
 import org.janusgraph.graphdb.query.QueryUtil;
-import org.janusgraph.graphdb.query.condition.*;
+import org.janusgraph.graphdb.query.condition.MultiCondition;
+import org.janusgraph.graphdb.query.condition.PredicateCondition;
 import org.janusgraph.graphdb.query.index.IndexSelectionUtil;
 import org.janusgraph.graphdb.tinkerpop.optimize.JanusGraphTraversalUtil;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
 import org.janusgraph.graphdb.types.CompositeIndexType;
-import org.janusgraph.graphdb.types.IndexType;
 
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -54,6 +56,9 @@ public class AdjacentVertexHasUniquePropertyOptimizerStrategy
     private static final AdjacentVertexHasUniquePropertyOptimizerStrategy INSTANCE =
         new AdjacentVertexHasUniquePropertyOptimizerStrategy();
 
+    private static final Set<Class<? extends ProviderOptimizationStrategy>> POSTS =
+        new HashSet<>(Arrays.asList(JanusGraphStepStrategy.class, JanusGraphLocalQueryOptimizerStrategy.class));
+
     private AdjacentVertexHasUniquePropertyOptimizerStrategy() {}
 
     public static AdjacentVertexHasUniquePropertyOptimizerStrategy instance() {
@@ -62,10 +67,7 @@ public class AdjacentVertexHasUniquePropertyOptimizerStrategy
 
     @Override
     public Set<Class<? extends ProviderOptimizationStrategy>> applyPost() {
-        Set<Class<? extends ProviderOptimizationStrategy>> postStrategies = new HashSet<>();
-        postStrategies.add(JanusGraphStepStrategy.class);
-        postStrategies.add(JanusGraphLocalQueryOptimizerStrategy.class);
-        return postStrategies;
+        return POSTS;
     }
 
     @Override
@@ -74,10 +76,10 @@ public class AdjacentVertexHasUniquePropertyOptimizerStrategy
             return;
         }
 
-        Graph graph = traversal.getGraph().get();
-        StandardJanusGraph janusGraph = graph instanceof StandardJanusGraph
-            ? (StandardJanusGraph) graph
-            : ((StandardJanusGraphTx) graph).getGraph();
+        final StandardJanusGraph janusGraph = JanusGraphTraversalUtil.getJanusGraph(traversal);
+        if (janusGraph == null) {
+            return;
+        }
 
         if (!janusGraph.getConfiguration().optimizerBackendAccess()) {
             return;

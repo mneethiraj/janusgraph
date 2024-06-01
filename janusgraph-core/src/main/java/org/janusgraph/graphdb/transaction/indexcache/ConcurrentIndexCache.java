@@ -15,8 +15,8 @@
 package org.janusgraph.graphdb.transaction.indexcache;
 
 import com.google.common.collect.HashMultimap;
-import org.janusgraph.core.PropertyKey;
 import org.janusgraph.core.JanusGraphVertexProperty;
+import org.janusgraph.core.PropertyKey;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -50,5 +50,10 @@ public class ConcurrentIndexCache implements IndexCache {
             if (p.propertyKey().equals(key)) result.add(p);
         }
         return result;
+    }
+
+    @Override
+    public void close() {
+        map.clear();
     }
 }

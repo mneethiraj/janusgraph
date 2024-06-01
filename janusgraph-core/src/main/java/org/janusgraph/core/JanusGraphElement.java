@@ -15,9 +15,9 @@
 package org.janusgraph.core;
 
 
-import org.janusgraph.util.datastructures.Removable;
 import org.apache.tinkerpop.gremlin.structure.Element;
 import org.apache.tinkerpop.gremlin.structure.Property;
+import org.janusgraph.util.datastructures.Removable;
 
 /**
  * JanusGraphElement represents the abstract concept of an entity in the graph and specifies basic methods for interacting
@@ -60,18 +60,7 @@ public interface JanusGraphElement extends Element, Idfiable, Removable {
      * @see #hasId
      */
     @Override
-    default Object id() {
-        return longId();
-    }
-
-    /**
-     * Unique identifier for this entity. This id can be temporarily assigned and might change.
-     * Use {@link #id()} for the permanent id.
-     *
-     * @return Unique long id
-     */
-    @Override
-    long longId();
+    Object id();
 
     /**
      * Checks whether this entity has a unique identifier.
@@ -80,7 +69,6 @@ public interface JanusGraphElement extends Element, Idfiable, Removable {
      * assigned an identifier at the end of a transaction.
      *
      * @return true if this entity has been assigned a unique id, else false
-     * @see #longId()
      */
     boolean hasId();
 

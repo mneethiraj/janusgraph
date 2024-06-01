@@ -15,7 +15,7 @@
 package org.janusgraph.core.schema;
 
 import com.google.common.base.Preconditions;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.Objects;
 
@@ -58,7 +58,7 @@ public class Parameter<V> {
         if (this == oth) return true;
         if (!getClass().isInstance(oth)) return false;
         Parameter other = (Parameter)oth;
-        return key.equals(other.key) && (value==other.value || (value!=null && value.equals(other.value)));
+        return key.equals(other.key) && Objects.equals(value, other.value);
     }
 
     @Override

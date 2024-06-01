@@ -14,12 +14,7 @@
 
 package org.janusgraph.graphdb.tinkerpop.optimize;
 
-import static java.time.Duration.ofSeconds;
-import static org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.inV;
-import static org.janusgraph.testutil.JanusGraphAssert.assertNumStep;
-import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
+import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
 import org.apache.tinkerpop.gremlin.process.traversal.step.filter.TraversalFilterStep;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
@@ -27,6 +22,12 @@ import org.apache.tinkerpop.gremlin.structure.util.detached.DetachedFactory;
 import org.janusgraph.graphdb.tinkerpop.optimize.step.JanusGraphVertexStep;
 import org.janusgraph.graphdb.tinkerpop.optimize.strategy.AdjacentVertexFilterOptimizerStrategy;
 import org.junit.jupiter.api.Test;
+
+import static java.time.Duration.ofSeconds;
+import static org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__.inV;
+import static org.janusgraph.testutil.JanusGraphAssert.assertNumStep;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * @author Florian Grieskamp (Florian.Grieskamp@gdata.de)
@@ -92,5 +93,25 @@ public class AdjacentVertexFilterOptimizerStrategyTest extends OptimizerStrategy
 
         assertTrue(g.V(v1).bothE("E").filter(__.otherV().is(v2)).hasNext());
         assertTrue(g.V(v1).bothE("E").filter(__.otherV().hasId(v2.id())).hasNext());
+    }
+
+    @Test
+    public void testSelectEdgeAfterHasId() {
+        final GraphTraversalSource g = graph.traversal();
+        long firstId = (long) g.addV("person").id().next();
+        long secondId = (long) g.addV("person").id().next();
+        g.addE("knows").from(__.V(firstId)).to(__.V(secondId)).iterate();
+
+        assertTrue(g.V(firstId).outE().as("x").where(inV().hasId(secondId)).select("x").hasNext());
+    }
+
+    @Test
+    public void testSelectVertexAfterHasId() {
+        final GraphTraversalSource g = graph.traversal();
+        long firstId = (long) g.addV("person").id().next();
+        long secondId = (long) g.addV("person").id().next();
+        g.addE("knows").from(__.V(firstId)).to(__.V(secondId)).iterate();
+
+        assertTrue(g.V(firstId).as("x").outE().where(inV().hasId(secondId)).select("x").hasNext());
     }
 }

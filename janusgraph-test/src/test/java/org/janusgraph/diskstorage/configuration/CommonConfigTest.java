@@ -15,10 +15,10 @@
 package org.janusgraph.diskstorage.configuration;
 
 import com.google.common.collect.ImmutableMap;
+import org.apache.commons.configuration2.BaseConfiguration;
 import org.janusgraph.diskstorage.configuration.backend.CommonsConfiguration;
-
 import org.janusgraph.diskstorage.util.time.Temporals;
-import org.apache.commons.configuration.BaseConfiguration;
+import org.janusgraph.util.system.ConfigurationUtil;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -27,7 +27,7 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -36,12 +36,12 @@ public class CommonConfigTest extends WritableConfigurationTest {
 
     @Override
     public WriteConfiguration getConfig() {
-        return new CommonsConfiguration(new BaseConfiguration());
+        return new CommonsConfiguration(ConfigurationUtil.createBaseConfiguration());
     }
 
     @Test
     public void testDateParsing() {
-        BaseConfiguration base = new BaseConfiguration();
+        final BaseConfiguration base = ConfigurationUtil.createBaseConfiguration();
         CommonsConfiguration config = new CommonsConfiguration(base);
 
         for (ChronoUnit unit : Arrays.asList(ChronoUnit.NANOS, ChronoUnit.MICROS, ChronoUnit.MILLIS, ChronoUnit.SECONDS, ChronoUnit.MINUTES, ChronoUnit.HOURS, ChronoUnit.DAYS)) {

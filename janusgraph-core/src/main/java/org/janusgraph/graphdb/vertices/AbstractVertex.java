@@ -16,30 +16,36 @@ package org.janusgraph.graphdb.vertices;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
-import org.janusgraph.core.*;
-import org.janusgraph.graphdb.internal.AbstractElement;
-import org.janusgraph.graphdb.internal.ElementLifeCycle;
-import org.janusgraph.graphdb.internal.InternalVertex;
-import org.janusgraph.graphdb.query.vertex.VertexCentricQueryBuilder;
-import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
-import org.janusgraph.graphdb.types.VertexLabelVertex;
-import org.janusgraph.graphdb.types.system.BaseLabel;
-import org.janusgraph.graphdb.types.system.BaseVertexLabel;
-import org.janusgraph.graphdb.util.ElementHelper;
 import org.apache.tinkerpop.gremlin.structure.Direction;
 import org.apache.tinkerpop.gremlin.structure.Edge;
+import org.apache.tinkerpop.gremlin.structure.Property;
 import org.apache.tinkerpop.gremlin.structure.Vertex;
 import org.apache.tinkerpop.gremlin.structure.VertexProperty;
 import org.apache.tinkerpop.gremlin.structure.util.StringFactory;
+import org.janusgraph.core.InvalidElementException;
+import org.janusgraph.core.JanusGraphEdge;
+import org.janusgraph.core.JanusGraphRelation;
+import org.janusgraph.core.JanusGraphVertex;
+import org.janusgraph.core.JanusGraphVertexProperty;
+import org.janusgraph.core.PropertyKey;
+import org.janusgraph.core.VertexLabel;
+import org.janusgraph.graphdb.internal.AbstractElement;
+import org.janusgraph.graphdb.internal.ElementLifeCycle;
+import org.janusgraph.graphdb.internal.InternalVertex;
+import org.janusgraph.graphdb.query.vertex.BasicVertexCentricQueryUtil;
+import org.janusgraph.graphdb.query.vertex.VertexCentricQueryBuilder;
+import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
+import org.janusgraph.graphdb.util.ElementHelper;
 
 import java.util.Iterator;
+import javax.annotation.Nullable;
 
 public abstract class AbstractVertex extends AbstractElement implements InternalVertex, Vertex {
 
     private final StandardJanusGraphTx tx;
 
 
-    protected AbstractVertex(StandardJanusGraphTx tx, long id) {
+    protected AbstractVertex(StandardJanusGraphTx tx, Object id) {
         super(id);
         assert tx != null;
         this.tx = tx;
@@ -50,7 +56,7 @@ public abstract class AbstractVertex extends AbstractElement implements Internal
         if (tx.isOpen())
             return this;
 
-        InternalVertex next = (InternalVertex) tx.getNextTx().getVertex(longId());
+        InternalVertex next = (InternalVertex) tx.getNextTx().getVertex(id());
         if (next == null) throw InvalidElementException.removedException(this);
         else return next;
     }
@@ -65,19 +71,14 @@ public abstract class AbstractVertex extends AbstractElement implements Internal
     }
 
     @Override
-    public long getCompareId() {
-        if (tx.isPartitionedVertex(this)) return tx.getIdInspector().getCanonicalVertexId(longId());
-        else return longId();
+    public Object getCompareId() {
+        if (tx.isPartitionedVertex(this)) return tx.getIdInspector().getCanonicalVertexId(((Number) id()).longValue());
+        else return id();
     }
 
     @Override
     public String toString() {
         return StringFactory.vertexString(this);
-    }
-
-    @Override
-    public Object id() {
-        return longId();
     }
 
     @Override
@@ -97,16 +98,17 @@ public abstract class AbstractVertex extends AbstractElement implements Internal
 	 */
 
     @Override
+    public synchronized void remove(Iterable<JanusGraphRelation> loadedRelations) {
+        verifyAccess();
+        for (JanusGraphRelation r : loadedRelations) {
+            r.remove();
+        }
+    }
+
+    @Override
     public synchronized void remove() {
         verifyAccess();
-//        if (isRemoved()) return; //Remove() is idempotent
-        Iterator<JanusGraphRelation> iterator = it().query().noPartitionRestriction().relations().iterator();
-        while (iterator.hasNext()) {
-            iterator.next();
-            iterator.remove();
-        }
-        //Remove all system types on the vertex
-        for (JanusGraphRelation r : it().query().noPartitionRestriction().system().relations()) {
+        for (JanusGraphRelation r : it().query().noPartitionRestriction().all().relations()) {
             r.remove();
         }
     }
@@ -122,14 +124,12 @@ public abstract class AbstractVertex extends AbstractElement implements Internal
     }
 
     protected Vertex getVertexLabelInternal() {
-        return Iterables.getOnlyElement(tx().query(this).noPartitionRestriction().type(BaseLabel.VertexLabelEdge).direction(Direction.OUT).vertices(),null);
+        return Iterables.getOnlyElement(BasicVertexCentricQueryUtil.withLabelVertices(tx().query(this)).vertices(),null);
     }
 
     @Override
     public VertexLabel vertexLabel() {
-        Vertex label = getVertexLabelInternal();
-        if (label==null) return BaseVertexLabel.DEFAULT_VERTEXLABEL;
-        else return (VertexLabelVertex)label;
+        return BasicVertexCentricQueryUtil.castToVertexLabel(getVertexLabelInternal());
     }
 
     @Override
@@ -149,22 +149,27 @@ public abstract class AbstractVertex extends AbstractElement implements Internal
 	 */
 
     public<V> JanusGraphVertexProperty<V> property(final String key, final V value, final Object... keyValues) {
-        PropertyKey propertyKey = tx().getOrCreatePropertyKey(key, value);
-        if (propertyKey == null) {
-            return JanusGraphVertexProperty.empty();
-        }
-        JanusGraphVertexProperty<V> p = tx().addProperty(it(), propertyKey, value);
-        ElementHelper.attachProperties(p,keyValues);
-        return p;
+        return property(null, key, value, keyValues);
     }
 
     @Override
-    public <V> JanusGraphVertexProperty<V> property(final VertexProperty.Cardinality cardinality, final String key, final V value, final Object... keyValues) {
+    public <V> JanusGraphVertexProperty<V> property(@Nullable final VertexProperty.Cardinality cardinality, final String key, final V value, final Object... keyValues) {
         PropertyKey propertyKey = tx().getOrCreatePropertyKey(key, value, cardinality);
         if (propertyKey == null) {
             return JanusGraphVertexProperty.empty();
         }
-        JanusGraphVertexProperty<V> p = tx().addProperty(cardinality, it(), propertyKey, value);
+        VertexProperty.Cardinality vCardinality = cardinality == null ? propertyKey.cardinality().convert() : cardinality;
+        if (value == null) {
+            if (vCardinality.equals(VertexProperty.Cardinality.single)) {
+                // putting null value with SINGLE cardinality is equivalent to removing existing value
+                properties(key).forEachRemaining(Property::remove);
+            } else {
+                // simply ignore this mutation
+                assert vCardinality.equals(VertexProperty.Cardinality.list) || vCardinality.equals(VertexProperty.Cardinality.set);
+            }
+            return JanusGraphVertexProperty.empty();
+        }
+        JanusGraphVertexProperty<V> p = tx().addProperty(vCardinality, it(), propertyKey, value);
         ElementHelper.attachProperties(p,keyValues);
         return p;
     }
@@ -189,8 +194,4 @@ public abstract class AbstractVertex extends AbstractElement implements Internal
         return (Iterator)query().direction(direction).labels(edgeLabels).vertices().iterator();
 
     }
-
-
-
-
 }

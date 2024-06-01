@@ -15,7 +15,7 @@
 package org.janusgraph.diskstorage.configuration;
 
 import com.google.common.base.Preconditions;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -43,6 +43,14 @@ public abstract class ConfigElement {
         this.name = name;
         this.description = description;
         if (namespace!=null) namespace.registerChild(this);
+    }
+
+    public static String replaceIllegalChars(String str){
+        String strWithReplacedChars = str;
+        for (char c : ILLEGAL_CHARS) {
+            strWithReplacedChars = StringUtils.replaceChars(strWithReplacedChars,c,'-');
+        }
+        return strWithReplacedChars;
     }
 
     public ConfigNamespace getNamespace() {

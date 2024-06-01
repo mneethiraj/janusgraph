@@ -6,7 +6,6 @@ target/
 .vscode/
 /_bsp/
 /output/
-/docker/*.zip
 # When executing tests in alphabetical order, Maven generates temporary
 # files with names like this:
 #
@@ -33,19 +32,9 @@ target/
 /janusgraph-examples/example-*/.project
 /janusgraph-examples/example-*/.settings
 # End of Eclipse junk
-# HBase testing stuff
-janusgraph-hbase/logs
-janusgraph-hbase/src/test/janusgraph-hbase-test-data/*
-janusgraph-hbase/src/test/janusgraph-zookeeper-test/*
 # Backup files created by `mvn versions:update-child-modules`
 # http://mojo.codehaus.org/versions-maven-plugin/update-child-modules-mojo.html
 janusgraph-*/pom.xml.versionsBackup
-# JUnitBenchmarks output
-/janusgraph-*/jub.*.xml
-# .deb/.rpm packaging folders
-/debian/
-/redhat/
-/pkgcommon/
 
 # Emacs file backups
 *~
@@ -54,12 +43,9 @@ janusgraph-*/pom.xml.versionsBackup
 # Vim file backups
 *.swp
 
-# Coverity tools and analysis outputs
-coverity_tool.tar.gz
-cov-analysis-linux64/
-cov-int.tar.gz
-cov-int/
-
 /site/
 
 *.hprof
+.factorypath
+
+janusgraph-benchmark/benchmark.json

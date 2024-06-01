@@ -15,12 +15,20 @@
 package org.janusgraph.blueprints;
 
 import com.google.common.collect.Sets;
-
+import org.apache.commons.configuration2.Configuration;
+import org.apache.tinkerpop.gremlin.AbstractGraphProvider;
+import org.apache.tinkerpop.gremlin.LoadGraphWith;
+import org.apache.tinkerpop.gremlin.process.traversal.TraversalStrategy;
+import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
+import org.apache.tinkerpop.gremlin.structure.Graph;
+import org.apache.tinkerpop.gremlin.structure.TransactionTest;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.apache.tinkerpop.gremlin.structure.util.wrapped.WrappedGraph;
 import org.janusgraph.core.Cardinality;
 import org.janusgraph.core.EdgeLabel;
-import org.janusgraph.core.PropertyKey;
-import org.janusgraph.core.JanusGraphFactory;
 import org.janusgraph.core.JanusGraph;
+import org.janusgraph.core.JanusGraphFactory;
+import org.janusgraph.core.PropertyKey;
 import org.janusgraph.core.VertexLabel;
 import org.janusgraph.core.schema.JanusGraphManagement;
 import org.janusgraph.diskstorage.configuration.BasicConfiguration;
@@ -43,31 +51,24 @@ import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
 import org.janusgraph.graphdb.types.VertexLabelVertex;
 import org.janusgraph.graphdb.types.system.EmptyVertex;
 import org.janusgraph.graphdb.types.vertices.EdgeLabelVertex;
-import org.janusgraph.graphdb.types.vertices.PropertyKeyVertex;
 import org.janusgraph.graphdb.types.vertices.JanusGraphSchemaVertex;
+import org.janusgraph.graphdb.types.vertices.PropertyKeyVertex;
 import org.janusgraph.graphdb.vertices.CacheVertex;
 import org.janusgraph.graphdb.vertices.PreloadedVertex;
 import org.janusgraph.graphdb.vertices.StandardVertex;
-import org.apache.commons.configuration.Configuration;
-import org.apache.tinkerpop.gremlin.AbstractGraphProvider;
-import org.apache.tinkerpop.gremlin.LoadGraphWith;
-import org.apache.tinkerpop.gremlin.process.traversal.TraversalStrategy;
-import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
-import org.apache.tinkerpop.gremlin.structure.Graph;
-import org.apache.tinkerpop.gremlin.structure.TransactionTest;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
-import org.apache.tinkerpop.gremlin.structure.util.wrapped.WrappedGraph;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
  */
+
 public abstract class AbstractJanusGraphProvider extends AbstractGraphProvider {
 
     private static final Logger logger = LoggerFactory.getLogger(AbstractJanusGraphProvider.class);
@@ -115,16 +116,6 @@ public abstract class AbstractJanusGraphProvider extends AbstractGraphProvider {
         return graph.traversal().withStrategies(strategies);
     }
 
-//    @Override
-//    public <ID> ID reconstituteGraphSONIdentifier(final Class<? extends Element> clazz, final Object id) {
-//        if (Edge.class.isAssignableFrom(clazz)) {
-//            // JanusGraphSONModule toStrings the edgeId - expect a String value for the id
-//            if (!(id instanceof String)) throw new RuntimeException("Expected a String value for the RelationIdentifier");
-//            return (ID) RelationIdentifier.parse((String) id);
-//        } else {
-//            return (ID) id;
-//        }
-//    }
 
     @Override
     public void clear(Graph g, final Configuration configuration) throws Exception {
@@ -244,5 +235,10 @@ public abstract class AbstractJanusGraphProvider extends AbstractGraphProvider {
             //throw new RuntimeException("Could not load graph with " + graphData);
         }
         management.commit();
+    }
+
+    @Override
+    public Optional<TestListener> getTestListener() {
+        return Optional.of(JanusGraphTestListener.instance());
     }
 }

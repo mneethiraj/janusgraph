@@ -14,10 +14,13 @@
 
 package org.janusgraph.graphdb.tinkerpop.gremlin.server.auth;
 
-import static org.apache.tinkerpop.gremlin.groovy.jsr223.dsl.credential.CredentialGraphTokens.PROPERTY_PASSWORD;
-import static org.apache.tinkerpop.gremlin.groovy.jsr223.dsl.credential.CredentialGraphTokens.PROPERTY_USERNAME;
-import static org.janusgraph.graphdb.tinkerpop.gremlin.server.handler.HttpHMACAuthenticationHandler.PROPERTY_GENERATE_TOKEN;
-import static org.janusgraph.graphdb.tinkerpop.gremlin.server.handler.HttpHMACAuthenticationHandler.PROPERTY_TOKEN;
+import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.tinkerpop.gremlin.server.auth.AuthenticatedUser;
+import org.apache.tinkerpop.gremlin.server.auth.AuthenticationException;
+import org.apache.tinkerpop.gremlin.structure.Vertex;
+import org.mindrot.jbcrypt.BCrypt;
 
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
@@ -27,18 +30,13 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
-
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
-import org.apache.commons.lang3.StringUtils;
-import org.apache.tinkerpop.gremlin.server.auth.AuthenticatedUser;
-import org.apache.tinkerpop.gremlin.server.auth.AuthenticationException;
-import org.apache.tinkerpop.gremlin.structure.Vertex;
-import org.mindrot.jbcrypt.BCrypt;
-
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
+import static org.apache.tinkerpop.gremlin.groovy.jsr223.dsl.credential.CredentialGraphTokens.PROPERTY_PASSWORD;
+import static org.apache.tinkerpop.gremlin.groovy.jsr223.dsl.credential.CredentialGraphTokens.PROPERTY_USERNAME;
+import static org.janusgraph.graphdb.tinkerpop.gremlin.server.handler.HttpHMACAuthenticationHandler.PROPERTY_GENERATE_TOKEN;
+import static org.janusgraph.graphdb.tinkerpop.gremlin.server.handler.HttpHMACAuthenticationHandler.PROPERTY_TOKEN;
 
 /**
  * A class for doing Basic Auth and Token auth using an HMAC intended to be used with
@@ -91,8 +89,7 @@ public class HMACAuthenticator extends JanusGraphAbstractAuthenticator {
 
     public void setup(final Map<String,Object> config) {
         Preconditions.checkArgument(config != null, "Credential configuration cannot be null");
-        Preconditions.checkState(config.containsKey(CONFIG_HMAC_SECRET), 
-        			String.format("Credential configuration missing the %s key", CONFIG_HMAC_SECRET));
+        Preconditions.checkState(config.containsKey(CONFIG_HMAC_SECRET), "Credential configuration missing the %s key", CONFIG_HMAC_SECRET);
 
         if (config.containsKey(CONFIG_HMAC_ALGO)) {
             hmacAlgo = config.get(CONFIG_HMAC_ALGO).toString();
