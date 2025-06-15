@@ -14,7 +14,6 @@
 
 package org.janusgraph.diskstorage.berkeleyje;
 
-
 import com.google.common.base.Preconditions;
 import com.sleepycat.je.CacheMode;
 import com.sleepycat.je.Database;
@@ -22,17 +21,13 @@ import com.sleepycat.je.DatabaseConfig;
 import com.sleepycat.je.DatabaseException;
 import com.sleepycat.je.Environment;
 import com.sleepycat.je.EnvironmentConfig;
-import com.sleepycat.je.EnvironmentFailureException;
 import com.sleepycat.je.LockMode;
-import com.sleepycat.je.ThreadInterruptedException;
 import com.sleepycat.je.Transaction;
 import com.sleepycat.je.TransactionConfig;
-import org.apache.tinkerpop.gremlin.process.traversal.util.TraversalInterruptedException;
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.BaseTransactionConfig;
 import org.janusgraph.diskstorage.PermanentBackendException;
 import org.janusgraph.diskstorage.StaticBuffer;
-import org.janusgraph.diskstorage.TemporaryBackendException;
 import org.janusgraph.diskstorage.common.LocalStoreManager;
 import org.janusgraph.diskstorage.configuration.ConfigNamespace;
 import org.janusgraph.diskstorage.configuration.ConfigOption;
@@ -48,14 +43,14 @@ import org.janusgraph.diskstorage.keycolumnvalue.keyvalue.OrderedKeyValueStoreMa
 import org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration;
 import org.janusgraph.graphdb.configuration.PreInitializeConfigOptions;
 import org.janusgraph.graphdb.transaction.TransactionConfiguration;
+import org.janusgraph.util.system.ConfigurationUtil;
 import org.janusgraph.util.system.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 
 import static org.janusgraph.diskstorage.configuration.ConfigOption.disallowEmpty;
 
@@ -93,16 +88,40 @@ public class BerkeleyJEStoreManager extends LocalStoreManager implements Ordered
             ConfigOption.Type.MASKABLE,  String.class,
             IsolationLevel.REPEATABLE_READ.toString(), disallowEmpty(String.class));
 
-    private final ConcurrentMap<String, BerkeleyJEKeyValueStore> stores;
+    public static final ConfigNamespace BERKELEY_EXTRAS_NS =
+        new ConfigNamespace(BERKELEY_NS, "ext", "Overrides for arbitrary settings applied at `EnvironmentConfig` creation.\n" +
+            "The full list of possible setting is available inside the Java class `com.sleepycat.je.EnvironmentConfig`. " +
+            "All configurations values should be specified as `String` and be formated the same as specified in the following " +
+            "[documentation](https://docs.oracle.com/cd/E17277_02/html/java/com/sleepycat/je/EnvironmentConfig.html).\n" +
+            "Notice, for compatibility reasons, it's allowed to use `-` character instead of `.` for config keys. All dashes will " +
+            "be replaced by dots when passing those keys to `EnvironmentConfig`.");
 
-    protected volatile Environment environment;
+    // This setting isn't used directly in Java, but this setting will be picked up indirectly during parsing of the
+    // subset configuration of `BERKELEY_EXTRAS_NS` namespace
+    public static final ConfigOption<String> EXT_LOCK_TIMEOUT =
+        new ConfigOption<>(BERKELEY_EXTRAS_NS, toJanusGraphConfigKey(EnvironmentConfig.LOCK_TIMEOUT),
+            String.format("Lock timeout configuration. `0` disabled lock timeout completely. " +
+                    "To set lock timeout via this configuration it's required to use " +
+                    "String formated time representation. For example: `500 ms`, `5 min`, etc. \nSee information about value " +
+                    "constraints in the official " +
+                    "[sleepycat documentation](https://docs.oracle.com/cd/E17277_02/html/java/com/sleepycat/je/EnvironmentConfig.html#LOCK_TIMEOUT).\n" +
+                    "Notice, this option can be specified as `%s` which will be treated the same as this configuration option.",
+                BERKELEY_EXTRAS_NS.toStringWithoutRoot() + "." + EnvironmentConfig.LOCK_TIMEOUT
+            ), ConfigOption.Type.MASKABLE, String.class);
+
+    private final Map<String, BerkeleyJEKeyValueStore> stores;
+
+    protected Environment environment;
     protected final StoreFeatures features;
 
     public BerkeleyJEStoreManager(Configuration configuration) throws BackendException {
         super(configuration);
-        stores = new ConcurrentHashMap<>();
+        stores = new HashMap<>();
 
-        initialize();
+        int cachePercentage = configuration.get(JVM_CACHE);
+        boolean sharedCache = configuration.get(SHARED_CACHE);
+        CacheMode cacheMode = ConfigOption.getEnumValue(configuration.get(CACHE_MODE), CacheMode.class);
+        initialize(cachePercentage, sharedCache, cacheMode);
 
         features = new StandardStoreFeatures.Builder()
                     .orderedScan(true)
@@ -113,24 +132,14 @@ public class BerkeleyJEStoreManager extends LocalStoreManager implements Ordered
                     .scanTxConfig(GraphDatabaseConfiguration.buildGraphConfiguration()
                             .set(ISOLATION_LEVEL, IsolationLevel.READ_UNCOMMITTED.toString())
                     )
-                    .supportsInterruption(true)
+                    .supportsInterruption(false)
                     .cellTTL(true)
                     .optimisticLocking(false)
                     .build();
     }
 
-    private synchronized void initialize() throws BackendException {
+    private void initialize(int cachePercent, final boolean sharedCache, final CacheMode cacheMode) throws BackendException {
         try {
-            if (environment != null && environment.isValid()) {
-                return;
-            }
-
-            close(true);
-
-            int cachePercent = storageConfig.get(JVM_CACHE);
-            boolean sharedCache = storageConfig.get(SHARED_CACHE);
-            CacheMode cacheMode = ConfigOption.getEnumValue(storageConfig.get(CACHE_MODE), CacheMode.class);
-
             EnvironmentConfig envConfig = new EnvironmentConfig();
             envConfig.setAllowCreate(true);
             envConfig.setTransactional(transactional);
@@ -143,26 +152,33 @@ public class BerkeleyJEStoreManager extends LocalStoreManager implements Ordered
                 envConfig.setConfigParam(EnvironmentConfig.ENV_RUN_CLEANER, "false");
             }
 
+            //Open the environment
+            Map<String, String> extraSettings = getSettingsFromJanusGraphConf(storageConfig);
+            extraSettings.forEach((key, value) -> envConfig.setConfigParam(toBerkeleyConfigKey(key), value));
+
             // Open the environment
             environment = new Environment(directory, envConfig);
 
-            // Reopen any existing DB connections
-            for (String storeName : stores.keySet()) {
-                openDatabase(storeName, true);
-            }
         } catch (DatabaseException e) {
             throw new PermanentBackendException("Error during BerkeleyJE initialization: ", e);
         }
-
     }
 
-    private synchronized void reInitialize(DatabaseException exception) throws BackendException {
-        initialize();
+    public static String toBerkeleyConfigKey(String janusGraphConfigKey){
+        return janusGraphConfigKey.replace("-", ".");
+    }
 
-        if (exception instanceof ThreadInterruptedException) {
-            Thread.currentThread().interrupt();
-            throw (TraversalInterruptedException) new TraversalInterruptedException().initCause(exception);
+    public static String toJanusGraphConfigKey(String berkeleyConfigKey){
+        return berkeleyConfigKey.replace(".", "-");
+    }
+
+    static Map<String, String> getSettingsFromJanusGraphConf(Configuration config) {
+        final Map<String, String> settings = ConfigurationUtil.getSettingsFromJanusGraphConf(config, BERKELEY_EXTRAS_NS);
+        if(log.isDebugEnabled()){
+            settings.forEach((key, val) -> log.debug("[BERKELEY ext.* cfg] Set {}: {}", key, val));
+            log.debug("Loaded {} settings from the {} JanusGraph config namespace", settings.size(), BERKELEY_EXTRAS_NS);
         }
+        return settings;
     }
 
     @Override
@@ -175,7 +191,8 @@ public class BerkeleyJEStoreManager extends LocalStoreManager implements Ordered
         throw new UnsupportedOperationException();
     }
 
-    private BerkeleyJETx beginTransaction(final BaseTransactionConfig txCfg, boolean retryEnvironmentFailure) throws BackendException {
+    @Override
+    public BerkeleyJETx beginTransaction(final BaseTransactionConfig txCfg) throws BackendException {
         try {
             Transaction tx = null;
 
@@ -206,27 +223,15 @@ public class BerkeleyJEStoreManager extends LocalStoreManager implements Ordered
             }
 
             return btx;
-        } catch (EnvironmentFailureException e) {
-            reInitialize(e);
-
-            if (retryEnvironmentFailure) {
-                return beginTransaction(txCfg, false);
-            }
-
-            throw new TemporaryBackendException("Could not start BerkeleyJE transaction", e);
         } catch (DatabaseException e) {
             throw new PermanentBackendException("Could not start BerkeleyJE transaction", e);
         }
     }
 
     @Override
-    public BerkeleyJETx beginTransaction(final BaseTransactionConfig txCfg) throws BackendException {
-        return beginTransaction(txCfg, true);
-    }
-
-    private BerkeleyJEKeyValueStore openDatabase(String name, boolean force, boolean retryEnvironmentFailure) throws BackendException {
+    public BerkeleyJEKeyValueStore openDatabase(String name) throws BackendException {
         Preconditions.checkNotNull(name);
-        if (stores.containsKey(name) && !force) {
+        if (stores.containsKey(name)) {
             return stores.get(name);
         }
         try {
@@ -245,32 +250,11 @@ public class BerkeleyJEStoreManager extends LocalStoreManager implements Ordered
             log.debug("Opened database {}", name);
 
             BerkeleyJEKeyValueStore store = new BerkeleyJEKeyValueStore(name, db, this);
-            if (stores.containsKey(name)) {
-                stores.get(name).reopen(db);
-            } else {
-                stores.put(name, store);
-            }
+            stores.put(name, store);
             return store;
-        } catch (EnvironmentFailureException e) {
-            reInitialize(e);
-
-            if (retryEnvironmentFailure) {
-                return openDatabase(name, force, false);
-            }
-
-            throw new TemporaryBackendException("Could not open BerkeleyJE data store", e);
         } catch (DatabaseException e) {
             throw new PermanentBackendException("Could not open BerkeleyJE data store", e);
         }
-    }
-
-    private BerkeleyJEKeyValueStore openDatabase(String name, boolean force) throws BackendException {
-        return openDatabase(name, force, true);
-    }
-
-    @Override
-    public BerkeleyJEKeyValueStore openDatabase(String name) throws BackendException {
-        return openDatabase(name, false, true);
     }
 
     @Override
@@ -309,16 +293,18 @@ public class BerkeleyJEStoreManager extends LocalStoreManager implements Ordered
         log.debug("Removed database {}", name);
     }
 
-    public void close(boolean force) throws BackendException {
+
+    @Override
+    public void close() throws BackendException {
         if (environment != null) {
-            if (!force && !stores.isEmpty())
+            if (!stores.isEmpty())
                 throw new IllegalStateException("Cannot shutdown manager since some databases are still open");
             try {
                 // TODO this looks like a race condition
                 //Wait just a little bit before closing so that independent transaction threads can clean up.
                 Thread.sleep(30);
             } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+                //Ignore
             }
             try {
                 environment.close();
@@ -327,11 +313,6 @@ public class BerkeleyJEStoreManager extends LocalStoreManager implements Ordered
             }
         }
 
-    }
-
-    @Override
-    public void close() throws BackendException {
-        close(false);
     }
 
     private static final Transaction NULL_TRANSACTION = null;
@@ -394,5 +375,9 @@ public class BerkeleyJEStoreManager extends LocalStoreManager implements Ordered
         private TransactionBegin(String msg) {
             super(msg);
         }
+    }
+
+    public Environment getEnvironment(){
+        return environment;
     }
 }

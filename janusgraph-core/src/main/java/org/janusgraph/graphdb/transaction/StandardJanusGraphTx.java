@@ -40,6 +40,7 @@ import org.janusgraph.core.RelationType;
 import org.janusgraph.core.SchemaViolationException;
 import org.janusgraph.core.VertexLabel;
 import org.janusgraph.core.attribute.Cmp;
+import org.janusgraph.core.schema.CompositeIndexInfo;
 import org.janusgraph.core.schema.ConsistencyModifier;
 import org.janusgraph.core.schema.EdgeLabelMaker;
 import org.janusgraph.core.schema.JanusGraphSchemaElement;
@@ -49,9 +50,11 @@ import org.janusgraph.core.schema.VertexLabelMaker;
 import org.janusgraph.diskstorage.BackendException;
 import org.janusgraph.diskstorage.BackendTransaction;
 import org.janusgraph.diskstorage.EntryList;
+import org.janusgraph.diskstorage.StaticBuffer;
 import org.janusgraph.diskstorage.indexing.IndexTransaction;
 import org.janusgraph.diskstorage.keycolumnvalue.MultiKeysQueryGroups;
 import org.janusgraph.diskstorage.keycolumnvalue.SliceQuery;
+import org.janusgraph.diskstorage.util.StaticArrayBuffer;
 import org.janusgraph.diskstorage.util.time.TimestampProvider;
 import org.janusgraph.graphdb.database.EdgeSerializer;
 import org.janusgraph.graphdb.database.IndexSerializer;
@@ -88,6 +91,7 @@ import org.janusgraph.graphdb.query.profile.QueryProfiler;
 import org.janusgraph.graphdb.query.vertex.MultiVertexCentricQueryBuilder;
 import org.janusgraph.graphdb.query.vertex.VertexCentricQuery;
 import org.janusgraph.graphdb.query.vertex.VertexCentricQueryBuilder;
+import org.janusgraph.graphdb.query.vertex.VertexWithInlineProps;
 import org.janusgraph.graphdb.relations.RelationComparator;
 import org.janusgraph.graphdb.relations.RelationIdentifier;
 import org.janusgraph.graphdb.relations.RelationIdentifierUtils;
@@ -456,10 +460,15 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction implem
      */
 
     public InternalRelationType getOrLoadRelationTypeById(long typeId) {
-        assert relTypeCache != null;
-        return this.relTypeCache.computeIfAbsent(typeId, (k) ->
-            TypeUtil.getBaseType((InternalRelationType) this.getExistingRelationType(k))
-        );
+        if (relTypeCache == null) {
+            return loadRelationTypeById(typeId);
+        } else {
+            return this.relTypeCache.computeIfAbsent(typeId, this::loadRelationTypeById);
+        }
+    }
+
+    private InternalRelationType loadRelationTypeById(long typeId) {
+        return TypeUtil.getBaseType((InternalRelationType) this.getExistingRelationType(typeId));
     }
 
     /*
@@ -1125,7 +1134,7 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction implem
         return type!=null && type.isEdgeLabel();
     }
 
-    // this is critical path we can't allow anything heavier then assertion in here
+    // this is critical path we can't allow anything heavier than assertion in here
     @Override
     public RelationType getExistingRelationType(long typeId) {
         assert idInspector.isRelationTypeId(typeId);
@@ -1235,6 +1244,39 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction implem
             vertexLabel = config.getAutoSchemaMaker().makeVertexLabel(makeVertexLabel(name));
         }
         return vertexLabel;
+    }
+
+    public StaticBuffer getCompositeIndexKey(String indexName, Map<String, Object> fieldValues) {
+        JanusGraphSchemaVertex schemaVertex = getSchemaVertex(JanusGraphSchemaCategory.GRAPHINDEX.getSchemaName(indexName));
+        Preconditions.checkNotNull(schemaVertex, "Index with name [" + indexName + "] was not found");
+        IndexType indexType = schemaVertex.asIndexType();
+        if (indexType instanceof CompositeIndexType) {
+            CompositeIndexType compositeIndex = (CompositeIndexType) indexType;
+            StaticBuffer indexKey = indexSerializer.getIndexKey(compositeIndex, fieldValues);
+            return indexKey;
+        } else {
+            throw new IllegalArgumentException("Index with name [" + indexName + "] is not a composite index");
+        }
+    }
+
+    public CompositeIndexInfo getCompositeIndexInfo(StaticArrayBuffer indexKey) {
+
+        com.google.common.base.Function<Long, CompositeIndexType> compositeIndexTypeFunction = input -> {
+            long schemaVertexId = indexSerializer.getIndexIdFromKey(indexKey);
+            InternalVertex typeVertex = vertexCache.get(schemaVertexId, existingVertexRetriever);
+
+            Preconditions.checkNotNull(typeVertex, "Index with key [" + indexKey + "] was not found");
+            JanusGraphSchemaVertex schemaVertex = (JanusGraphSchemaVertex) typeVertex;
+
+            IndexType indexType = schemaVertex.asIndexType();
+            if (indexType instanceof CompositeIndexType) {
+                return (CompositeIndexType) indexType;
+            } else {
+                throw new IllegalArgumentException("Index with key [" + indexKey + "] is not a composite index");
+            }
+        };
+
+        return indexSerializer.getIndexInfoFromKey(indexKey, compositeIndexTypeFunction);
     }
 
     @Override
@@ -1502,7 +1544,7 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction implem
                         final JointIndexQuery.Subquery adjustedQuery = subquery.updateLimit(limit);
                         try {
                             return indexCache.get(adjustedQuery,
-                                () -> QueryProfiler.profile(subquery.getProfiler(), adjustedQuery, q -> indexSerializer.query(q, txHandle).collect(Collectors.toList())));
+                                () -> QueryProfiler.profile(subquery.getProfiler(), adjustedQuery, q -> indexSerializer.query(q, txHandle, StandardJanusGraphTx.this).collect(Collectors.toList())));
                         } catch (Exception e) {
                             throw new JanusGraphException("Could not call index", e);
                         }
@@ -1510,7 +1552,7 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction implem
                 }
                 // Constructs an iterator which lazily streams results from 1st index, and filters by looking up in the intersection of results from all other indices (if any)
                 // NOTE NO_LIMIT is passed to processIntersectingRetrievals to prevent incomplete intersections, which could lead to missed results
-                iterator = new SubqueryIterator(indexQuery.getQuery(0), indexSerializer, txHandle, indexCache, indexQuery.getLimit(), getConversionFunction(query.getResultType()),
+                iterator = new SubqueryIterator(indexQuery.getQuery(0), indexSerializer, txHandle, StandardJanusGraphTx.this, indexCache, indexQuery.getLimit(), getConversionFunction(query.getResultType()),
                         retrievals.isEmpty() ? null: QueryUtil.processIntersectingRetrievals(retrievals, Query.NO_LIMIT));
             } else {
                 if (config.hasForceIndexUsage()) throw new JanusGraphException("Could not find a suitable index to answer graph query and graph scans are disabled: " + query);
@@ -1558,7 +1600,16 @@ public class StandardJanusGraphTx extends JanusGraphBlueprintsTransaction implem
 
     private final Function<Object, JanusGraphVertex> vertexIDConversionFct = id -> {
         Preconditions.checkNotNull(id);
-        return getInternalVertex(id);
+        if (id instanceof VertexWithInlineProps) {
+            VertexWithInlineProps v = (VertexWithInlineProps) id;
+            InternalVertex vertex = getInternalVertex(v.getVertexId());
+            if (vertex instanceof CacheVertex) {
+                v.getInlineProperties().forEach((sq, entryList) -> ((CacheVertex) vertex).addToQueryCache(sq, entryList));
+            }
+            return vertex;
+        } else {
+            return getInternalVertex(id);
+        }
     };
 
     private final Function<Object, JanusGraphEdge> edgeIDConversionFct = id -> {

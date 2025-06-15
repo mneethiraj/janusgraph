@@ -150,6 +150,7 @@ Elasticsearch index configuration
 
 | Name | Description | Datatype | Default Value | Mutability |
 | ---- | ---- | ---- | ---- | ---- |
+| index.[X].elasticsearch.bulk-chunk-size-limit-bytes | The total size limit in bytes of a bulk request. Mutation batches in excess of this limit will be chunked to this size. If a single bulk item exceeds this limit an exception will be thrown after the smaller bulk items are submitted. Ensure that this limit is always less than or equal to the configured limit of `http.max_content_length` on the Elasticsearch servers. For more information, refer to the [Elasticsearch documentation](https://www.elastic.co/guide/en/elasticsearch/reference/master/modules-network.html). | Integer | 100000000 | LOCAL |
 | index.[X].elasticsearch.bulk-refresh | Elasticsearch bulk API refresh setting used to control when changes made by this request are made visible to search | String | false | MASKABLE |
 | index.[X].elasticsearch.client-keep-alive | Set a keep-alive timeout (in milliseconds) | Long | (no default value) | GLOBAL_OFFLINE |
 | index.[X].elasticsearch.connect-timeout | Sets the maximum connection timeout (in milliseconds). | Integer | 1000 | MASKABLE |
@@ -365,6 +366,7 @@ Configuration options to configure batch queries optimization behavior
 
 | Name | Description | Datatype | Default Value | Mutability |
 | ---- | ---- | ---- | ---- | ---- |
+| query.batch.drop-step-mode | Batching mode for `drop()` step. Used only when `query.batch.enabled` is `true`.<br>Supported modes:<br>- `all` - Drops all vertices in a batch.<br>- `none` - Skips drop batching optimization.<br> | String | all | MASKABLE |
 | query.batch.enabled | Whether traversal queries should be batched when executed against the storage backend. This can lead to significant performance improvement if there is a non-trivial latency to the backend. If `false` then all other configuration options under `query.batch` namespace are ignored. | Boolean | true | MASKABLE |
 | query.batch.has-step-mode | Properties pre-fetching mode for `has` step. Used only when `query.batch.enabled` is `true`.<br>Supported modes:<br>- `all_properties` - Pre-fetch all vertex properties on any property access (fetches all vertex properties in a single slice query)<br>- `required_properties_only` - Pre-fetch necessary vertex properties for the whole chain of foldable `has` steps (uses a separate slice query per each required property)<br>- `required_and_next_properties` - Prefetch the same properties as with `required_properties_only` mode, but also prefetch<br>properties which may be needed in the next properties access step like `values`, `properties,` `valueMap`, `elementMap`, or `propertyMap`.<br>In case the next step is not one of those properties access steps then this mode behaves same as `required_properties_only`.<br>In case the next step is one of the properties access steps with limited scope of properties, those properties will be<br>pre-fetched together in the same multi-query.<br>In case the next step is one of the properties access steps with unspecified scope of property keys then this mode<br>behaves same as `all_properties`.<br>- `required_and_next_properties_or_all` - Prefetch the same properties as with `required_and_next_properties`, but in case the next step is not<br>`values`, `properties,` `valueMap`, `elementMap`, or `propertyMap` then acts like `all_properties`.<br>- `none` - Skips `has` step batch properties pre-fetch optimization.<br> | String | required_and_next_properties | MASKABLE |
 | query.batch.label-step-mode | Labels pre-fetching mode for `label()` step. Used only when `query.batch.enabled` is `true`.<br>Supported modes:<br>- `all` - Pre-fetch labels for all vertices in a batch.<br>- `none` - Skips vertex labels pre-fetching optimization.<br> | String | all | MASKABLE |
@@ -383,6 +385,29 @@ Schema related configuration options
 | schema.default | Configures the DefaultSchemaMaker to be used by this graph. Either one of the following shorthands can be used: <br> - `default` (a blueprints compatible schema maker with MULTI edge labels and SINGLE property keys),<br> - `tp3` (same as default, but has LIST property keys),<br> - `none` (automatic schema creation is disabled)<br> - `ignore-prop` (same as none, but simply ignore unknown properties rather than throw exceptions)<br> - or to the full package and classname of a custom/third-party implementing the interface `org.janusgraph.core.schema.DefaultSchemaMaker` | String | default | MASKABLE |
 | schema.logging | Controls whether logging is enabled for schema makers. This only takes effect if you set `schema.default` to `default` or `ignore-prop`. For `default` schema maker, warning messages will be logged before schema types are created automatically. For `ignore-prop` schema maker, warning messages will be logged before unknown properties are ignored. | Boolean | false | MASKABLE |
 
+### schema.init
+Configuration options for schema initialization on startup.
+
+
+| Name | Description | Datatype | Default Value | Mutability |
+| ---- | ---- | ---- | ---- | ---- |
+| schema.init.drop-before-startup | Drops the entire schema with graph data before JanusGraph schema initialization. Note that the schema will be dropped regardless of the selected initialization strategy, including when `schema.init.strategy` is set to `none`. | Boolean | false | LOCAL |
+| schema.init.strategy | Specifies the strategy for schema initialization before starting JanusGraph. You must provide the full class path of a class that implements the `SchemaInitStrategy` interface and has parameterless constructor.<br>The following shortcuts are also available:<br>- `none` - Skips schema initialization.<br>- `json` - Schema initialization via provided JSON file or JSON string.<br> | String | none | LOCAL |
+
+### schema.init.json
+Options for JSON schema initialization strategy.
+
+
+| Name | Description | Datatype | Default Value | Mutability |
+| ---- | ---- | ---- | ---- | ---- |
+| schema.init.json.await-index-status-timeout | Timeout for awaiting index status operation defined in milliseconds. If the status await timeouts the exception will be thrown during schema initialization process. | Long | 180000 | LOCAL |
+| schema.init.json.file | File path to JSON formated schema definition. | String | (no default value) | LOCAL |
+| schema.init.json.force-close-other-instances | Force closes other JanusGraph instances before schema initialization, regardless if they are active or not. This is a dangerous operation. This option exists to help people initialize schema who struggle with zombie JanusGraph instances. It's not recommended to be used unless you know what you are doing. Instead of this parameter, it's recommended to check `graph.unique-instance-id` and `graph.replace-instance-if-exists` options to not create zombie instances in the cluster. | Boolean | false | LOCAL |
+| schema.init.json.indices-activation | Indices activation type:<br>- `reindex_and_enable_updated_only` - Reindex process will be triggered for any updated index. After this all updated indexes will be enabled.<br>- `reindex_and_enable_non_enabled` - Reindex process will be triggered for any index which is not enabled (including previously created indices). After reindexing all indices will be enabled.<br>- `skip_activation` - Skip reindex process for any updated indexes.<br>- `force_enable_updated_only` - Force enable all updated indexes without running any reindex process (previous data may not be available for such indices).<br>- `force_enable_non_enabled` - Force enable all indexes (including previously created indices) without running any reindex process (previous data may not be available for such indices).<br> | String | reindex_and_enable_non_enabled | LOCAL |
+| schema.init.json.skip-elements | Skip creation of VertexLabel, EdgeLabel, and PropertyKey. | Boolean | false | LOCAL |
+| schema.init.json.skip-indices | Skip creation of indices. | Boolean | false | LOCAL |
+| schema.init.json.string | JSON formated schema definition string. This option takes precedence if both `file` and `string` are used. | String | (no default value) | LOCAL |
+
 ### storage
 Configuration options for the storage backend.  Some options are applicable only for certain backends.
 
@@ -397,6 +422,7 @@ Configuration options for the storage backend.  Some options are applicable only
 | storage.directory | Storage directory for those storage backends that require local storage. | String | (no default value) | LOCAL |
 | storage.drop-on-clear | Whether to drop the graph database (true) or delete rows (false) when clearing storage. Note that some backends always drop the graph database when clearing storage. Also note that indices are always dropped when clearing storage. | Boolean | true | MASKABLE |
 | storage.hostname | The hostname or comma-separated list of hostnames of storage backend servers.  This is only applicable to some storage backends, such as cassandra and hbase. | String[] | 127.0.0.1 | LOCAL |
+| storage.keys-size | The maximum amount of keys/partitions to retrieve from distributed storage system by JanusGraph in a single request. | Integer | 100 | MASKABLE |
 | storage.num-mutations-parallel-threshold | This parameter determines the minimum number of mutations a transaction must have before parallel processing is applied during aggregation. Leveraging parallel processing can enhance the commit times for transactions involving a large number of mutations. However, it is advisable not to set the threshold too low (e.g., 0 or 1) due to the overhead associated with parallelism synchronization. This overhead is more efficiently offset in the context of larger transactions. | Integer | 100 | MASKABLE |
 | storage.page-size | JanusGraph break requests that may return many results from distributed storage backends into a series of requests for small chunks/pages of results, where each chunk contains up to this many elements. | Integer | 100 | MASKABLE |
 | storage.parallel-backend-ops | Whether JanusGraph should attempt to parallelize storage operations | Boolean | true | MASKABLE |
@@ -422,6 +448,18 @@ BerkeleyDB JE configuration options
 | storage.berkeleyje.lock-mode | The BDB record lock mode used for read operations | String | LockMode.DEFAULT | MASKABLE |
 | storage.berkeleyje.shared-cache | If true, the shared cache is used for all graph instances | Boolean | true | MASKABLE |
 
+### storage.berkeleyje.ext
+Overrides for arbitrary settings applied at `EnvironmentConfig` creation.
+The full list of possible setting is available inside the Java class `com.sleepycat.je.EnvironmentConfig`. All configurations values should be specified as `String` and be formated the same as specified in the following [documentation](https://docs.oracle.com/cd/E17277_02/html/java/com/sleepycat/je/EnvironmentConfig.html).
+Notice, for compatibility reasons, it's allowed to use `-` character instead of `.` for config keys. All dashes will be replaced by dots when passing those keys to `EnvironmentConfig`.
+
+
+| Name | Description | Datatype | Default Value | Mutability |
+| ---- | ---- | ---- | ---- | ---- |
+| storage.berkeleyje.ext.je-lock-timeout | Lock timeout configuration. `0` disabled lock timeout completely. To set lock timeout via this configuration it's required to use String formated time representation. For example: `500 ms`, `5 min`, etc. 
+See information about value constraints in the official [sleepycat documentation](https://docs.oracle.com/cd/E17277_02/html/java/com/sleepycat/je/EnvironmentConfig.html#LOCK_TIMEOUT).
+Notice, this option can be specified as `storage.berkeleyje.ext.je.lock.timeout` which will be treated the same as this configuration option. | String | (no default value) | MASKABLE |
+
 ### storage.cql
 CQL storage backend options
 
@@ -436,7 +474,7 @@ CQL storage backend options
 | storage.cql.compaction-strategy-options | Compaction strategy options.  This list is interpreted as a map.  It must have an even number of elements in [key,val,key,val,...] form. | String[] | (no default value) | FIXED |
 | storage.cql.compression | Whether the storage backend should use compression when storing the data | Boolean | true | FIXED |
 | storage.cql.compression-block-size | The size of the compression blocks in kilobytes | Integer | 64 | FIXED |
-| storage.cql.compression-type | The sstable_compression value JanusGraph uses when creating column families. This accepts any value allowed by Cassandra's sstable_compression option. Leave this unset to disable sstable_compression on JanusGraph-created CFs. | String | LZ4Compressor | MASKABLE |
+| storage.cql.compression-type | The compression class value JanusGraph uses when creating column families. This accepts any value allowed by Cassandra's compression class option. Leave this unset to disable compression on JanusGraph-created CFs. | String | LZ4Compressor | MASKABLE |
 | storage.cql.gc-grace-seconds | The number of seconds before tombstones (deletion markers) are eligible for garbage-collection. | Integer | (no default value) | FIXED |
 | storage.cql.heartbeat-interval | The connection heartbeat interval in milliseconds. | Long | (no default value) | MASKABLE |
 | storage.cql.heartbeat-timeout | How long the driver waits for the response (in milliseconds) to a heartbeat. | Long | (no default value) | MASKABLE |

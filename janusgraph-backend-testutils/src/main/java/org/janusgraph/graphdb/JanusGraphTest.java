@@ -22,6 +22,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import io.github.artsok.RepeatedIfExceptionsTest;
 import org.apache.commons.configuration2.MapConfiguration;
+import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang.NotImplementedException;
 import org.apache.tinkerpop.gremlin.process.traversal.P;
 import org.apache.tinkerpop.gremlin.process.traversal.TextP;
@@ -30,6 +31,7 @@ import org.apache.tinkerpop.gremlin.process.traversal.Traverser;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
+import org.apache.tinkerpop.gremlin.process.traversal.step.filter.DropStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.filter.HasStep;
 import org.apache.tinkerpop.gremlin.process.traversal.step.util.WithOptions;
 import org.apache.tinkerpop.gremlin.process.traversal.strategy.decoration.SubgraphStrategy;
@@ -59,6 +61,7 @@ import org.janusgraph.core.Multiplicity;
 import org.janusgraph.core.PropertyKey;
 import org.janusgraph.core.RelationType;
 import org.janusgraph.core.SchemaViolationException;
+import org.janusgraph.core.Transaction;
 import org.janusgraph.core.VertexLabel;
 import org.janusgraph.core.VertexList;
 import org.janusgraph.core.attribute.Cmp;
@@ -70,6 +73,7 @@ import org.janusgraph.core.log.TransactionRecovery;
 import org.janusgraph.core.schema.ConsistencyModifier;
 import org.janusgraph.core.schema.DisableDefaultSchemaMaker;
 import org.janusgraph.core.schema.IgnorePropertySchemaMaker;
+import org.janusgraph.core.schema.IndicesActivationType;
 import org.janusgraph.core.schema.JanusGraphDefaultSchemaMaker;
 import org.janusgraph.core.schema.JanusGraphIndex;
 import org.janusgraph.core.schema.JanusGraphManagement;
@@ -77,6 +81,7 @@ import org.janusgraph.core.schema.JanusGraphSchemaType;
 import org.janusgraph.core.schema.Mapping;
 import org.janusgraph.core.schema.RelationTypeIndex;
 import org.janusgraph.core.schema.SchemaAction;
+import org.janusgraph.core.schema.SchemaInitType;
 import org.janusgraph.core.schema.SchemaStatus;
 import org.janusgraph.core.util.ManagementUtil;
 import org.janusgraph.diskstorage.Backend;
@@ -135,10 +140,12 @@ import org.janusgraph.graphdb.relations.StandardEdge;
 import org.janusgraph.graphdb.relations.StandardVertexProperty;
 import org.janusgraph.graphdb.serializer.SpecialInt;
 import org.janusgraph.graphdb.serializer.SpecialIntSerializer;
+import org.janusgraph.graphdb.tinkerpop.optimize.step.JanusGraphDropStep;
 import org.janusgraph.graphdb.tinkerpop.optimize.step.JanusGraphElementMapStep;
 import org.janusgraph.graphdb.tinkerpop.optimize.step.JanusGraphHasStep;
 import org.janusgraph.graphdb.tinkerpop.optimize.step.JanusGraphPropertiesStep;
 import org.janusgraph.graphdb.tinkerpop.optimize.step.JanusGraphPropertyMapStep;
+import org.janusgraph.graphdb.tinkerpop.optimize.strategy.MultiQueryDropStepStrategyMode;
 import org.janusgraph.graphdb.tinkerpop.optimize.strategy.MultiQueryHasStepStrategyMode;
 import org.janusgraph.graphdb.tinkerpop.optimize.strategy.MultiQueryLabelStepStrategyMode;
 import org.janusgraph.graphdb.tinkerpop.optimize.strategy.MultiQueryPropertiesStrategyMode;
@@ -169,6 +176,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
@@ -214,6 +224,7 @@ import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.CU
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DB_CACHE;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DB_CACHE_CLEAN_WAIT;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DB_CACHE_TIME;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.DROP_STEP_BATCH_MODE;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.FORCE_INDEX_USAGE;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.HARD_MAX_LIMIT;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.HAS_STEP_BATCH_MODE;
@@ -234,6 +245,10 @@ import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.PR
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.REPEAT_STEP_BATCH_MODE;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.REPLACE_INSTANCE_IF_EXISTS;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.SCHEMA_CONSTRAINTS;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.SCHEMA_DROP_BEFORE_INIT;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.SCHEMA_INIT_JSON_INDICES_ACTIVATION_TYPE;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.SCHEMA_INIT_JSON_STR;
+import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.SCHEMA_INIT_STRATEGY;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.SCRIPT_EVAL_ENABLED;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.SCRIPT_EVAL_ENGINE;
 import static org.janusgraph.graphdb.configuration.GraphDatabaseConfiguration.STORAGE_BACKEND;
@@ -4519,6 +4534,29 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
             if (IDUtils.compare(vl.getID(i - 1), vl.getID(i)) > 0) return false;
         }
         return true;
+    }
+
+    @Test
+    public void testSimpleJsonSchemaImportFromProperty() throws IOException, BackendException {
+        ClassLoader loader = Thread.currentThread().getContextClassLoader();
+        InputStream resourceStream = loader.getResourceAsStream("test_simple_schema_example.json");
+        String jsonSchemaExample = IOUtils.toString(resourceStream, StandardCharsets.UTF_8.name());
+
+        Map<String, Object> extraConfig = new HashMap<>();
+        extraConfig.put(SCHEMA_INIT_STRATEGY.toStringWithoutRoot(), SchemaInitType.JSON.getConfigName());
+        extraConfig.put(SCHEMA_DROP_BEFORE_INIT.toStringWithoutRoot(), true);
+        extraConfig.put(SCHEMA_INIT_JSON_STR.toStringWithoutRoot(), jsonSchemaExample);
+        extraConfig.put(SCHEMA_INIT_JSON_INDICES_ACTIVATION_TYPE.toStringWithoutRoot(), IndicesActivationType.REINDEX_AND_ENABLE_UPDATED_ONLY.getConfigName());
+        clopenNoDelimiterUsage(extraConfig, true);
+
+        assertEquals(Long.class, mgmt.getPropertyKey("time").dataType());
+        assertEquals(Double.class, mgmt.getPropertyKey("doubleProp").dataType());
+        assertEquals(Cardinality.LIST, mgmt.getPropertyKey("longPropCardinalityList").cardinality());
+        assertEquals("organization", mgmt.getVertexLabel("organization").name());
+        assertEquals(Multiplicity.SIMPLE, mgmt.getEdgeLabel("connects").multiplicity());
+        assertTrue(mgmt.getEdgeLabel("connects").isDirected());
+        assertEquals(Multiplicity.MULTI, mgmt.getEdgeLabel("viewed").multiplicity());
+        assertTrue(mgmt.getEdgeLabel("viewed").isUnidirected());
     }
 
     @Test
@@ -9083,6 +9121,7 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
         IndexRecordEntry[] record = new IndexRecordEntry[]{new IndexRecordEntry(indexedProperty)};
         JanusGraphElement element = (JanusGraphElement) vertex1;
         Serializer serializer = graph.getDataSerializer();
+        EdgeSerializer edgeSerializer = graph.getEdgeSerializer();
         boolean hashKeys = graph.getIndexSerializer().isHashKeys();
         HashingUtil.HashLength hashLength = graph.getIndexSerializer().getHashLength();
 
@@ -9092,6 +9131,8 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
             record,
             element,
             serializer,
+            (StandardJanusGraphTx)tx,
+            edgeSerializer,
             hashKeys,
             hashLength
         );
@@ -9116,6 +9157,8 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
             record,
             element,
             serializer,
+            (StandardJanusGraphTx)tx,
+            edgeSerializer,
             hashKeys,
             hashLength
         );
@@ -9150,6 +9193,8 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
             record,
             element,
             serializer,
+            (StandardJanusGraphTx)tx,
+            edgeSerializer,
             hashKeys,
             hashLength
         );
@@ -9176,6 +9221,8 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
             record,
             element,
             serializer,
+            (StandardJanusGraphTx)tx,
+            edgeSerializer,
             hashKeys,
             hashLength
         );
@@ -9218,6 +9265,7 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
         JanusGraphSchemaVertex indexChangeVertex = managementSystem.getSchemaVertex(janusGraphIndex);
         CompositeIndexType index = (CompositeIndexType) indexChangeVertex.asIndexType();
         Serializer serializer = graph.getDataSerializer();
+        EdgeSerializer edgeSerializer = graph.getEdgeSerializer();
         boolean hashKeys = graph.getIndexSerializer().isHashKeys();
         HashingUtil.HashLength hashLength = graph.getIndexSerializer().getHashLength();
 
@@ -9238,6 +9286,8 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
             record,
             element,
             serializer,
+            (StandardJanusGraphTx)tx,
+            edgeSerializer,
             hashKeys,
             hashLength
         );
@@ -9301,6 +9351,7 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
         JanusGraphSchemaVertex indexChangeVertex = managementSystem.getSchemaVertex(janusGraphIndex);
         CompositeIndexType index = (CompositeIndexType) indexChangeVertex.asIndexType();
         Serializer serializer = graph.getDataSerializer();
+        EdgeSerializer edgeSerializer = graph.getEdgeSerializer();
         boolean hashKeys = graph.getIndexSerializer().isHashKeys();
         HashingUtil.HashLength hashLength = graph.getIndexSerializer().getHashLength();
         PropertyKey propertyKey = managementSystem.getPropertyKey(namePropKeyStr);
@@ -9334,6 +9385,8 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
             record,
             element,
             serializer,
+            (StandardJanusGraphTx)tx,
+            edgeSerializer,
             hashKeys,
             hashLength
         );
@@ -9394,6 +9447,7 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
         JanusGraphSchemaVertex indexChangeVertex = managementSystem.getSchemaVertex(janusGraphIndex);
         CompositeIndexType index = (CompositeIndexType) indexChangeVertex.asIndexType();
         Serializer serializer = graph.getDataSerializer();
+        EdgeSerializer edgeSerializer = graph.getEdgeSerializer();
         boolean hashKeys = graph.getIndexSerializer().isHashKeys();
         HashingUtil.HashLength hashLength = graph.getIndexSerializer().getHashLength();
 
@@ -9422,6 +9476,8 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
             record,
             element,
             serializer,
+            (StandardJanusGraphTx)tx,
+            edgeSerializer,
             hashKeys,
             hashLength
         );
@@ -10023,11 +10079,7 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
 
         int verticesAmount = 42;
 
-        for (int i = 0; i < verticesAmount; i++) {
-            Vertex vertex = tx.addVertex("id", i);
-            vertex.property("name", "name_test");
-            vertex.property("details", "details_" + i);
-        }
+        addVerticesForDropTest(verticesAmount, tx);
 
         clopen();
 
@@ -10039,18 +10091,159 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
             .map(v -> (JanusGraphVertex) v)
             .collect(Collectors.toList());
 
-        int actualCount = tx.multiQuery(vertices).drop();
+        int actualCount = tx.multiQuery(vertices).drop().size();
         clopen();
 
         assertEquals(verticesAmount, actualCount);
 
-        int afterDropCount = tx.traversal()
-            .V()
-            .has("name", "name_test")
-            .toList()
-            .size();
+        long afterDropCount = getVerticesForDropTestCount(tx.traversal());
 
         assertEquals(0, afterDropCount);
+    }
+
+    @Test
+    public void testMultiQueryDropsStrategyModes() {
+
+        mgmt.makePropertyKey("id").dataType(Integer.class).cardinality(Cardinality.SINGLE).make();
+        PropertyKey nameProp = mgmt.makePropertyKey("name").dataType(String.class).cardinality(Cardinality.SINGLE).make();
+        mgmt.makePropertyKey("details").dataType(String.class).cardinality(Cardinality.SINGLE).make();
+        mgmt.buildIndex("nameIndex", Vertex.class).addKey(nameProp).buildCompositeIndex();
+
+        finishSchema();
+
+        long verticesAmount = 42;
+
+        // Mode: NONE
+
+        addVerticesForDropTest(verticesAmount);
+        graph.tx().commit();
+        clopen(option(DROP_STEP_BATCH_MODE), MultiQueryDropStepStrategyMode.NONE.getConfigName());
+        assertEquals(verticesAmount, getVerticesForDropTestCount());
+        TraversalMetrics profileT = graph.traversal().V().drop().profile().next();
+        assertTrue(profileT.getMetrics().stream().anyMatch(metrics -> metrics.getName().equals(DropStep.class.getSimpleName())));
+        graph.tx().commit();
+        assertEquals(0, getVerticesForDropTestCount());
+
+        // Mode: ALL
+
+        addVerticesForDropTest(verticesAmount);
+        graph.tx().commit();
+        clopen(option(DROP_STEP_BATCH_MODE), MultiQueryDropStepStrategyMode.ALL.getConfigName());
+        assertEquals(verticesAmount, getVerticesForDropTestCount());
+        profileT = graph.traversal().V().drop().profile().next();
+        assertEquals("true", profileT.getMetrics().stream().filter(metrics -> metrics.getName().equals(JanusGraphDropStep.class.getSimpleName())).findAny().get().getAnnotation("multi"));
+        graph.tx().commit();
+        assertEquals(0, getVerticesForDropTestCount());
+
+        // `limit` with `drop` step.
+
+        addVerticesForDropTest(verticesAmount);
+        graph.tx().commit();
+        clopen(option(DROP_STEP_BATCH_MODE), MultiQueryDropStepStrategyMode.NONE.getConfigName());
+        assertEquals(verticesAmount, getVerticesForDropTestCount());
+        int limitSize = 2;
+        profileT = graph.traversal().V().limit(limitSize).drop().profile().next();
+        assertTrue(profileT.getMetrics().stream().anyMatch(metrics -> metrics.getName().equals(DropStep.class.getSimpleName())));
+        graph.tx().commit();
+        long afterDropCount = getVerticesForDropTestCount();
+        assertEquals(verticesAmount-limitSize, afterDropCount);
+        graph.traversal().V().drop().iterate();
+        graph.tx().commit();
+        addVerticesForDropTest(verticesAmount);
+        graph.tx().commit();
+        clopen(option(DROP_STEP_BATCH_MODE), MultiQueryDropStepStrategyMode.ALL.getConfigName());
+        assertEquals(verticesAmount, getVerticesForDropTestCount());
+        profileT = graph.traversal().V().limit(limitSize).drop().profile().next();
+        assertEquals("true", profileT.getMetrics().stream().filter(metrics -> metrics.getName().equals(JanusGraphDropStep.class.getSimpleName())).findAny().get().getAnnotation("multi"));
+        graph.tx().commit();
+        afterDropCount = getVerticesForDropTestCount();
+        assertEquals(verticesAmount-limitSize, afterDropCount);
+    }
+
+    @Test
+    public void testMetaPropertiesDrop(){
+        mgmt.makePropertyKey("id").dataType(Integer.class).cardinality(Cardinality.SINGLE).make();
+        PropertyKey nameProp = mgmt.makePropertyKey("name").dataType(String.class).cardinality(Cardinality.SINGLE).make();
+        mgmt.makePropertyKey("details").dataType(String.class).cardinality(Cardinality.SINGLE).make();
+        mgmt.buildIndex("nameIndex", Vertex.class).addKey(nameProp).buildCompositeIndex();
+
+        finishSchema();
+
+        long verticesAmount = 42;
+
+        for (int i = 0; i < verticesAmount; i++) {
+            Vertex vertex = tx.addVertex("id", i);
+            VertexProperty<String> property = vertex.property("name", "name_test");
+            property.property("details", "details_" + i);
+        }
+        graph.tx().commit();
+
+        clopen(option(DROP_STEP_BATCH_MODE), MultiQueryDropStepStrategyMode.ALL.getConfigName());
+
+        assertEquals(verticesAmount, graph.traversal().V().properties("name").properties("details").count().next());
+
+        graph.traversal().V().properties("name").properties("details").drop().hasNext();
+
+        assertEquals(0, graph.traversal().V().properties("name").properties("details").count().next());
+
+        graph.tx().commit();
+
+        assertEquals(0, graph.traversal().V().properties("name").properties("details").count().next());
+        assertEquals(verticesAmount, graph.traversal().V().has("name").count().next());
+    }
+
+    @Test
+    public void testEdgePropertiesDrop(){
+        mgmt.makePropertyKey("id").dataType(Integer.class).cardinality(Cardinality.SINGLE).make();
+        mgmt.makePropertyKey("name").dataType(String.class).cardinality(Cardinality.SINGLE).make();
+        mgmt.makeEdgeLabel("relate").make();
+
+        finishSchema();
+
+        long verticesAmount = 42;
+
+        for (int i = 0; i < verticesAmount; i++) {
+            Vertex vertex = tx.addVertex("id", i);
+            Vertex vertex2 = tx.addVertex("id", i+verticesAmount);
+            vertex.addEdge("relate", vertex2).property("name", "name_"+i);
+        }
+
+        graph.tx().commit();
+
+        clopen(option(DROP_STEP_BATCH_MODE), MultiQueryDropStepStrategyMode.ALL.getConfigName());
+
+        assertEquals(verticesAmount, graph.traversal().E().properties("name").count().next());
+
+        graph.traversal().E().properties("name").drop().hasNext();
+
+        assertEquals(0, graph.traversal().E().properties("name").count().next());
+
+        graph.tx().commit();
+
+        assertEquals(0, graph.traversal().E().properties("name").count().next());
+        assertEquals(verticesAmount, graph.traversal().E().count().next());
+    }
+
+    private void addVerticesForDropTest(long verticesAmount){
+        addVerticesForDropTest(verticesAmount, graph);
+    }
+
+    private long getVerticesForDropTestCount(){
+        return getVerticesForDropTestCount(graph.traversal());
+    }
+
+    private void addVerticesForDropTest(long verticesAmount, Transaction tx){
+        for (int i = 0; i < verticesAmount; i++) {
+            Vertex vertex = tx.addVertex("id", i);
+            vertex.property("name", "name_test");
+            vertex.property("details", "details_" + i);
+        }
+    }
+
+    private long getVerticesForDropTestCount(GraphTraversalSource g){
+        return g.V()
+            .has("name", "name_test")
+            .count().next();
     }
 
     @ParameterizedTest
@@ -10075,28 +10268,28 @@ public abstract class JanusGraphTest extends JanusGraphBaseTest {
         invalidateUpdatedVertexProperty(graph, vertexIdUpdated, propertyNameUpdated, previousPropertyValue, newPropertyValue, true);
     }
 
-    private void invalidateUpdatedVertexProperty(StandardJanusGraph graph, Object vertexIdUpdated, String propertyNameUpdated, Object previousPropertyValue, Object newPropertyValue, boolean withIndexConstraintsFilter){
-        JanusGraphTransaction tx = graph.newTransaction();
+    private void invalidateUpdatedVertexProperty(StandardJanusGraph graph, Object vertexIdUpdated, String propertyNameUpdated, Object previousPropertyValue, Object newPropertyValue, boolean withIndexConstraintsFilter) {
+        StandardJanusGraphTx tx = (StandardJanusGraphTx) graph.newTransaction();
         JanusGraphManagement graphMgmt = graph.openManagement();
         PropertyKey propertyKey = graphMgmt.getPropertyKey(propertyNameUpdated);
-        CacheVertex cacheVertex = new CacheVertex((StandardJanusGraphTx) tx, vertexIdUpdated, ElementLifeCycle.Loaded);
+        CacheVertex cacheVertex = new CacheVertex(tx, vertexIdUpdated, ElementLifeCycle.Loaded);
         StandardVertexProperty propertyPreviousVal = new StandardVertexProperty(propertyKey.longId(), propertyKey, cacheVertex, previousPropertyValue, ElementLifeCycle.Removed);
         StandardVertexProperty propertyNewVal = new StandardVertexProperty(propertyKey.longId(), propertyKey, cacheVertex, newPropertyValue, ElementLifeCycle.New);
         IndexSerializer indexSerializer = graph.getIndexSerializer();
 
-        Collection<IndexUpdate> indexUpdates;
-        if(withIndexConstraintsFilter){
-            indexUpdates = indexSerializer.getIndexUpdates(cacheVertex, Arrays.asList(propertyPreviousVal, propertyNewVal));
+        Stream<IndexUpdate> indexUpdates;
+        if (withIndexConstraintsFilter) {
+            indexUpdates = indexSerializer.getIndexUpdates(cacheVertex, Arrays.asList(propertyPreviousVal, propertyNewVal), tx);
         } else {
-            indexUpdates = indexSerializer.getIndexUpdatesNoConstraints(cacheVertex, Arrays.asList(propertyPreviousVal, propertyNewVal));
+            indexUpdates = indexSerializer.getIndexUpdatesNoConstraints(cacheVertex, Arrays.asList(propertyPreviousVal, propertyNewVal), tx);
         }
 
         CacheInvalidationService invalidationService = graph.getDBCacheInvalidationService();
 
-        for(IndexUpdate indexUpdate : indexUpdates){
+        indexUpdates.forEach(indexUpdate -> {
             StaticBuffer keyToInvalidate = (StaticBuffer) indexUpdate.getKey();
             invalidationService.markKeyAsExpiredInIndexStore(keyToInvalidate);
-        }
+        });
 
         invalidationService.forceClearExpiredKeysInIndexStoreCache();
         invalidationService.forceInvalidateVertexInEdgeStoreCache(vertexIdUpdated);

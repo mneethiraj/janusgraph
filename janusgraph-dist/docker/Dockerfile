@@ -64,7 +64,7 @@ RUN groupadd -r janusgraph --gid=999 && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends krb5-user && \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /opt/janusgraph/ /opt/janusgraph/
+COPY --from=builder --chown=999:999 /opt/janusgraph/ /opt/janusgraph/
 COPY --from=builder /opt/yq /usr/bin/yq
 COPY docker/docker-entrypoint.sh /usr/local/bin/
 COPY docker/load-initdb.sh /usr/local/bin/
@@ -73,7 +73,7 @@ RUN chmod 755 /usr/local/bin/docker-entrypoint.sh && \
     chmod 755 /usr/local/bin/load-initdb.sh && \
     chmod 755 /usr/bin/yq && \
     mkdir -p ${JANUS_INITDB_DIR} ${JANUS_CONFIG_DIR} ${JANUS_DATA_DIR} && \
-    chown -R janusgraph:janusgraph ${JANUS_HOME} ${JANUS_INITDB_DIR} ${JANUS_CONFIG_DIR} ${JANUS_DATA_DIR}
+    chown -R janusgraph:janusgraph ${JANUS_INITDB_DIR} ${JANUS_CONFIG_DIR} ${JANUS_DATA_DIR}
 
 EXPOSE 8182
 
@@ -89,7 +89,7 @@ ARG REVISION=test
 LABEL org.opencontainers.image.title="JanusGraph Docker Image"
 LABEL org.opencontainers.image.description="Official JanusGraph Docker image"
 LABEL org.opencontainers.image.url="https://janusgraph.org/"
-LABEL org.opencontainers.image.documentation="https://docs.janusgraph.org/v1.0/"
+LABEL org.opencontainers.image.documentation="https://docs.janusgraph.org/v1.1/"
 LABEL org.opencontainers.image.revision="${REVISION}"
 LABEL org.opencontainers.image.source="https://github.com/JanusGraph/janusgraph-docker/"
 LABEL org.opencontainers.image.vendor="JanusGraph"

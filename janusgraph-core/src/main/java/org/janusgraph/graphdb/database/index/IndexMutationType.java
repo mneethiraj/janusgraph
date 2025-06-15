@@ -16,5 +16,6 @@ package org.janusgraph.graphdb.database.index;
 
 public enum IndexMutationType {
     ADD,
+    UPDATE,
     DELETE
 }
