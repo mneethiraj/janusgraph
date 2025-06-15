@@ -70,9 +70,7 @@ public class RdbmsStore implements KeyColumnValueStore {
 
     @Override
     public EntryList getSlice(KeySliceQuery query, StoreTransaction trx) throws BackendException {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("==> RdbmsStore.getSlice(name={}, query={}, trx={})", name, query, trx);
-        }
+        LOG.debug("==> RdbmsStore.getSlice(name={}, query={}, trx={})", name, query, trx);
 
         final EntryList ret;
 
@@ -92,18 +90,14 @@ public class RdbmsStore implements KeyColumnValueStore {
             ret = EntryList.EMPTY_LIST;
         }
 
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("<== RdbmsStore.getSlice(name={}, query={}, trx={}): ret={}", name, query, trx, ret.size());
-        }
+        LOG.debug("<== RdbmsStore.getSlice(name={}, query={}, trx={}): ret={}", name, query, trx, ret.size());
 
         return ret;
     }
 
     @Override
     public Map<StaticBuffer, EntryList> getSlice(List<StaticBuffer> keys, SliceQuery query, StoreTransaction trx) throws BackendException {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("==> RdbmsStore.getSlice(name={}, len(keys)={}, query={}, trx={})", name, keys.size(), query, trx);
-        }
+        LOG.debug("==> RdbmsStore.getSlice(name={}, len(keys)={}, query={}, trx={})", name, keys.size(), query, trx);
 
         final Map<StaticBuffer, EntryList> ret;
 
@@ -117,18 +111,14 @@ public class RdbmsStore implements KeyColumnValueStore {
             ret = Collections.emptyMap();
         }
 
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("<== RdbmsStore.getSlice(name={}, len(keys)={}, query={}, trx={})", name, keys.size(), query, trx);
-        }
+        LOG.debug("<== RdbmsStore.getSlice(name={}, len(keys)={}, query={}, trx={})", name, keys.size(), query, trx);
 
         return ret;
     }
 
     @Override
     public void mutate(StaticBuffer key, List<Entry> additions, List<StaticBuffer> deletions, StoreTransaction trx) throws BackendException {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("==> RdbmsStore.mutate(name={}, key={}, additions={}, deletions={}, trx={})", name, key, additions, deletions, trx);
-        }
+        LOG.debug("==> RdbmsStore.mutate(name={}, key={}, additions={}, deletions={}, trx={})", name, key, additions, deletions, trx);
 
         byte[]         keyName   = toBytes(key);
         Long           keyId     = getKeyIdOrCreate(keyName, trx);
@@ -144,9 +134,7 @@ public class RdbmsStore implements KeyColumnValueStore {
             columnDao.addOrUpdate(keyId, toBytes(entry.getColumn()), toBytes(entry.getValue()));
         }
 
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("<== RdbmsStore.mutate(name={}, key={}, additions={}, deletions={}, trx={})", name, key, additions, deletions, trx);
-        }
+        LOG.debug("<== RdbmsStore.mutate(name={}, key={}, additions={}, deletions={}, trx={})", name, key, additions, deletions, trx);
     }
 
     @Override
@@ -156,9 +144,7 @@ public class RdbmsStore implements KeyColumnValueStore {
 
     @Override
     public KeyIterator getKeys(KeyRangeQuery query, StoreTransaction trx) throws BackendException {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("==> RdbmsStore.getKeys(name={}, query={}, trx={})", name, query, trx);
-        }
+        LOG.debug("==> RdbmsStore.getKeys(name={}, query={}, trx={})", name, query, trx);
 
         final KeyIterator ret;
 
@@ -170,18 +156,14 @@ public class RdbmsStore implements KeyColumnValueStore {
             ret = JanusColumnDao.EMPTY_KEY_ITERATOR;
         }
 
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("<== RdbmsStore.debug(name={}, query={}, trx={})", name, query, trx);
-        }
+        LOG.debug("<== RdbmsStore.debug(name={}, query={}, trx={})", name, query, trx);
 
         return ret;
     }
 
     @Override
     public KeyIterator getKeys(SliceQuery query, StoreTransaction trx) throws BackendException {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("==> RdbmsStore.getKeys(name={}, query={}, trx={})", name, query, trx);
-        }
+        LOG.debug("==> RdbmsStore.getKeys(name={}, query={}, trx={})", name, query, trx);
 
         final KeyIterator ret;
 
@@ -193,9 +175,7 @@ public class RdbmsStore implements KeyColumnValueStore {
             ret = JanusColumnDao.EMPTY_KEY_ITERATOR;
         }
 
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("<== RdbmsStore.debug(name={}, query={}, trx={})", name, query, trx);
-        }
+        LOG.debug("<== RdbmsStore.debug(name={}, query={}, trx={})", name, query, trx);
 
         return ret;
     }
@@ -212,13 +192,9 @@ public class RdbmsStore implements KeyColumnValueStore {
 
     @Override
     public void close() throws BackendException {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("==> RdbmsStore.close(name={})", name);
-        }
+        LOG.debug("==> RdbmsStore.close(name={})", name);
 
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("<== RdbmsStore.close(name={})", name);
-        }
+        LOG.debug("<== RdbmsStore.close(name={})", name);
     }
 
     private boolean isStorePresent(StoreTransaction trx) {

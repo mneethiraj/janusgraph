@@ -17,7 +17,10 @@
 -- CREATE DATABASE atlas;
 -- \c atlas
 
-CREATE SEQUENCE IF NOT EXISTS janus_store_seq CACHE 1;
+CREATE SEQUENCE IF NOT EXISTS janus_store_seq  CACHE 1;
+CREATE SEQUENCE IF NOT EXISTS janus_key_seq    CACHE 1000;
+CREATE SEQUENCE IF NOT EXISTS janus_column_seq CACHE 1000;
+
 CREATE TABLE IF NOT EXISTS janus_store(
     id   BIGINT DEFAULT nextval('janus_store_seq'::regclass),
     name VARCHAR(512) NOT NULL,
@@ -25,7 +28,6 @@ CREATE TABLE IF NOT EXISTS janus_store(
     CONSTRAINT janus_store_uk_name UNIQUE(name)
 );
 
-CREATE SEQUENCE IF NOT EXISTS janus_key_seq CACHE 1000;
 CREATE TABLE IF NOT EXISTS janus_key(
     id       BIGINT DEFAULT nextval('janus_key_seq'::regclass),
     store_id BIGINT NOT NULL,
@@ -37,7 +39,6 @@ CREATE TABLE IF NOT EXISTS janus_key(
 CREATE INDEX IF NOT EXISTS idx_janus_key_store_id ON janus_key (store_id);
 CREATE INDEX IF NOT EXISTS idx_janus_key_name     ON janus_key (name);
 
-CREATE SEQUENCE IF NOT EXISTS janus_column_seq CACHE 1000;
 CREATE TABLE IF NOT EXISTS janus_column(
     id      BIGINT DEFAULT nextval('janus_column_seq'::regclass),
     key_id  BIGINT NOT NULL,

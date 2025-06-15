@@ -626,24 +626,8 @@ HBase storage options
 | storage.hbase.short-cf-names | Whether to shorten the names of JanusGraph's column families to one-character mnemonics to conserve storage space | Boolean | true | FIXED |
 | storage.hbase.skip-schema-check | Assume that JanusGraph's HBase table and column families already exist. When this is true, JanusGraph will not check for the existence of its table/CFs, nor will it attempt to create them under any circumstances.  This is useful when running JanusGraph without HBase admin privileges. | Boolean | false | MASKABLE |
 | storage.hbase.snapshot-name | The name of an existing HBase snapshot to be used by HBaseSnapshotInputFormat | String | janusgraph-snapshot | LOCAL |
-| storage.hbase.snapshot-restore-dir | The temporary directory to be used by HBaseSnapshotInputFormat to restore a snapshot. This directory should be on the same File System as the HBase root dir. | String | /tmp | LOCAL |
+| storage.hbase.snapshot-restore-dir | The temporary directory to be used by HBaseSnapshotInputFormat to restore a snapshot. This directory should be on the same File System as the HBase root dir. | String | /var/folders/gl/19jnr_md1qqdv5pmch67kqk80000gn/T/ | LOCAL |
 | storage.hbase.table | The name of the table JanusGraph will use.  When storage.hbase.skip-schema-check is false, JanusGraph will automatically create this table if it does not already exist. If this configuration option is not provided but graph.graphname is, the table will be set to that value. | String | janusgraph | LOCAL |
-
-### storage.rdbms
-RDBMS storage options
-
-
-| Name | Description | Datatype | Default Value | Mutability |
-| ---- | ---- | ---- | ---- | ---- |
-| storage.rdbms.jpa.javax.persistence.jdbc.dialect | | String |  | LOCAL |
-| storage.rdbms.jpa.javax.persistence.jdbc.driver | | String |  | LOCAL |
-| storage.rdbms.jpa.javax.persistence.jdbc.url | | String |  | LOCAL |
-| storage.rdbms.jpa.javax.persistence.jdbc.user | | String |  | LOCAL |
-| storage.rdbms.jpa.javax.persistence.jdbc.password | | String |  | LOCAL |
-| storage.rdbms.jpa.javax.persistence.schema-generation.database.action | | String |  | LOCAL |
-| storage.rdbms.jpa.javax.persistence.schema-generation.create-database-schemas | | String |  | LOCAL |
-| storage.rdbms.jpa.javax.persistence.schema-generation.create-source | | String |  | LOCAL |
-
 
 ### storage.lock
 Options for locking on eventually-consistent stores

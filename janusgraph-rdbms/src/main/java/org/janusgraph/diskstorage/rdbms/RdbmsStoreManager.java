@@ -52,11 +52,8 @@ public class RdbmsStoreManager extends AbstractStoreManager implements KeyColumn
 
     private static final String NAME = "rdbms";
 
-    public static final ConfigNamespace RDBMS_NS =
-        new ConfigNamespace(GraphDatabaseConfiguration.STORAGE_NS, NAME, "RDBMS configuration options");
-
-    public static final ConfigNamespace JPA_CONFIG_NS =
-        new ConfigNamespace(RDBMS_NS, "jpa", "JPA configurations", true);
+    public static final ConfigNamespace RDBMS_NS      = new ConfigNamespace(GraphDatabaseConfiguration.STORAGE_NS, NAME, "RDBMS configuration options");
+    public static final ConfigNamespace JPA_CONFIG_NS = new ConfigNamespace(RDBMS_NS, "jpa", "JPA configurations", true);
 
     private final StandardStoreFeatures   features;
     private final Map<String, RdbmsStore> stores;
@@ -84,9 +81,7 @@ public class RdbmsStoreManager extends AbstractStoreManager implements KeyColumn
 
     @Override
     public KeyColumnValueStore openDatabase(String name, StoreMetaData.Container container) throws BackendException {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("==> RdbmsStoreManager.openDatabase(name={})", name);
-        }
+        LOG.debug("==> RdbmsStoreManager.openDatabase(name={})", name);
 
         RdbmsStore ret = stores.get(name);
 
@@ -102,18 +97,14 @@ public class RdbmsStoreManager extends AbstractStoreManager implements KeyColumn
             }
         }
 
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("<== RdbmsStoreManager.openDatabase(name={})", name);
-        }
+        LOG.debug("<== RdbmsStoreManager.openDatabase(name={})", name);
 
         return ret;
     }
 
     @Override
     public void mutateMany(Map<String, Map<StaticBuffer, KCVMutation>> map, StoreTransaction trx) throws BackendException {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("==> RdbmsStoreManager.mutateMany(storeCount={}, trx={})", map.size(), trx);
-        }
+        LOG.debug("==> RdbmsStoreManager.mutateMany(storeCount={}, trx={})", map.size(), trx);
 
         for (Map.Entry<String, Map<StaticBuffer, KCVMutation>> storeEntry : map.entrySet()) {
             String              storeName = storeEntry.getKey();
@@ -127,31 +118,23 @@ public class RdbmsStoreManager extends AbstractStoreManager implements KeyColumn
             }
         }
 
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("<== RdbmsStoreManager.mutateMany(storeCount={})", map.size());
-        }
+        LOG.debug("<== RdbmsStoreManager.mutateMany(storeCount={})", map.size());
     }
 
     @Override
     public StoreTransaction beginTransaction(BaseTransactionConfig baseTransactionConfig) throws BackendException {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("==> RdbmsStoreManager.beginTransaction()");
-        }
+        LOG.debug("==> RdbmsStoreManager.beginTransaction()");
 
         StoreTransaction ret = new RdbmsTransaction(baseTransactionConfig, this.daoManager);
 
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("<== RdbmsStoreManager.beginTransaction()");
-        }
+        LOG.debug("<== RdbmsStoreManager.beginTransaction()");
 
         return ret;
     }
 
     @Override
     public void close() throws BackendException {
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("==> RdbmsStoreManager.close()");
-        }
+        LOG.debug("==> RdbmsStoreManager.close()");
 
         synchronized (this) {
             for (RdbmsStore store : stores.values()) {
@@ -162,9 +145,7 @@ public class RdbmsStoreManager extends AbstractStoreManager implements KeyColumn
             daoManager.close();
         }
 
-        if (LOG.isDebugEnabled()) {
-            LOG.debug("<== RdbmsStoreManager.close()");
-        }
+        LOG.debug("<== RdbmsStoreManager.close()");
     }
 
     @Override

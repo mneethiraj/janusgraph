@@ -76,12 +76,10 @@ public class JanusColumnDao extends BaseDao<JanusColumn> {
     }
 
     public int remove(long keyId, byte[] name) {
-        int ret = em.createNamedQuery("JanusColumn.deleteByKeyIdAndName")
+        return em.createNamedQuery("JanusColumn.deleteByKeyIdAndName")
                     .setParameter("keyId", keyId)
                     .setParameter("name", name)
                     .executeUpdate();
-
-        return ret;
     }
 
     public List<JanusColumnValue> getColumns(long keyId, byte[] startColumn, byte[] endColumn, int limit) {

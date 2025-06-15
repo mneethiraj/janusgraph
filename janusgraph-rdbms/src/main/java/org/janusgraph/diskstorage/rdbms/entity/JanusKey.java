@@ -29,6 +29,7 @@ import javax.persistence.Lob;
 import javax.persistence.Table;
 import javax.persistence.SequenceGenerator;
 import javax.persistence.UniqueConstraint;
+import java.util.Arrays;
 import java.util.Objects;
 
 /**
@@ -102,7 +103,7 @@ public class JanusKey implements java.io.Serializable {
 
             return Objects.equals(id, other.id) &&
                    Objects.equals(storeId, other.storeId) &&
-                   Objects.equals(name, other.name);
+                   Arrays.equals(name, other.name);
         }
 
         return false;
