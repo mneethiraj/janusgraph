@@ -19,6 +19,7 @@ import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Sets;
 import io.github.artsok.RepeatedIfExceptionsTest;
+import org.apache.commons.codec.DecoderException;
 import org.apache.tinkerpop.gremlin.process.traversal.P;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
@@ -53,6 +54,7 @@ import org.janusgraph.core.attribute.Geo;
 import org.janusgraph.core.attribute.Geoshape;
 import org.janusgraph.core.attribute.Text;
 import org.janusgraph.core.log.TransactionRecovery;
+import org.janusgraph.core.schema.CompositeIndexInfo;
 import org.janusgraph.core.schema.JanusGraphIndex;
 import org.janusgraph.core.schema.JanusGraphManagement;
 import org.janusgraph.core.schema.Mapping;
@@ -70,6 +72,7 @@ import org.janusgraph.diskstorage.indexing.IndexFeatures;
 import org.janusgraph.diskstorage.indexing.IndexInformation;
 import org.janusgraph.diskstorage.indexing.IndexProvider;
 import org.janusgraph.diskstorage.indexing.IndexTransaction;
+import org.janusgraph.diskstorage.keycolumnvalue.scan.ScanJobFuture;
 import org.janusgraph.diskstorage.log.kcvs.KCVSLog;
 import org.janusgraph.diskstorage.util.time.TimestampProvider;
 import org.janusgraph.example.GraphOfTheGodsFactory;
@@ -83,21 +86,26 @@ import org.janusgraph.graphdb.database.util.StaleIndexRecordUtil;
 import org.janusgraph.graphdb.internal.ElementCategory;
 import org.janusgraph.graphdb.internal.ElementLifeCycle;
 import org.janusgraph.graphdb.internal.Order;
+import org.janusgraph.graphdb.internal.RelationCategory;
 import org.janusgraph.graphdb.log.StandardTransactionLogProcessor;
 import org.janusgraph.graphdb.query.index.ApproximateIndexSelectionStrategy;
 import org.janusgraph.graphdb.query.index.BruteForceIndexSelectionStrategy;
 import org.janusgraph.graphdb.query.index.ThresholdBasedIndexSelectionStrategy;
 import org.janusgraph.graphdb.query.profile.QueryProfiler;
+import org.janusgraph.graphdb.query.vertex.BaseVertexCentricQuery;
+import org.janusgraph.graphdb.query.vertex.VertexCentricQueryBuilder;
 import org.janusgraph.graphdb.tinkerpop.optimize.step.JanusGraphMixedIndexAggStep;
 import org.janusgraph.graphdb.tinkerpop.optimize.step.JanusGraphStep;
 import org.janusgraph.graphdb.tinkerpop.optimize.strategy.JanusGraphMixedIndexCountStrategy;
 import org.janusgraph.graphdb.transaction.StandardJanusGraphTx;
+import org.janusgraph.graphdb.types.IndexField;
 import org.janusgraph.graphdb.types.MixedIndexType;
 import org.janusgraph.graphdb.types.ParameterType;
 import org.janusgraph.graphdb.types.StandardEdgeLabelMaker;
 import org.janusgraph.graphdb.types.vertices.JanusGraphSchemaVertex;
 import org.janusgraph.graphdb.vertices.CacheVertex;
 import org.janusgraph.testutil.TestGraphConfigs;
+import org.javatuples.Pair;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
@@ -106,6 +114,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -151,7 +161,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
-
 
 /**
  * @author Matthias Broecheler (me@matthiasb.com)
@@ -1443,6 +1452,287 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
 
         // mixed index only needs some field(s) to be present
         assertTrue(tx.traversal().V().has("intId2", 234).hasNext());
+    }
+
+    @Test
+    public void testSubsetReindex() throws Exception {
+
+        clopen(option(FORCE_INDEX_USAGE), true);
+
+        mgmt.makeVertexLabel("cat").make();
+        mgmt.makeVertexLabel("dog").make();
+
+        makeKey("id", Integer.class);
+        makeKey("name", String.class);
+        final PropertyKey typeKey = makeKey("type", String.class);
+
+        String typeIndex = "searchByType";
+        mgmt.buildIndex(typeIndex, Vertex.class)
+            .addKey(typeKey)
+            .buildCompositeIndex();
+        mgmt.commit();
+
+        //Cats
+        int catsCount = 3;
+        for (int i = 0; i < catsCount; i++) {
+            Vertex v = tx.addVertex("cat");
+            v.property("id", i);
+            v.property("name", "cat_" + i);
+            v.property("type", "cat");
+        }
+
+        //Dogs
+        for (int i = 0; i < 5; i++) {
+            Vertex v = tx.addVertex("dog");
+            v.property("id", i);
+            v.property("name", "dog_" + i);
+            v.property("type", "dog");
+        }
+
+        tx.commit();
+
+        //Select a subset of vertices to index
+        clopen(option(FORCE_INDEX_USAGE), true);
+        List<Vertex> cats = tx.traversal().V().has("type", "cat").toList();
+        assertEquals(catsCount, cats.size());
+        String excludedCat = cats.get(cats.size() - 1).value("name");
+        List<Pair<Object, String>> catsSubset = cats.subList(0, cats.size() - 1).stream()
+            .map(kitty -> new Pair<Object, String>(kitty.id(), kitty.value("name")))
+            .collect(Collectors.toList());
+
+        List<Vertex> dogs = tx.traversal().V().has("type", "dog").toList();
+        assertEquals(5, dogs.size());
+        tx.rollback();
+
+        //Create new Index
+        graph.getOpenTransactions().forEach(JanusGraphTransaction::rollback);
+        mgmt = graph.openManagement();
+        mgmt.getOpenInstances().stream().filter(i -> !i.contains("current")).forEach(i -> mgmt.forceCloseInstance(i));
+        mgmt.commit();
+
+        String catsNameIndex = "searchByName_CatsOnly";
+        mgmt = graph.openManagement();
+        mgmt.buildIndex(catsNameIndex, Vertex.class)
+            .addKey(mgmt.getPropertyKey("name"))
+            .indexOnly(mgmt.getVertexLabel("cat"))
+            .buildCompositeIndex();
+        mgmt.commit();
+
+        //Make Index as REGISTERED
+        mgmt = graph.openManagement();
+        mgmt.updateIndex(mgmt.getGraphIndex(catsNameIndex), SchemaAction.REGISTER_INDEX).get();
+        mgmt.commit();
+        ManagementSystem.awaitGraphIndexStatus(graph, catsNameIndex).status(SchemaStatus.REGISTERED).call();
+
+        //Reindex a given subset
+        List<Object> reIndexOnlyIds = catsSubset.stream().map(Pair::getValue0).collect(Collectors.toList());
+        mgmt = graph.openManagement();
+        mgmt.updateIndex(mgmt.getGraphIndex(catsNameIndex), SchemaAction.REINDEX, reIndexOnlyIds).get();
+        mgmt.commit();
+        ManagementSystem.awaitGraphIndexStatus(graph, catsNameIndex).status(SchemaStatus.ENABLED).call();
+
+        clopen(option(FORCE_INDEX_USAGE), true);
+        catsSubset.forEach(kitty -> {
+            List<Vertex> catsByName = tx.traversal().V().hasLabel("cat").has("name", kitty.getValue1()).toList();
+            assertEquals(1, catsByName.size());
+        });
+
+        List<Vertex> catsByName = tx.traversal().V().hasLabel("cat").has("name", excludedCat).toList();
+        assertEquals(0, catsByName.size());
+        tx.rollback();
+    }
+
+    @Test
+    public void testIndexInlineProperties() throws NoSuchMethodException {
+
+        clopen(option(FORCE_INDEX_USAGE), true);
+
+        final PropertyKey idKey = makeKey("id", Integer.class);
+        final PropertyKey nameKey = makeKey("name", String.class);
+        final PropertyKey cityKey = makeKey("city", String.class);
+
+        mgmt.buildIndex("composite", Vertex.class)
+            .addKey(idKey)
+            .addInlinePropertyKey(nameKey)
+            .buildCompositeIndex();
+
+        finishSchema();
+
+        String name = "Mizar";
+        String city = "Chicago";
+        tx.addVertex("id", 100, "name", name, "city", city);
+        tx.commit();
+
+        tx = graph.buildTransaction()
+            .propertyPrefetching(false) //this is important
+            .start();
+
+        Method m = VertexCentricQueryBuilder.class.getSuperclass().getDeclaredMethod("constructQuery", RelationCategory.class);
+        m.setAccessible(true);
+
+        CacheVertex v = (CacheVertex) (tx.traversal().V().has("id", 100).next());
+
+        verifyPropertyLoaded(v, "name", true, m);
+        verifyPropertyLoaded(v, "city", false, m);
+
+        assertEquals(name, v.value("name"));
+        assertEquals(city, v.value("city"));
+    }
+
+    @Test
+    public void testIndexInlinePropertiesReindex() throws NoSuchMethodException, InterruptedException {
+        clopen(option(FORCE_INDEX_USAGE), true);
+
+        PropertyKey idKey = makeKey("id", Integer.class);
+        PropertyKey nameKey = makeKey("name", String.class);
+        PropertyKey cityKey = makeKey("city", String.class);
+
+        mgmt.buildIndex("composite", Vertex.class)
+            .addKey(cityKey)
+            .buildCompositeIndex();
+
+        finishSchema();
+
+        String city = "Chicago";
+        for (int i = 0; i < 3; i++) {
+            tx.addVertex("id", i, "name", "name" + i, "city", city);
+        }
+
+        tx.commit();
+
+        tx = graph.buildTransaction()
+            .propertyPrefetching(false) //this is important
+            .start();
+
+        Method m = VertexCentricQueryBuilder.class.getSuperclass().getDeclaredMethod("constructQuery", RelationCategory.class);
+        m.setAccessible(true);
+
+        List<Vertex> vertices = tx.traversal().V().has("city", city).toList();
+        vertices.stream()
+            .map(v -> (CacheVertex) v)
+            .forEach(v -> verifyPropertyLoaded(v, "name", false, m));
+
+        tx.commit();
+
+        //Include inlined property
+        JanusGraphIndex index = mgmt.getGraphIndex("composite");
+        nameKey = mgmt.getPropertyKey("name");
+        mgmt.addInlinePropertyKey(index, nameKey);
+        finishSchema();
+
+        //Reindex
+        index = mgmt.getGraphIndex("composite");
+        ScanJobFuture scanJobFuture = mgmt.updateIndex(index, SchemaAction.REINDEX);
+        finishSchema();
+
+        while (!scanJobFuture.isDone()) {
+            Thread.sleep(1000);
+        }
+
+        //Try query now
+        tx = graph.buildTransaction()
+            .propertyPrefetching(false) //this is important
+            .start();
+
+        List<Vertex> vertices2 = tx.traversal().V().has("city", city).toList();
+        vertices2.stream()
+            .map(v -> (CacheVertex) v)
+            .forEach(v -> verifyPropertyLoaded(v, "name", true, m));
+
+        tx.commit();
+    }
+
+    @Test
+    public void testIndexInlinePropertiesUpdate() {
+
+        clopen(option(FORCE_INDEX_USAGE), true);
+
+        final PropertyKey idKey = makeKey("id", Integer.class);
+        final PropertyKey nameKey = makeKey("name", String.class);
+        final PropertyKey cityKey = makeKey("city", String.class);
+
+        mgmt.buildIndex("composite", Vertex.class)
+            .addKey(idKey)
+            .addInlinePropertyKey(nameKey)
+            .buildCompositeIndex();
+
+        finishSchema();
+
+        String name1 = "Mizar";
+        String name2 = "Alcor";
+
+        String city = "Chicago";
+        tx.addVertex("id", 100, "name", name1, "city", city);
+        tx.addVertex("id", 200, "name", name2, "city", city);
+        tx.commit();
+
+        tx = graph.buildTransaction()
+            .propertyPrefetching(false) //this is important
+            .start();
+
+        Vertex v = (tx.traversal().V().has("id", 100).next());
+        assertEquals(name1, v.value("name"));
+
+        //Update inlined property
+        v.property("name", "newName");
+        tx.commit();
+
+        tx = graph.buildTransaction()
+            .propertyPrefetching(false) //this is important
+            .start();
+
+        v = (tx.traversal().V().has("id", 100).next());
+        assertEquals("newName", v.value("name"));
+    }
+
+    @Test
+    public void testIndexInlinePropertiesLimit() throws NoSuchMethodException {
+
+        clopen(option(FORCE_INDEX_USAGE), true);
+
+        final PropertyKey nameKey = makeKey("name", String.class);
+        final PropertyKey cityKey = makeKey("city", String.class);
+
+        mgmt.buildIndex("composite", Vertex.class)
+            .addKey(cityKey)
+            .addInlinePropertyKey(nameKey)
+            .buildCompositeIndex();
+
+        finishSchema();
+
+        String city = "Chicago";
+        for (int i = 0; i < 10; i++) {
+            String name = "name_" + i;
+            tx.addVertex("name", name, "city", city);
+        }
+        tx.commit();
+
+        tx = graph.buildTransaction()
+            .propertyPrefetching(false) //this is important
+            .start();
+
+        Method m = VertexCentricQueryBuilder.class.getSuperclass().getDeclaredMethod("constructQuery", RelationCategory.class);
+        m.setAccessible(true);
+
+        List<Vertex> vertices = tx.traversal().V().has("city", city).limit(3).toList();
+        assertEquals(3, vertices.size());
+        vertices.stream().map(v -> (CacheVertex) v).forEach(v -> {
+            verifyPropertyLoaded(v, "name", true, m);
+            verifyPropertyLoaded(v, "city", false, m);
+        });
+    }
+
+    private void verifyPropertyLoaded(CacheVertex v, String propertyName, Boolean isPresent, Method m) {
+        VertexCentricQueryBuilder queryBuilder = v.query().direction(Direction.OUT);
+        //Verify the name property is already present in vertex cache
+        BaseVertexCentricQuery nameQuery = null;
+        try {
+            nameQuery = (BaseVertexCentricQuery) m.invoke(queryBuilder.keys(propertyName), RelationCategory.PROPERTY);
+        } catch (IllegalAccessException | InvocationTargetException e) {
+            throw new RuntimeException(e);
+        }
+        Boolean result = v.hasLoadedRelations(nameQuery.getSubQuery(0).getBackendQuery());
+        assertEquals(isPresent, result);
     }
 
     @Test
@@ -4057,5 +4347,91 @@ public abstract class JanusGraphIndexTest extends JanusGraphBaseTest {
                 graph.traversal().V().has(namePropKeyStr, nameValue).limit(limit).count().next()
             );
         }
+    }
+
+    @Test
+    public void testGetIndexInfo() throws DecoderException {
+
+        clopen();
+
+        mgmt.makeVertexLabel("cat").make();
+
+        final PropertyKey idKey = makeKey("id", Integer.class);
+        final PropertyKey nameKey = makeKey("name", String.class);
+        final PropertyKey metaKey = makeKey("meta", Object.class);
+
+        String searchByNameIndex = "searchByName";
+        mgmt.buildIndex(searchByNameIndex, Vertex.class)
+            .addKey(nameKey)
+            .buildCompositeIndex();
+
+        String searchByMetaIndex = "searchByMeta";
+        mgmt.buildIndex(searchByMetaIndex, Vertex.class)
+            .addKey(nameKey)
+            .addKey(metaKey)
+            .buildCompositeIndex();
+
+        String inlinePropIndex = "inlineProp";
+        mgmt.buildIndex(inlinePropIndex, Vertex.class)
+            .addKey(nameKey)
+            .addKey(metaKey)
+            .addInlinePropertyKey(idKey)
+            .buildCompositeIndex();
+
+        mgmt.commit();
+
+        mgmt = graph.openManagement();
+
+        //Read index with single property
+        Map<String, Object> fieldValues = new HashMap<>();
+        fieldValues.put("name", "someName");
+
+        String hexString = mgmt.getIndexKey(searchByNameIndex, fieldValues);
+        CompositeIndexInfo indexInfo = mgmt.getIndexInfo(hexString);
+
+        IndexField[] indexFields = new IndexField[1];
+        indexFields[0] = IndexField.of(nameKey);
+
+        assertEquals(searchByNameIndex, indexInfo.getIndexName());
+        assertEquals(1, indexInfo.getCompositeIndexType().getFieldKeys().length);
+        assertEquals("someName", indexInfo.getValues().get(nameKey));
+        assertEquals(0, indexInfo.getCompositeIndexType().getInlineFieldKeys().length);
+
+        //Read index with multi properties
+        fieldValues = new HashMap<>();
+        fieldValues.put("name", "name1");
+        fieldValues.put("meta", "hello");
+
+        hexString = mgmt.getIndexKey(searchByMetaIndex, fieldValues);
+        indexInfo = mgmt.getIndexInfo(hexString);
+
+        indexFields = new IndexField[2];
+        indexFields[0] = IndexField.of(nameKey);
+        indexFields[1] = IndexField.of(metaKey);
+
+        assertEquals(searchByMetaIndex, indexInfo.getIndexName());
+        assertEquals(2, indexInfo.getCompositeIndexType().getFieldKeys().length);
+        assertEquals("name1", indexInfo.getValues().get(nameKey));
+        assertEquals("hello", indexInfo.getValues().get(metaKey));
+        assertEquals(0, indexInfo.getCompositeIndexType().getInlineFieldKeys().length);
+
+        //Read index with inline properties
+        fieldValues = new HashMap<>();
+        fieldValues.put("name", "name2");
+        fieldValues.put("meta", "bye");
+
+        hexString = mgmt.getIndexKey(inlinePropIndex, fieldValues);
+        indexInfo = mgmt.getIndexInfo(hexString);
+
+        indexFields = new IndexField[2];
+        indexFields[0] = IndexField.of(nameKey);
+        indexFields[1] = IndexField.of(metaKey);
+
+        assertEquals(inlinePropIndex, indexInfo.getIndexName());
+        assertEquals(2, indexInfo.getCompositeIndexType().getFieldKeys().length);
+        assertEquals("name2", indexInfo.getValues().get(nameKey));
+        assertEquals("bye", indexInfo.getValues().get(metaKey));
+        assertEquals(1, indexInfo.getCompositeIndexType().getInlineFieldKeys().length);
+        assertEquals("id", indexInfo.getCompositeIndexType().getInlineFieldKeys()[0]);
     }
 }
